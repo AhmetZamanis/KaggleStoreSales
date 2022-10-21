@@ -75,6 +75,7 @@ df_holidays_unique = df_holidays.drop_duplicates(subset="date", keep=False)
 df_holidays_duplicate = df_holidays[df_holidays.duplicated(["date"], keep=False)]
 
 
+
 #add calendar_holiday and actual_holiday columns
   #calendar_holiday=1 if: Holiday, Additional, Work Day
   #actual_holiday=1 if: (Holiday & Transferred=FALSE), Transfer, Additional, Bridge
@@ -85,11 +86,57 @@ df_holidays["actual_holiday"] = (
 )
 
 
+#split special events
+df_events = df_holidays[df_holidays.holiday_type=="Event"]
+df_holidays = df_holidays.drop(labels=(df_events.index), axis=0)
+
+
 #split holidays into local, regional, national
 df_local = df_holidays.loc[df_holidays.locale=="Local"]
-df_regional = df_holidays.loc[df_holidays.locale=="Regional"]
-df_national = df_holidays.loc[df_holidays.locale=="National"]
+df_local.rename(
+  columns={
+    "calendar_holiday":"local_calendar_holiday",
+    "actual_holiday":"local_actual_holiday"}, inplace=True)
 
+df_regional = df_holidays.loc[df_holidays.locale=="Regional"]
+df_regional.rename(
+  columns={
+    "calendar_holiday":"regional_calendar_holiday",
+    "actual_holiday":"regional_actual_holiday"}, inplace=True)
+
+
+df_national = df_holidays.loc[df_holidays.locale=="National"]
+df_national.rename(
+  columns={
+    "calendar_holiday":"national_calendar_holiday",
+    "actual_holiday":"national_actual_holiday"}, inplace=True)
+
+
+
+#check duplicate date & locale_name in each holiday dataframe
+df_local_duplicated = df_local[df_local.duplicated(["date", "locale_name"], keep=False)]
+#2 duplicates. remove the transfer row, row 265
+df_local.loc[265]
+df_local.drop(265, axis=0, inplace=True)
+#no date&locale duplicates in local holidays remain 
+del df_local_duplicated
+
+
+df_regional_duplicated = df_regional[df_regional.duplicated(["date", "locale_name"], keep=False)]
+#no date & locale duplicates in regional holidays
+del df_regional_duplicated
+
+
+df_national_duplicated = df_national[df_national.duplicated(["date"], keep=False)]
+#6 duplicates, 3 pairs of bridge-additional in the same day.
+#bridges are less common, so drop them
+bridge_indexes = [35, 39, 156]
+df_national.drop(labels=bridge_indexes, axis=0, inplace=True)
+#no date&locale duplicates in national holidays remain
+del df_national_duplicated, bridge_indexes
+
+
+#check & handle event date duplicates (all events are nationwide)
 
 
 
