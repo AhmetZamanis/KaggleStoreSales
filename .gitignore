@@ -168,5 +168,7 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-#datasets
+#datasets and directories
 .csv
+OriginalData/
+ModifiedData/
