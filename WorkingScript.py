@@ -14,6 +14,8 @@ df_train.shape
 #(3000888, 6)
 
 df_test = pd.read_csv("./OriginalData/test.csv", encoding="utf-8")
+df_test.shape
+#(28512, 5)
 
 #stores data
 df_stores = pd.read_csv("./OriginalData/stores.csv", encoding="utf-8")
@@ -137,10 +139,17 @@ del df_national_duplicated, bridge_indexes
 
 
 #check & handle event date duplicates (all events are nationwide)
+df_events.drop("calendar_holiday", axis=1, inplace=True)
+df_events.rename(columns={"actual_holiday":"event"}, inplace=True)
+df_events["event"] = ~df_events["event"]
 
 
-
-
+df_events_duplicated = df_events[df_events.duplicated(["date"], keep=False)]
+#2 duplicates, one is earthquake, other is mother's day. drop earthquake
+df_events.loc[244]
+df_events.drop(244, axis=0, inplace=True)
+#no more date duplicates in events
+del df_events_duplicated
 
 
 #MERGE / JOIN DATASETS
@@ -161,8 +170,17 @@ df_test.drop("date", axis=1, inplace=True)
 df_oil.set_index(pd.PeriodIndex(df_oil.date, freq="D"), inplace=True)
 df_oil.drop("date", axis=1, inplace=True)
 
-df_holidays.set_index(pd.PeriodIndex(df_holidays.date, freq="D"), inplace=True)
-df_holidays.drop("date", axis=1, inplace=True)
+df_local.set_index(pd.PeriodIndex(df_local.date, freq="D"), inplace=True)
+df_local.drop("date", axis=1, inplace=True)
+
+df_regional.set_index(pd.PeriodIndex(df_regional.date, freq="D"), inplace=True)
+df_regional.drop("date", axis=1, inplace=True)
+
+df_national.set_index(pd.PeriodIndex(df_national.date, freq="D"), inplace=True)
+df_national.drop("date", axis=1, inplace=True)
+
+df_events.set_index(pd.PeriodIndex(df_events.date, freq="D"), inplace=True)
+df_events.drop("date", axis=1, inplace=True)
 
 
 #join oil price into train and test, by date index
@@ -171,16 +189,107 @@ df_train = df_train.join(df_oil, how="left", on="date")
 df_test = df_test.join(df_oil, how="left", on="date")
 
 
-#join holidays columns except description into train and test
-df_holidays.drop("description", axis=1, inplace=True)
-df_test = df_test.join(df_holidays, how="left", on="date")
-df_train2 = df_train.merge(df_holidays, how="left", on="date")
-df_train_added = pd.concat([df_train, df_train2]).drop_duplicates(keep=False)
 
 
-#remove supplementary dataframes
-del df_holidays, df_oil, df_stores
+#join holidays columns into train and test
+
+
+#local
+df_local_merge = df_local.drop(
+  labels=["holiday_type", "locale", "description", "transferred"], axis=1)
+df_local_merge.rename(columns={"locale_name":"city"}, inplace=True)
+
+  
+df_test = df_test.merge(df_local_merge, how="left", on=["date", "city"])
+#works. remember to replace NAs with FALSE
+
+df_train2 = df_train.merge(df_local_merge, how="left", on=["date", "city"])
+#no duplicates generated, non NA rows added
+df_train = df_train2
 
 
 
+
+#regional
+df_regional_merge = df_regional.drop(
+  labels=[
+    "holiday_type", "locale", "description", "transferred", 
+    "regional_actual_holiday"], axis=1
+)
+df_regional_merge.rename(columns={"locale_name":"state"}, inplace=True)
+
+
+df_test = df_test.merge(df_regional_merge, how="left", on=["date", "state"])
+
+df_train2 = df_train.merge(df_regional_merge, how="left", on=["date", "state"])
+#no duplicates generated, non NA rows added
+df_train = df_train2
+
+
+
+
+#national
+df_national_merge = df_national.drop(
+  labels=[
+    "holiday_type", "locale", "locale_name", "description", "transferred"], axis=1
+)
+
+
+df_test = df_test.merge(df_national_merge, how="left", on="date")
+
+df_train2 = df_train.merge(df_national_merge, how="left", on="date")
+#no duplicates generated, non NA rows added
+df_train = df_train2
+
+
+
+
+#events
+df_events_merge = df_events.drop(
+  labels=[
+    "holiday_type", "locale", "locale_name", "description", "transferred"], axis=1
+)
+
+df_test = df_test.merge(df_events_merge, how="left", on="date")
+
+df_train2 = df_train.merge(df_events_merge, how="left", on="date")
+#no duplicates generated, non NA rows added
+df_train = df_train2
+del df_national_merge, df_national_merge2
+
+
+
+
+#final checks
+
+
+#shapes
+df_train.shape
+#(3000888, 16)
+df_test.shape
+#(28512, 15)
+
+
+#columns
+df_train.columns
+df_test.columns
+#all there
+
+
+#save modified train and test data
+df_train.to_csv("./ModifiedData/train_modified.csv", index=True, encoding="utf-8")
+df_test.to_csv("./ModifiedData/test_modified.csv", index=True, encoding="utf-8")
+#remember to reset dates to index when loading back
+
+
+#load back modified data
+df_train = pd.read_csv("./ModifiedData/train_modified.csv", encoding="utf-8")
+df_test = pd.read_csv("./ModifiedData/test_modified.csv", encoding="utf-8")
+
+
+
+
+
+
+#EXPLORATORY ANALYSIS
 
