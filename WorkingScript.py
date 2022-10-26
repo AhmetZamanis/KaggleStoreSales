@@ -15,9 +15,15 @@ from scipy.signal import periodogram
 
 from sklearn.preprocessing import StandardScaler
 
-from sktime.transformations.series.detrend import STLTransformer
-from statsmodels.tsa.seasonal import MSTL
-from statsmodels.tsa.seasonal import DecomposeResult
+# from sktime.transformations.series.detrend import STLTransformer
+# from statsmodels.tsa.seasonal import MSTL
+# from statsmodels.tsa.seasonal import DecomposeResult
+
+
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_log_error as msle
+
+
 
 
 #LOAD DATASETS
@@ -462,7 +468,6 @@ df_test.drop("date", axis=1, inplace=True)
 
 
 
-
 #HIERARCHICAL STRUCTURE OF THE TIME SERIES
 #sales in one day
   #by category: 33
@@ -500,50 +505,78 @@ df_test.drop("date", axis=1, inplace=True)
 
 
 
+
+
+
 #TIME COMPONENTS OF AGGREGATE SALES SERIES
 
 
-sales_agg = df_train.groupby("date").sales.mean()
+#aggregated sales data
+sales_agg = df_train.groupby("date").sales.sum()
 sales_agg = pd.DataFrame(data={
   "sales": sales_agg.values,
   "time": np.arange((len(sales_agg)))
 }, index=sales_agg.index)
 sales_agg.time = sales_agg.time + 1 
 
+
+#inflation adjustment, base=2010
+cpi = [100, 112.8, 116.8, 121.5, 123.6]
+sales_agg["sales_adj"] = sales_agg["sales"]
+sales_agg.sales_adj.loc[sales_agg.index.year==2013] = sales_agg.sales.loc[sales_agg.index.year==2013] / cpi[1]*cpi[0]
+sales_agg.sales_adj.loc[sales_agg.index.year==2014] = sales_agg.sales.loc[sales_agg.index.year==2014] / cpi[2]*cpi[0]
+sales_agg.sales_adj.loc[sales_agg.index.year==2015] = sales_agg.sales.loc[sales_agg.index.year==2015] / cpi[3]*cpi[0]
+sales_agg.sales_adj.loc[sales_agg.index.year==2016] = sales_agg.sales.loc[sales_agg.index.year==2016] / cpi[4]*cpi[0]
+sales_agg.sales_adj.loc[sales_agg.index.year==2017] = sales_agg.sales.loc[sales_agg.index.year==2017] / cpi[4]*cpi[0]
+
+
+#split into train and valid
+sales_agg_train = sales_agg.loc[sales_agg.index.year!=2017]
+sales_agg_valid = sales_agg.loc[sales_agg.index.year==2017]
+
+
+#time components plots
 sns.set_theme(style="darkgrid")
+
+
 #average daily sales across time, across all categories
-ax = sns.lineplot(x="time", y="sales", legend=False, data=sales_agg)
+ax = sns.lineplot(x="time", y="sales", label="sales", data=sales_agg_train)
+ax = sns.lineplot(x="time", y="sales_adj", label="sales_adj", data=sales_agg_train)
 ax.set_title("agg sales over time")
 plt.show()
 plt.close()
-#generally increasing sales across time
+#generally increasing sales across time, slightly exponential
+  #less stronger trend with adjusted sales
 #dips at time 1, 365, 1458, 729, 1093
 sales_agg.index[sales_agg.time.isin([1,365,729,1093,1458])]
 #these are all jan 1, already flagged with a binary feature
 
 
 #avg sales each month of the year, across all categories
-ax = sns.lineplot(x=sales_agg.index.month, y="sales", hue=sales_agg.index.year, data=sales_agg, legend="brief")
+ax = sns.lineplot(x=sales_agg.index.month, y="sales_adj", hue=sales_agg.index.year, data=sales_agg_train, legend="brief")
 ax.set_title("month of year")
 plt.show()
 plt.close()
 #sales peak at december
-#they are generally stable before december, except for 2015 which had a sharp increase in june
-#sales fluctuated considerably month to month in 2014
+#they are generally stable before december, 
+  #except for 2015 which had a sharp increase in may and june
+  #and 2014 where sales fluctuated considerably month to month
+#overall, sales grow each year
 
 
 
 #avg sales each week of the year, across all categories
-sns.lineplot(x=sales_agg.index.week, y="sales", hue=sales_agg.index.year, data=sales_agg)
+ax = sns.lineplot(x=sales_agg.index.week, y="sales_adj", hue=sales_agg.index.year, data=sales_agg_train)
 ax.set_title("week of year")
 plt.show()
 plt.close()
-#similar weekly seasonality to month. drop in 2017 after week 32-33 due to data ending
+#similar weekly seasonality to month.
+#peak in 2016 weeks 16-18, due to earthquake, accounted for with binary feature
 sales_agg.sales.loc[sales_agg.index.week==32]
 
 
 #avg sales each day of the year, across all categories
-sns.lineplot(x=sales_agg.index.dayofyear, y="sales", hue=sales_agg.index.year, data=sales_agg)
+ax = sns.lineplot(x=sales_agg.index.dayofyear, y="sales_adj", hue=sales_agg.index.year, data=sales_agg_train)
 ax.set_title("day of year")
 plt.show()
 #dip at new years day, stable fluctuation across year, peak towards end of year
@@ -554,7 +587,7 @@ plt.close()
 
 
 #avg sales each day of the month, across all categories
-sns.lineplot(x=sales_agg.index.day, y="sales", hue=sales_agg.index.month, data=sales_agg)
+ax = sns.lineplot(x=sales_agg.index.day, y="sales_adj", hue=sales_agg.index.month, data=sales_agg_train)
 ax.set_title("day of month")
 plt.show()
 plt.close()
@@ -566,10 +599,10 @@ sales_agg.loc[(sales_agg.index.month==12) & (sales_agg.index.day.isin([20,21,22,
 
 
 #avg sales each day of the week, across all categories
-sns.lineplot(x=sales_agg.index.dayofweek, y="sales", hue=sales_agg.index.month, data=sales_agg)
+ax = sns.lineplot(x=sales_agg.index.dayofweek, y="sales_adj", hue=sales_agg.index.month, data=sales_agg_train)
 ax.set_title("day of week")
 plt.show()
-#dips until wednesday, ramps up afterwards and peaks at sunday
+#dips until tuesday, ramps up afterwards and peaks at sunday
 plt.close()
 
 
@@ -591,85 +624,211 @@ plt.close()
 #time features that can be added for aggregate sales:
   #trend: quadratic time dummy
   #seasonality:
-    #months of year (categorical) or weeks of year (fourier). or both? days of year too unstable.
+    #months of year (categorical) 
+    #weeks of year (fourier). 
+      #days of year likely too unstable.
     #days of month (fourier)
     #days of week (categorical)
     #plot a periodogram and decide?
 
 
+#plot periodogram
+def plot_periodogram(ts, detrend='linear', ax=None):
+    from scipy.signal import periodogram
+    fs = pd.Timedelta("1Y") / pd.Timedelta("1D")
+    freqencies, spectrum = periodogram(
+        ts,
+        fs=fs,
+        detrend=detrend,
+        window="boxcar",
+        scaling='spectrum',
+    )
+    if ax is None:
+        _, ax = plt.subplots()
+    ax.step(freqencies, spectrum, color="purple")
+    ax.set_xscale("log")
+    ax.set_xticks([1, 2, 4, 6, 12, 26, 52, 104])
+    ax.set_xticklabels(
+        [
+            "Ann (1)",
+            "Semiann (2)",
+            "Qtr (4)",
+            "Bimon (6)",
+            "Mon (12)",
+            "Biwk (26)",
+            "Wk (52)",
+            "Semiwk (104)",
+        ],
+        rotation=30,
+    )
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+    ax.set_ylabel("Variance")
+    ax.set_title("Periodogram")
+    return ax
+
+plot_periodogram(sales_agg.sales_adj)
+plt.show()
+plt.close()
+#try between quarterly and bimonthly fourier features? 4-6?
+
+
+
+
 #TIME DECOMPOSITION, AGGREGATE SALES
 
-#detrend and deseasonalize
+#detrend, deseasonalize, adjust for calendar features
 #use multiplicative decomposition (or log transform sales and use additive)
-y_train_agg =  np.log(df_train.groupby("date").sales.mean() + 0.00001)
+y_train =  np.log(sales_agg_train.sales_adj + 0.00001)
+y_valid = np.log(sales_agg_valid.sales_adj + 0.00001)
 
 
 
-#STL decomposition
-decomp_stl = STLTransformer(seasonal=31, robust=True, return_components=True)
-y_train_decomped = decomp_stl.fit_transform(y_train_agg)
-y_train_decomped["time"] = np.arange(len(y_train_decomped)) + 1
-y_train_decomped.iloc[:,0:4] = np.exp(y_train_decomped.iloc[:,0:4])
+#adjust for time and calendar features with linear reg (minus local and regional holidays, because it's aggregate data)
 
 
-#plot components
+#get calendar dummies
+calendar_cols = ['national_calendar_holiday', 'national_actual_holiday', 'event',
+       'new_years_day', 'payday', 'earthquake', 'christmas']
+x_train = df_train[calendar_cols].groupby("date").mean()
 
 
-ax = sns.lineplot(x="time", y="trend", data=y_train_decomped)
+#add days of week dummies
+days_week = pd.Series((x_train.index.dayofweek + 1), index=x_train.index)
+x_train = x_train.merge(pd.get_dummies(
+  days_week, prefix="weekday", drop_first=True), how="left", on="date"
+)
+
+
+#add trend and seasonality features with deterministic process
+dp = DeterministicProcess(
+  index=x_train.index,
+  period=365,
+  constant=True,
+  order=1,
+  fourier=4,
+  drop=True
+)
+x_train = x_train.merge(dp.in_sample(), how="left", on="date")
+
+
+
+# #add months of year dummies
+# months_year = pd.Series((x_cal.index.month), index=x_cal.index)
+# x_cal = x_cal.merge(pd.get_dummies(
+#   months_year, prefix="month", drop_first=True), how="left", on="date"
+# )
+
+
+#split x_cal into train and valid
+x_valid = x_train.loc[x_train.index.year==2017]
+x_train = x_train.loc[x_train.index.year!=2017]
+
+
+
+#fit linear model on dummies
+model_lm = LinearRegression(fit_intercept=False)
+model_lm.fit(x_train, y_train)
+
+
+#decompose the adjusted log sales
+pred_valid = pd.Series(model_lm.predict(x_valid), index=y_valid.index)
+decomp_valid = y_valid - pred_valid
+
+
+#reverse log transformation of predictions
+y_valid_exp = np.exp(y_valid)
+pred_valid_exp = np.exp(pred_valid)
+decomp_valid_exp = np.exp(decomp_valid)
+
+
+#get rmsle score of decalendaring
+np.sqrt(msle(y_valid_exp, pred_valid_exp))
+#rmsle 0.1308
+
+
+#plot actual vs predicted 2017 agg. sales
+ax=sns.lineplot(x=x_valid.trend, y=y_valid_exp, label="sales")
+sns.lineplot(x=x_valid.trend, y=pred_valid_exp.values, label="preds", ax=ax)
+ax.set_title("2017 sales vs preds of decomposition model")
 plt.show()
 plt.close()
-#trend is still super seasonal. doesn't account for days of week, the end of year peaks, or new year drops
+#the trend and annual seasonality is decently captured,
+#but many drops and some peaks are missed. will likely be helped by lag features
 
-ax = sns.lineplot(x="time", y="seasonal", data=y_train_decomped)
+
+ax = sns.lineplot(x=y_valid.index.day, y=y_valid_exp, label="sales")
+sns.lineplot(x=y_valid.index.day, y=pred_valid_exp.values, label="preds", ax=ax)
+ax.set_title("decomposition model preds by days of month")
 plt.show()
 plt.close()
-#seasonal component fairly balanced over the years, though some peaks
+#appears to have capture days of month fluctuations, 
+#except the peaks at the start of the months,
+#and the decline through a month
 
-ax = sns.lineplot(x="time", y="resid", data=y_train_decomped)
+
+ax = sns.lineplot(x=y_valid.index.dayofweek, y=y_valid_exp, label="sales")
+sns.lineplot(x=y_valid.index.dayofweek, y=pred_valid_exp.values, label="preds", ax=ax)
+ax.set_title("decpmposition model preds by day of week")
 plt.show()
 plt.close()
-#the residual is subject to new year drops and short-term seasonality
+#days of week fluctuations captured well
+
+
+
+ax = sns.lineplot(x=x_valid.trend, y=decomp_valid.values)
+ax.set_title("residuals of decomposition model")
+plt.show()
+plt.close()
+#residuals increase until roughly day 125, then decline until roughly day 200
+
+
+
+#further components needed after decomposing:
+  #lag features most likely
 
 
 
 
-#decompose with MSTL
-  #update statsmodels module
 
 
-
-
-
-
-
-
-
-
-
-
-#lag features (RE-EVALUATE AFTER DECOMPOSING)
+#LAG FEATURES ON DECOMPOSED RESIDUALS
 
 
 #sales
 
-#scatter
-fig, ax = plot_lags(sales_agg.sales, lags=[1,2,3,4,5,6])
-plt.show()
-plt.close()
-
 
 #pacf
-plot_pacf(sales_agg.sales, lags=45)
+plot_pacf(decomp_valid, lags=60)
 plt.show()
-#lags up to 9 all significant
-#most significant ones:
-  #1, 3, 5, 6, 7, 8, 9, 13, 14
+#significant lags:
+  #1, 3, 27, 33, 34 36. 48, 50, 56
+#most significant lags:
+  #1, 27, 34, 56
 plt.close()
+
+
+#scatterplots
+
+#1-6
+fig, ax = plot_lags(decomp_valid_exp, lags=[i for i in range(1,7)])
+plt.show()
+plt.close()
+#use lag 1
+
+
+#most significant lags
+fig, ax = plot_lags(decomp_valid_exp, lags=[1, 27, 34, 56])
+plt.show()
+plt.close()
+#maybe use lag 27
 
 
 
 
 #onpromotion
+
+
+#function to make lags
 def make_lags(ts, lags, prefix):
   return pd.concat(
   {
@@ -679,35 +838,47 @@ def make_lags(ts, lags, prefix):
   axis=1
   )
 
-sales_agg_prom = df_train.groupby(df_train.index.day).sales.mean()
-sales_agg_prom = pd.DataFrame(data={
-  "sales": sales_agg_prom.values,
-  "time": np.arange((len(sales_agg_prom)))
-}, index=sales_agg_prom.index)
-sales_agg_prom.time = sales_agg_prom.time + 1 
-sales_agg_prom["onpromotion"] = df_train.groupby(df_train.index.day).onpromotion.mean()
-lags_onpromotion = make_lags(sales_agg_prom.onpromotion, lags=5, prefix="prom")
-sales_agg_prom = sales_agg_prom.merge(lags_onpromotion, how="left", on="date")
+
+#create data frame with 15 onpromotion lags + time decomposed sales
+sales_agg_lag = pd.DataFrame(decomp_valid_exp, columns=["sales_adj"], index=x_valid.index)
+sales_agg_lag["onpromotion"] = df_train.groupby("date").onpromotion.sum()
+lags_prom = make_lags(sales_agg_lag.onpromotion, lags=15, prefix="prom")
+sales_agg_lag = sales_agg_lag.merge(lags_prom, how="left", on="date")
 scaler_std = StandardScaler()
 
 
+#center and scale the sales and onpromotion features
+scaled_sales_prom = scaler_std.fit_transform(sales_agg_lag.values)
+scaled_sales_prom = pd.DataFrame(scaled_sales_prom, columns=sales_agg_lag.columns, index=x_valid.index)
+scaled_sales_prom["time"] = x_valid.index.dayofyear
+
+
 #lineplot of scaled agg sales and onpromotion
-scaled_sales_prom = scaler_std.fit_transform(sales_agg_prom.values)
-scaled_sales_prom = pd.DataFrame(scaled_sales_prom, columns=sales_agg_prom.columns)
-scaled_sales_prom["time"] = sales_agg_prom.time.values
-
-
-#plots
-ax = sns.lineplot(data=scaled_sales_prom, x="time", y="sales", label="sales")
-sns.lineplot(ax=ax, data=sales_agg_prom, x="time", y="onpromotion", label="lag 0")
-sns.lineplot(ax=ax, data=sales_agg_prom, x="time", y="prom_lag_1", label="lag 1")
-sns.lineplot(ax=ax, data=sales_agg_prom, x="time", y="prom_lag_2", label="lag 2")
-sns.lineplot(ax=ax, data=sales_agg_prom, x="time", y="prom_lag_3", label="lag 3")
-sns.lineplot(ax=ax, data=sales_agg_prom, x="time", y="prom_lag_4", label="lag 4")
-sns.lineplot(ax=ax, data=sales_agg_prom, x="time", y="prom_lag_5", label="lag 5")
+ax = sns.lineplot(data=scaled_sales_prom, x=scaled_sales_prom.index.week, y="sales_adj", label="sales")
+sns.lineplot(ax=ax, data=scaled_sales_prom, x=scaled_sales_prom.index.week", y="onpromotion", label="onpromotion")
 plt.show()
 plt.close()
 
 
+# #lag plots
+# 
+# #lag 0
+# ax = sns.regplot(data=scaled_sales_prom, x="onpromotion", y="sales_adj", label="lag 0")
+# ax.set_title("lag 0")
+# plt.show()
+# plt.close()
+# #weak relationship
+# 
+# 
+# #lag 1
+# ax = sns.regplot(data=scaled_sales_prom, x="prom_lag_1", y="sales_adj", label="lag 0")
+# ax.set_title("lag 1")
+# plt.show()
+# plt.close()
 
-#scatter
+
+
+
+
+
+
