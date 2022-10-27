@@ -10,10 +10,18 @@ import matplotlib.pyplot as plt
 from sktime.utils.plotting import plot_series
 from sktime.utils.plotting import plot_lags
 from statsmodels.graphics.tsaplots import plot_pacf
+from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.tsa.deterministic import DeterministicProcess
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.stattools import ccf
 from scipy.signal import periodogram
+from scipy.stats import pearsonr
+from scipy.stats import spearmanr
+from sklearn.metrics import adjusted_mutual_info_score
 
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.model_selection import cross_val_score
 
 # from sktime.transformations.series.detrend import STLTransformer
 # from statsmodels.tsa.seasonal import MSTL
@@ -22,8 +30,11 @@ from sklearn.preprocessing import StandardScaler
 
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_log_error as msle
+from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import make_scorer
 
-
+np.set_printoptions(suppress=True, precision=6)
+pd.options.display.float_format = '{:.10f}'.format
 
 
 #LOAD DATASETS
@@ -48,6 +59,11 @@ df_oil = pd.read_csv("./OriginalData/oil.csv", encoding="utf-8")
 df_holidays = pd.read_csv("./OriginalData/holidays_events.csv", encoding="utf-8")
 df_holidays.date.nunique()
 #there are duplicate dates in holidays
+
+#transactions data
+df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
+df_trans.date.nunique()
+#no duplicate dates
 
 
 #data dictionary
@@ -87,6 +103,15 @@ df_holidays.head()
   #locale: Local, Regional, National
   #locale_name: 23 different cities/regions, or Ecuador
   #description: 103 different holidays
+  
+  
+#df_trans
+df_trans.head()
+#n. of transactions for each store, each date. all categories
+  #for training data only
+  #not all store-date combos have a transactions entry. replace NAs with zeroes
+  #merge on date and store_no
+
 
 
 #rename holiday_types column to avoid clashes at merge
@@ -410,9 +435,29 @@ pd.isnull(df_test).sum()
 # plt.show()
 # #pretty good interpolation
 # plt.close()       
-       
-       
 
+
+#merge transactions data to df_train
+df_trans.set_index(pd.PeriodIndex(df_trans.date, freq="D"), inplace=True)
+df_trans.drop("date", axis=1, inplace=True)      
+df_trans.rename(columns={"store_nbr":"store_no"}, inplace=True)
+
+df_train2 = df_train.merge(df_trans, how="left", on=["date", "store_no"])
+#no rows added
+#no wrong columns added
+df_train2 = df_train2[['id', "sales", "transactions", 'category', 'onpromotion', 'city', 'state', 'store_no',
+       'store_type', 'store_cluster', 'oil', 'local_calendar_holiday',
+       'local_actual_holiday', 'regional_calendar_holiday',
+       'national_calendar_holiday', 'national_actual_holiday', 'event',
+       'new_years_day', 'payday', 'earthquake', "christmas"]]
+
+pd.isnull(df_train2.transactions).sum()
+#245784 NAs 
+
+df_train2.transactions.fillna(0, inplace=True)
+#none left
+
+df_train = df_train2
 
 
 
@@ -421,7 +466,7 @@ pd.isnull(df_test).sum()
 
 #shapes
 df_train.shape
-#(3000888, 20)
+#(3000888, 21)
 df_test.shape
 #(28512, 19)
 
@@ -522,17 +567,12 @@ sales_agg.time = sales_agg.time + 1
 
 #inflation adjustment, base=2010
 cpi = [100, 112.8, 116.8, 121.5, 123.6]
-sales_agg["sales_adj"] = sales_agg["sales"]
-sales_agg.sales_adj.loc[sales_agg.index.year==2013] = sales_agg.sales.loc[sales_agg.index.year==2013] / cpi[1]*cpi[0]
-sales_agg.sales_adj.loc[sales_agg.index.year==2014] = sales_agg.sales.loc[sales_agg.index.year==2014] / cpi[2]*cpi[0]
-sales_agg.sales_adj.loc[sales_agg.index.year==2015] = sales_agg.sales.loc[sales_agg.index.year==2015] / cpi[3]*cpi[0]
-sales_agg.sales_adj.loc[sales_agg.index.year==2016] = sales_agg.sales.loc[sales_agg.index.year==2016] / cpi[4]*cpi[0]
-sales_agg.sales_adj.loc[sales_agg.index.year==2017] = sales_agg.sales.loc[sales_agg.index.year==2017] / cpi[4]*cpi[0]
+sales_agg.sales.loc[sales_agg.index.year==2013] = sales_agg.sales.loc[sales_agg.index.year==2013] / cpi[1]*cpi[0]
+sales_agg.sales.loc[sales_agg.index.year==2014] = sales_agg.sales.loc[sales_agg.index.year==2014] / cpi[2]*cpi[0]
+sales_agg.sales.loc[sales_agg.index.year==2015] = sales_agg.sales.loc[sales_agg.index.year==2015] / cpi[3]*cpi[0]
+sales_agg.sales.loc[sales_agg.index.year==2016] = sales_agg.sales.loc[sales_agg.index.year==2016] / cpi[4]*cpi[0]
+sales_agg.sales.loc[sales_agg.index.year==2017] = sales_agg.sales.loc[sales_agg.index.year==2017] / cpi[4]*cpi[0]
 
-
-#split into train and valid
-sales_agg_train = sales_agg.loc[sales_agg.index.year!=2017]
-sales_agg_valid = sales_agg.loc[sales_agg.index.year==2017]
 
 
 #time components plots
@@ -540,8 +580,7 @@ sns.set_theme(style="darkgrid")
 
 
 #average daily sales across time, across all categories
-ax = sns.lineplot(x="time", y="sales", label="sales", data=sales_agg_train)
-ax = sns.lineplot(x="time", y="sales_adj", label="sales_adj", data=sales_agg_train)
+ax = sns.lineplot(x="time", y="sales", label="sales", data=sales_agg)
 ax.set_title("agg sales over time")
 plt.show()
 plt.close()
@@ -553,7 +592,7 @@ sales_agg.index[sales_agg.time.isin([1,365,729,1093,1458])]
 
 
 #avg sales each month of the year, across all categories
-ax = sns.lineplot(x=sales_agg.index.month, y="sales_adj", hue=sales_agg.index.year, data=sales_agg_train, legend="brief")
+ax = sns.lineplot(x=sales_agg.index.month, y="sales", hue=sales_agg.index.year, data=sales_agg, legend="brief")
 ax.set_title("month of year")
 plt.show()
 plt.close()
@@ -566,7 +605,7 @@ plt.close()
 
 
 #avg sales each week of the year, across all categories
-ax = sns.lineplot(x=sales_agg.index.week, y="sales_adj", hue=sales_agg.index.year, data=sales_agg_train)
+ax = sns.lineplot(x=sales_agg.index.week, y="sales", hue=sales_agg.index.year, data=sales_agg)
 ax.set_title("week of year")
 plt.show()
 plt.close()
@@ -576,7 +615,7 @@ sales_agg.sales.loc[sales_agg.index.week==32]
 
 
 #avg sales each day of the year, across all categories
-ax = sns.lineplot(x=sales_agg.index.dayofyear, y="sales_adj", hue=sales_agg.index.year, data=sales_agg_train)
+ax = sns.lineplot(x=sales_agg.index.dayofyear, y="sales", hue=sales_agg.index.year, data=sales_agg)
 ax.set_title("day of year")
 plt.show()
 #dip at new years day, stable fluctuation across year, peak towards end of year
@@ -587,7 +626,7 @@ plt.close()
 
 
 #avg sales each day of the month, across all categories
-ax = sns.lineplot(x=sales_agg.index.day, y="sales_adj", hue=sales_agg.index.month, data=sales_agg_train)
+ax = sns.lineplot(x=sales_agg.index.day, y="sales", hue=sales_agg.index.month, data=sales_agg)
 ax.set_title("day of month")
 plt.show()
 plt.close()
@@ -599,11 +638,40 @@ sales_agg.loc[(sales_agg.index.month==12) & (sales_agg.index.day.isin([20,21,22,
 
 
 #avg sales each day of the week, across all categories
-ax = sns.lineplot(x=sales_agg.index.dayofweek, y="sales_adj", hue=sales_agg.index.month, data=sales_agg_train)
+ax = sns.lineplot(x=sales_agg.index.dayofweek, y="sales", hue=sales_agg.index.month, data=sales_agg)
 ax.set_title("day of week")
 plt.show()
 #dips until tuesday, ramps up afterwards and peaks at sunday
 plt.close()
+
+
+
+
+#acf plots for avg sales, across time
+ax = plot_acf(sales_agg.sales, lags=365)
+#lags tend to lose significance around 250 days
+plt.show()
+plt.close()
+
+
+ax = plot_acf(sales_agg.sales, lags=90)
+#the within-week seasonality is clear and strong. the trend is clear but not very strong
+plt.show()
+plt.close()
+
+
+ax = plot_acf(sales_agg.sales, lags=29)
+#the within-week seasonality is clear and strong.
+plt.show()
+plt.close()
+
+
+ax = plot_acf(sales_agg.sales, lags=7)
+#sales at t are most correlated with sales at t - 7 (same day of previous week)
+#a U shaped decline and increase in autocorrelation from t to t - 7
+plt.show()
+plt.close()
+
 
 
 
@@ -630,6 +698,8 @@ plt.close()
     #days of month (fourier)
     #days of week (categorical)
     #plot a periodogram and decide?
+
+
 
 
 #plot periodogram
@@ -666,49 +736,53 @@ def plot_periodogram(ts, detrend='linear', ax=None):
     ax.set_title("Periodogram")
     return ax
 
-plot_periodogram(sales_agg.sales_adj)
+plot_periodogram(sales_agg.sales)
 plt.show()
 plt.close()
-#try between quarterly and bimonthly fourier features? 4-6?
+#try between quarterly and monthly fourier features? 4-12? 6 as the sweet spot?
 
 
 
 
-#TIME DECOMPOSITION, AGGREGATE SALES
 
-#detrend, deseasonalize, adjust for calendar features
+
+
+
+
+#TIME SERIES DECOMPOSITION, AGGREGATE SALES
+
+
+#detrend & deseasonalize with linear reg
+
 #use multiplicative decomposition (or log transform sales and use additive)
-y_train =  np.log(sales_agg_train.sales_adj + 0.00001)
-y_valid = np.log(sales_agg_valid.sales_adj + 0.00001)
-
+y_decomp =  np.log(sales_agg.sales + 0.00001)
 
 
 #adjust for time and calendar features with linear reg (minus local and regional holidays, because it's aggregate data)
 
-
 #get calendar dummies
 calendar_cols = ['national_calendar_holiday', 'national_actual_holiday', 'event',
        'new_years_day', 'payday', 'earthquake', 'christmas']
-x_train = df_train[calendar_cols].groupby("date").mean()
+x_decomp = df_train[calendar_cols].groupby("date").mean()
 
 
 #add days of week dummies
-days_week = pd.Series((x_train.index.dayofweek + 1), index=x_train.index)
-x_train = x_train.merge(pd.get_dummies(
+days_week = pd.Series((x_decomp.index.dayofweek + 1), index=x_decomp.index)
+x_decomp = x_decomp.merge(pd.get_dummies(
   days_week, prefix="weekday", drop_first=True), how="left", on="date"
 )
 
 
 #add trend and seasonality features with deterministic process
 dp = DeterministicProcess(
-  index=x_train.index,
+  index=x_decomp.index,
   period=365,
   constant=True,
   order=1,
   fourier=4,
   drop=True
 )
-x_train = x_train.merge(dp.in_sample(), how="left", on="date")
+x_decomp = x_decomp.merge(dp.in_sample(), how="left", on="date")
 
 
 
@@ -719,36 +793,47 @@ x_train = x_train.merge(dp.in_sample(), how="left", on="date")
 # )
 
 
-#split x_cal into train and valid
-x_valid = x_train.loc[x_train.index.year==2017]
-x_train = x_train.loc[x_train.index.year!=2017]
+#create rolling time series split, 5 folds, 15 steps ahead
+cv5 = TimeSeriesSplit(n_splits=5, gap=15)
+#performs splits with first 283 * k observations:
+  #k=1, train=283, test=1401
+  #k=5, train=1415, test=269 etc.
 
 
-
-#fit linear model on dummies
-model_lm = LinearRegression(fit_intercept=False)
-model_lm.fit(x_train, y_train)
+#create linear regressor
+decomp_lm = LinearRegression(fit_intercept=False)
 
 
-#decompose the adjusted log sales
-pred_valid = pd.Series(model_lm.predict(x_valid), index=y_valid.index)
-decomp_valid = y_valid - pred_valid
+#perform time series CV 
+decomp_cv_res = cross_val_score(estimator=decomp_lm, X=x_decomp, y=y_decomp, scoring=make_scorer(mse), cv=cv5)
+np.sqrt(decomp_cv_res)
+#7.30514435, 0.29121716, 0.14066632, 0.19445181, 0.14731206  rmsle, for each respective split
+np.sqrt(decomp_cv_res[1:4]).mean()
+#0.2088 average rmsle excluding the first fold prediction
+#mse with log transformed preds = msle with exp back-transformed preds (tested)
 
 
-#reverse log transformation of predictions
-y_valid_exp = np.exp(y_valid)
-pred_valid_exp = np.exp(pred_valid)
-decomp_valid_exp = np.exp(decomp_valid)
+#fit decomposer on entire series
+decomp_lm.fit(x_decomp, y_decomp)
 
 
-#get rmsle score of decalendaring
-np.sqrt(msle(y_valid_exp, pred_valid_exp))
-#rmsle 0.1308
+#decompose the aggregate log sales
+pred_decomp = pd.Series(decomp_lm.predict(x_decomp), index=x_decomp.index)
+res_decomp = y_decomp - pred_decomp
+
+
+#reverse log transformations
+y_decomp_exp = np.exp(y_decomp)
+pred_decomp_exp = np.exp(pred_decomp)
+res_decomp_exp = np.exp(res_decomp)
+
+
+#DECOMPOSITION PREDICTIONS PLOTS
 
 
 #plot actual vs predicted 2017 agg. sales
-ax=sns.lineplot(x=x_valid.trend, y=y_valid_exp, label="sales")
-sns.lineplot(x=x_valid.trend, y=pred_valid_exp.values, label="preds", ax=ax)
+ax=sns.lineplot(x=x_decomp.trend, y=y_decomp_exp, label="sales")
+sns.lineplot(x=x_decomp.trend, y=pred_decomp_exp.values, label="preds", ax=ax)
 ax.set_title("2017 sales vs preds of decomposition model")
 plt.show()
 plt.close()
@@ -756,8 +841,8 @@ plt.close()
 #but many drops and some peaks are missed. will likely be helped by lag features
 
 
-ax = sns.lineplot(x=y_valid.index.day, y=y_valid_exp, label="sales")
-sns.lineplot(x=y_valid.index.day, y=pred_valid_exp.values, label="preds", ax=ax)
+ax = sns.lineplot(x=x_decomp.index.day, y=y_decomp_exp, label="sales")
+sns.lineplot(x=x_decomp.index.day, y=pred_decomp_exp.values, label="preds", ax=ax)
 ax.set_title("decomposition model preds by days of month")
 plt.show()
 plt.close()
@@ -766,8 +851,8 @@ plt.close()
 #and the decline through a month
 
 
-ax = sns.lineplot(x=y_valid.index.dayofweek, y=y_valid_exp, label="sales")
-sns.lineplot(x=y_valid.index.dayofweek, y=pred_valid_exp.values, label="preds", ax=ax)
+ax = sns.lineplot(x=x_decomp.index.dayofweek, y=y_decomp_exp, label="sales")
+sns.lineplot(x=x_decomp.index.dayofweek, y=pred_decomp_exp.values, label="preds", ax=ax)
 ax.set_title("decpmposition model preds by day of week")
 plt.show()
 plt.close()
@@ -775,57 +860,103 @@ plt.close()
 
 
 
-ax = sns.lineplot(x=x_valid.trend, y=decomp_valid.values)
+
+#DECOMPOSED RESIDUALS PLOTS
+
+
+ax = sns.lineplot(x=x_decomp.trend, y=res_decomp_exp.values)
 ax.set_title("residuals of decomposition model")
 plt.show()
 plt.close()
-#residuals increase until roughly day 125, then decline until roughly day 200
+#the increases in 2014 are beyond the model. other than that it looks mostly stationary
+
+
+#check mean, autocorrelations of the decomposed innovation residuals
+"{:.8f}".format(res_decomp.mean())
+#innovation residuals have 0 mean. forecasts are not biased.
+
+
+ax = plot_acf(res_decomp_exp, lags=50)
+plt.show()
+plt.close()
+#highest ACF at lag 1 (not a spike)
+#then a slow sinusoidal decline
+
+
+ax = plot_pacf(res_decomp_exp, lags=50)
+plt.show()
+plt.close()
+#highest PACF at lag 1 (spike)
+#then a sharp decline at lag 2, no more spikes
+
+
+#consider using an ARIMA(1,d,0)
 
 
 
-#further components needed after decomposing:
-  #lag features most likely
+#test stationarity with augmented dickey fuller test
+
+#pre-decomposition aggregated sales
+adfuller(y_decomp_exp, autolag="AIC")[0]
+#test stat -2.9
+adfuller(y_decomp_exp, autolag="AIC")[1].round(6)
+#p value 0.046, time series close to being stationary
+
+
+#decomposed residuals
+adfuller_res = adfuller(res_decomp_exp, autolag="AIC")
+adfuller_res[0]
+#test stat: -4.95
+print(adfuller_res[1]
+"{:.6f}".format(adfuller_res[1])
+#p value 0.000028, time series is very stationary
 
 
 
 
 
 
-#LAG FEATURES ON DECOMPOSED RESIDUALS
+#EVALUATE LAG FEATURES ON DECOMPOSED RESIDUALS
 
 
 #sales
 
 
 #pacf
-plot_pacf(decomp_valid, lags=60)
+plot_pacf(res_decomp_exp, lags=40)
+#significant lags die out after roughly 35 lags
 plt.show()
 #significant lags:
-  #1, 3, 27, 33, 34 36. 48, 50, 56
-#most significant lags:
-  #1, 27, 34, 56
+  #1, 2, 3, 5, 11, 13, 14, 18, 28, 29, 30, 33, 34
+  #1 is far more significant than anything else
+#most significant lags from each range:
+  #1, 2, 3, 11, 18, 28, 34
 plt.close()
+
+
 
 
 #scatterplots
 
+
 #1-6
-fig, ax = plot_lags(decomp_valid_exp, lags=[i for i in range(1,7)])
+fig, ax = plot_lags(res_decomp_exp, lags=[i for i in range(1,7)])
 plt.show()
 plt.close()
-#use lag 1
+#use lag 1 only
+#use lag 1, 2, 3?
 
 
-#most significant lags
-fig, ax = plot_lags(decomp_valid_exp, lags=[1, 27, 34, 56])
+#most significant lags from 10>
+fig, ax = plot_lags(res_decomp_exp, lags=[1, 3, 11, 18, 28, 34])
 plt.show()
 plt.close()
-#maybe use lag 27
+#could use lag 1 only, others don't seem that different
 
 
 
 
-#onpromotion
+#ONPROMOTION
 
 
 #function to make lags
@@ -840,24 +971,57 @@ def make_lags(ts, lags, prefix):
 
 
 #create data frame with 15 onpromotion lags + time decomposed sales
-sales_agg_lag = pd.DataFrame(decomp_valid_exp, columns=["sales_adj"], index=x_valid.index)
-sales_agg_lag["onpromotion"] = df_train.groupby("date").onpromotion.sum()
-lags_prom = make_lags(sales_agg_lag.onpromotion, lags=15, prefix="prom")
-sales_agg_lag = sales_agg_lag.merge(lags_prom, how="left", on="date")
+sales_prom = pd.DataFrame(res_decomp_exp, columns=["sales"], index=x_decomp.index)
+sales_prom["onpromotion"] = df_train.groupby("date").onpromotion.sum()
+lags_prom = make_lags(sales_prom.onpromotion, lags=21, prefix="prom")
+sales_prom = sales_prom.merge(lags_prom, how="left", on="date")
 scaler_std = StandardScaler()
 
 
 #center and scale the sales and onpromotion features
-scaled_sales_prom = scaler_std.fit_transform(sales_agg_lag.values)
-scaled_sales_prom = pd.DataFrame(scaled_sales_prom, columns=sales_agg_lag.columns, index=x_valid.index)
-scaled_sales_prom["time"] = x_valid.index.dayofyear
+scaled_sales_prom = scaler_std.fit_transform(sales_prom.values)
+scaled_sales_prom = pd.DataFrame(scaled_sales_prom, columns=sales_prom.columns, index=x_decomp.index)
+scaled_sales_prom["time"] = x_decomp.index.dayofyear
 
 
-#lineplot of scaled agg sales and onpromotion
-ax = sns.lineplot(data=scaled_sales_prom, x=scaled_sales_prom.index.week, y="sales_adj", label="sales")
-sns.lineplot(ax=ax, data=scaled_sales_prom, x=scaled_sales_prom.index.week", y="onpromotion", label="onpromotion")
+#check if onpromotion series is stationary
+adfuller(sales_prom.onpromotion, autolag="AIC")[0]
+#test stat -1.1
+"{:.6f}".format(adfuller(sales_prom.onpromotion, autolag="AIC")[1])
+#p value 0.72, very stationary
+
+
+#lineplot of scaled agg sales and onpromotion, by weeks of year
+ax = sns.lineplot(data=scaled_sales_prom, x=scaled_sales_prom.index.week, y="sales", label="sales")
+sns.lineplot(ax=ax, data=scaled_sales_prom, x=scaled_sales_prom.index.week, y="onpromotion", label="onpromotion")
 plt.show()
 plt.close()
+#sometimes an increase in onpromotion precedes an increase in sales by 2-3 periods
+
+
+#correlations
+
+
+#lag 0
+pearsonr(sales_prom.sales, sales_prom.onpromotion)
+#zero pearson
+spearmanr(sales_prom.sales, sales_prom.onpromotion)
+#zero spearman
+"{:.6f}".format(adjusted_mutual_info_score(sales_prom.onpromotion.values, sales_prom.sales.values))
+#zero
+
+
+#cross correlations for 365 lags
+sales_prom_ccf = ccf(sales_prom.sales, sales_prom.onpromotion, adjusted=False)[0:365]
+ax=sns.lineplot(x=range(0, len(sales_prom_ccf)), y=sales_prom_ccf)
+ax.set_title("cross correlation of sales and onpromotion")
+ax.set_xlabel("lag")
+ax.set_ylabel("corr")
+plt.show()
+plt.close()
+#none
+#sum of onpromotion is likely not predictive for aggregate sales
+
 
 
 # #lag plots
@@ -878,6 +1042,103 @@ plt.close()
 
 
 
+
+#OIL
+
+
+#create data frame with sales and oil
+sales_oil = pd.DataFrame(res_decomp_exp, columns=["sales"], index=x_decomp.index)
+sales_oil ["oil"] = df_train.groupby("date").oil.mean()
+lags_oil = make_lags(sales_oil.oil, lags=31, prefix="oil")
+sales_oil= sales_oil.merge(lags_oil, how="left", on="date")
+
+
+#center and scale the sales and oil features
+scaled_sales_oil= scaler_std.fit_transform(sales_oil.values)
+scaled_sales_oil= pd.DataFrame(scaled_sales_oil, columns=sales_oil.columns, index=x_decomp.index)
+scaled_sales_oil["time"] = x_decomp.index.dayofyear
+
+
+#check if oil series is stationary
+adfuller(sales_oil.oil, autolag="AIC")[0]
+#test stat -0.87
+"{:.6f}".format(adfuller(sales_oil.oil, autolag="AIC")[1])
+#p value 0.8, very stationary
+
+
+#lineplot of scaled agg sales and onpromotion, by weeks of year
+ax = sns.lineplot(data=scaled_sales_oil, x=scaled_sales_oil.index.week, y="sales", label="sales")
+sns.lineplot(ax=ax, data=scaled_sales_oil, x=scaled_sales_oil.index.week, y="oil", label="oil")
+plt.show()
+plt.close()
+#oil is very stable compared to sales
+
+
+#correlations
+
+
+#lag 0
+pearsonr(sales_oil.sales, sales_oil.oil)
+#zero pearson, but very high value
+spearmanr(sales_oil.sales, sales_oil.oil)
+#zero spearman, very significant p
+"{:.6f}".format(adjusted_mutual_info_score(sales_oil.sales, sales_oil.oil))
+#zero
+
+
+#cross correlations for 365 lags
+sales_oil_ccf = ccf(sales_oil.sales, sales_oil.oil, adjusted=False)[0:730]
+ax=sns.lineplot(x=range(0, len(sales_oil_ccf)), y=sales_oil_ccf)
+ax.set_title("cross correlation of sales and oil")
+ax.set_xlabel("lag")
+ax.set_ylabel("corr")
+plt.show()
+plt.close()
+#starts from 0 but increases as lags go back, reaches 0.2 at day 365, then drops again
+
+
+
+#lag plots
+
+#lag 0
+ax = sns.regplot(data=scaled_sales_oil, x="oil", y="sales", label="lag 0")
+ax.set_title("lag 0")
+plt.show()
+plt.close()
+#no relationship
+
+
+#lag 30
+ax = sns.regplot(data=scaled_sales_oil, x="oil_lag_30", y="sales", label="lag 30")
+ax.set_title("lag 30")
+plt.show()
+plt.close()
+#no relationship
+
+
+#consider moving averages of oil as predictor of aggregate sales
+oil_28=scaled_sales_oil.oil.rolling(28).mean()
+
+ax = sns.regplot(x=oil_28, y=scaled_sales_oil.sales, label="MA28")
+ax.set_title("moving average 28")
+plt.show()
+plt.close()
+#no relationship.
+#did our seasonality adjustment wipe away the effects of oil???
+
+
+
+
+
+
+
+
+
+
+
+
+
+#BASELINE MODEL PIPELINE
 
 
 
