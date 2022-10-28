@@ -9,32 +9,43 @@ import matplotlib.pyplot as plt
 
 from sktime.utils.plotting import plot_series
 from sktime.utils.plotting import plot_lags
+from sktime.transformations.series.difference import Differencer
+from sktime.transformations.hierarchical.aggregate import Aggregator
+# from sktime.forecasting.arima import AutoARIMA
+# from sktime.forecasting.arima import ARIMA
+
+
 from statsmodels.graphics.tsaplots import plot_pacf
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.tsa.deterministic import DeterministicProcess
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.stattools import ccf
+
 from scipy.signal import periodogram
 from scipy.stats import pearsonr
 from scipy.stats import spearmanr
-from sklearn.metrics import adjusted_mutual_info_score
 
+from sklearn.metrics import adjusted_mutual_info_score
+from sklearn.metrics import mean_squared_error as mse
+from sklearn.metrics import make_scorer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LinearRegression
+
+from darts.timeseries import TimeSeries
+from darts.models.forecasting.arima import ARIMA
 
 # from sktime.transformations.series.detrend import STLTransformer
 # from statsmodels.tsa.seasonal import MSTL
 # from statsmodels.tsa.seasonal import DecomposeResult
 
 
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_log_error as msle
-from sklearn.metrics import mean_squared_error as mse
-from sklearn.metrics import make_scorer
 
-np.set_printoptions(suppress=True, precision=6)
-pd.options.display.float_format = '{:.10f}'.format
+
+
+np.set_printoptions(suppress=True, precision=8)
+pd.options.display.float_format = '{:.8f}'.format
 
 
 #LOAD DATASETS
@@ -819,13 +830,14 @@ decomp_lm.fit(x_decomp, y_decomp)
 
 #decompose the aggregate log sales
 pred_decomp = pd.Series(decomp_lm.predict(x_decomp), index=x_decomp.index)
-res_decomp = y_decomp - pred_decomp
+res_decomp = y_decomp - pred_decomp #innovation residuals (multiplicative decomposed)
 
 
 #reverse log transformations
 y_decomp_exp = np.exp(y_decomp)
 pred_decomp_exp = np.exp(pred_decomp)
-res_decomp_exp = np.exp(res_decomp)
+
+
 
 
 #DECOMPOSITION PREDICTIONS PLOTS
@@ -861,11 +873,11 @@ plt.close()
 
 
 
-#DECOMPOSED RESIDUALS PLOTS
+#INNOVATION RESIDUALS PLOTS
 
 
-ax = sns.lineplot(x=x_decomp.trend, y=res_decomp_exp.values)
-ax.set_title("residuals of decomposition model")
+ax = sns.lineplot(x=x_decomp.trend, y=res_decomp.values)
+ax.set_title("inno residuals of decomposition model")
 plt.show()
 plt.close()
 #the increases in 2014 are beyond the model. other than that it looks mostly stationary
@@ -876,14 +888,14 @@ plt.close()
 #innovation residuals have 0 mean. forecasts are not biased.
 
 
-ax = plot_acf(res_decomp_exp, lags=50)
+ax = plot_acf(res_decomp, lags=50)
 plt.show()
 plt.close()
 #highest ACF at lag 1 (not a spike)
 #then a slow sinusoidal decline
 
 
-ax = plot_pacf(res_decomp_exp, lags=50)
+ax = plot_pacf(res_decomp, lags=50)
 plt.show()
 plt.close()
 #highest PACF at lag 1 (spike)
@@ -897,50 +909,46 @@ plt.close()
 #test stationarity with augmented dickey fuller test
 
 #pre-decomposition aggregated sales
-adfuller(y_decomp_exp, autolag="AIC")[0]
-#test stat -2.9
-adfuller(y_decomp_exp, autolag="AIC")[1].round(6)
-#p value 0.046, time series close to being stationary
+adfuller(y_decomp, autolag="AIC")[0]
+#test stat -2.52
+adfuller(y_decomp, autolag="AIC")[1].round(6)
+#p value 0.111, time series is non-stationary
 
 
 #decomposed residuals
-adfuller_res = adfuller(res_decomp_exp, autolag="AIC")
+adfuller_res = adfuller(res_decomp, autolag="AIC")
 adfuller_res[0]
-#test stat: -4.95
-print(adfuller_res[1]
+#test stat: -4.85
 "{:.6f}".format(adfuller_res[1])
-#p value 0.000028, time series is very stationary
+#p value 0.000043, time series is very stationary
 
 
 
 
 
 
-#EVALUATE LAG FEATURES ON DECOMPOSED RESIDUALS
+#EVALUATE LAG FEATURES ON MULTIPLICATIVE DECOMPOSED RESIDUALS
 
 
-#sales
+#SALES LAGS
 
 
 #pacf
-plot_pacf(res_decomp_exp, lags=40)
-#significant lags die out after roughly 35 lags
+plot_pacf(res_decomp, method="ywm", lags=60)
 plt.show()
-#significant lags:
-  #1, 2, 3, 5, 11, 13, 14, 18, 28, 29, 30, 33, 34
-  #1 is far more significant than anything else
-#most significant lags from each range:
-  #1, 2, 3, 11, 18, 28, 34
 plt.close()
-
-
+#significant lags:
+  #1, 2, 3, 5, 11, 13, 14, 18, 28, 29, 30, 33, 34, 42, 49, 60
+#most significant lags from each range:
+  #1, 2, 3, 11, 28, 34, 42, 49, 60
+  #1 is far more significant than anything else
 
 
 #scatterplots
 
 
 #1-6
-fig, ax = plot_lags(res_decomp_exp, lags=[i for i in range(1,7)])
+fig, ax = plot_lags(res_decomp, lags=[i for i in range(1,7)])
 plt.show()
 plt.close()
 #use lag 1 only
@@ -948,7 +956,7 @@ plt.close()
 
 
 #most significant lags from 10>
-fig, ax = plot_lags(res_decomp_exp, lags=[1, 3, 11, 18, 28, 34])
+fig, ax = plot_lags(res_decomp, lags=[11, 18, 28, 34, 42, 60])
 plt.show()
 plt.close()
 #could use lag 1 only, others don't seem that different
@@ -956,8 +964,215 @@ plt.close()
 
 
 
+#COVARIATE LAGS (ONPROMOTION, OIL, TRANSACTIONS)
+
+
+
+
+#create data frame with covariates
+sales_covar = pd.DataFrame(res_decomp, columns=["sales"], index=x_decomp.index)
+sales_covar["onpromotion"] = df_train.groupby("date").onpromotion.sum()
+sales_covar["oil"] = df_train.groupby("date").oil.mean()
+sales_covar["trans"] = df_train.groupby("date").transactions.sum()
+sales_covar.drop("sales", axis=1, inplace=True)
+
+
+#check if covariates are stationary
+
+#onpromotion
+adfuller(sales_covar["onpromotion"], autolag="AIC")[0]
+#test stat -1.1
+"{:.6f}".format(adfuller(sales_covar["onpromotion"], autolag="AIC")[1])
+#p value 0.72, very non-stationary
+
+
+#oil
+adfuller(sales_covar["oil"], autolag="AIC")[0]
+#test stat -0.87
+"{:.6f}".format(adfuller(sales_covar["oil"], autolag="AIC")[1])
+#p value 0.8, very non-stationary
+
+
+#transactions
+adfuller(sales_covar["trans"], autolag="AIC")[0]
+#test stat -6.28
+"{:.6f}".format(adfuller(sales_covar["trans"], autolag="AIC")[1])
+#p value 0, stationary
+
+
+#difference the covariates
+differencer = Differencer(lags=1)
+sales_covar = differencer.fit_transform(sales_covar)
+#all covariates now stationary
+
+
+#center and scale the covariates and decomposed sales
+scaler_std = StandardScaler()
+sales_covar["sales"] = res_decomp.values
+sales_covar_scaled = scaler_std.fit_transform(sales_covar.values)
+sales_covar = pd.DataFrame(sales_covar_scaled, columns=sales_covar.columns, index=x_decomp.index)
+sales_covar["time"] = x_decomp["trend"]
+
+
+
 #ONPROMOTION
 
+
+#lineplot of scaled agg sales and onpromotion, by days of month
+ax = sns.lineplot(data=sales_covar, x=sales_covar.index.day, y="sales", label="sales")
+sns.lineplot(ax=ax, data=sales_covar, x=sales_covar.index.day, y="onpromotion", label="onpromotion")
+plt.show()
+plt.close()
+#onpromotion barely moves compared to sales
+
+
+#lag 0
+pearsonr(sales_covar.sales, sales_covar.onpromotion)
+#zero pearson
+spearmanr(sales_covar.sales, sales_covar.onpromotion)
+#zero spearman
+"{:.6f}".format(adjusted_mutual_info_score(sales_covar.onpromotion.values, sales_covar.sales.values))
+#zero MI
+
+
+#cross correlations for 365 lags
+sales_prom_ccf = ccf(sales_covar.sales, sales_covar.onpromotion, adjusted=False)[0:365]
+ax=sns.lineplot(x=range(0, len(sales_prom_ccf)), y=sales_prom_ccf)
+ax.set_title("cross correlation of sales and onpromotion")
+ax.set_xlabel("lag")
+ax.set_ylabel("corr")
+plt.show()
+plt.close()
+#none
+#sum of onpromotion is likely not predictive for aggregate sales
+
+
+
+
+#OIL
+
+
+#lineplot of scaled agg sales and onpromotion, by weeks of year
+ax = sns.lineplot(data=sales_covar, x=sales_covar.index.week, y="sales", label="sales")
+sns.lineplot(ax=ax, data=sales_covar, x=sales_covar.index.week, y="oil", label="oil")
+plt.show()
+plt.close()
+#no clear relation
+
+
+#lag 0
+pearsonr(sales_covar.sales, sales_covar.oil)
+#zero pearson, but very high p value
+spearmanr(sales_covar.sales, sales_covar.oil)
+#zero spearman, very significant p
+"{:.6f}".format(adjusted_mutual_info_score(sales_covar.sales, sales_covar.oil))
+#zero MI
+
+
+#cross correlations for 365 lags
+sales_oil_ccf = ccf(sales_covar.sales, sales_covar.oil, adjusted=False)[0:730]
+ax=sns.lineplot(x=range(0, len(sales_oil_ccf)), y=sales_oil_ccf)
+ax.set_title("cross correlation of sales and oil")
+ax.set_xlabel("lag")
+ax.set_ylabel("corr")
+plt.show()
+plt.close()
+#zero
+
+
+#consider moving averages of oil as predictor of aggregate sales
+oil_56=sales_covar.oil.rolling(56).mean()
+oil_28=sales_covar.oil.rolling(28).mean()
+oil_21=sales_covar.oil.rolling(21).mean()
+oil_14=sales_covar.oil.rolling(14).mean()
+oil_7=sales_covar.oil.rolling(7).mean()
+oil_ma = pd.DataFrame(
+  data={"oil_28":oil_28.values,
+  "oil_14":oil_14.values,
+  "oil_7":oil_7.values},
+  index=sales_covar.index
+)
+
+
+#21-day ma
+ax = sns.regplot(x=oil_21, y=sales_covar.sales, label="MA21")
+ax.set_title("moving average 28")
+plt.show()
+plt.close()
+#somewhat declining relationship. seems to be the sweet spot
+
+
+pearsonr(sales_covar.sales, oil_56.fillna(method="bfill"))
+#-0.06 pearson, very small p val
+spearmanr(sales_covar.sales, oil_56.fillna(method="bfill"))
+#-0.08 spearman, very small pval
+
+pearsonr(sales_covar.sales, oil_28.fillna(method="bfill"))
+#-0.18 pearson, very small p val
+spearmanr(sales_covar.sales, oil_28.fillna(method="bfill"))
+#-0.17 spearman, very small pval
+
+pearsonr(sales_covar.sales, oil_21.fillna(method="bfill"))
+#-0.17 pearson, very small p val
+spearmanr(sales_covar.sales, oil_21.fillna(method="bfill"))
+#-0.16 spearman, very small pval
+
+pearsonr(sales_covar.sales, oil_14.fillna(method="bfill"))
+#-0.14 pearson, very small p val
+spearmanr(sales_covar.sales, oil_14.fillna(method="bfill"))
+#-0.13 spearman, very small pval
+
+pearsonr(sales_covar.sales, oil_7.fillna(method="bfill"))
+#-0.1 pearson, very small p val
+spearmanr(sales_covar.sales, oil_7.fillna(method="bfill"))
+#-0.1 spearman, very small pval
+
+
+
+
+#TRANSACTIONS (CONSIDER LAG 15+)
+
+
+#lineplot of scaled agg sales and trans, by weeks of year
+ax = sns.lineplot(data=sales_covar, x=sales_covar.index.day, y="sales", label="sales")
+sns.lineplot(ax=ax, data=sales_covar, x=sales_covar.index.day, y="trans", label="trans")
+plt.show()
+plt.close()
+#seems to vaguely follow the monthly pattern of sales?
+
+
+#correlations
+
+
+#lag 0
+pearsonr(sales_covar.sales, sales_covar.trans)
+#0.12 pearson
+spearmanr(sales_covar.sales, sales_covar.trans)
+#0.13 spearman
+"{:.6f}".format(adjusted_mutual_info_score(sales_covar.sales, sales_covar.trans))
+#zero MI
+
+
+#cross correlations for 365 lags
+sales_trans_ccf = ccf(sales_covar.sales, sales_covar.trans, adjusted=False)[0:730]
+ax=sns.lineplot(x=range(0, len(sales_trans_ccf)), y=sales_trans_ccf)
+ax.set_title("cross correlation of sales and trans")
+ax.set_xlabel("lag")
+ax.set_ylabel("corr")
+plt.show()
+plt.close()
+#highest correlation of 0.11 at lag 0, then drops and stays low
+
+
+
+
+#FIT LAGGED PREDICTORS MODEL ON DECOMPOSED RESIDUALS
+
+#outcome series: res_decomp
+
+#features:
+  #target lag 1, 2, 3, 5, 11, 28
+  #oil_21
 
 #function to make lags
 def make_lags(ts, lags, prefix):
@@ -970,176 +1185,85 @@ def make_lags(ts, lags, prefix):
   )
 
 
-#create data frame with 15 onpromotion lags + time decomposed sales
-sales_prom = pd.DataFrame(res_decomp_exp, columns=["sales"], index=x_decomp.index)
-sales_prom["onpromotion"] = df_train.groupby("date").onpromotion.sum()
-lags_prom = make_lags(sales_prom.onpromotion, lags=21, prefix="prom")
-sales_prom = sales_prom.merge(lags_prom, how="left", on="date")
-scaler_std = StandardScaler()
+#make lags
+res_lags = make_lags(res_decomp, lags=28, prefix="sales")
+res_lags = res_lags.iloc[:,[0,1,2,4,10,27]]
 
 
-#center and scale the sales and onpromotion features
-scaled_sales_prom = scaler_std.fit_transform(sales_prom.values)
-scaled_sales_prom = pd.DataFrame(scaled_sales_prom, columns=sales_prom.columns, index=x_decomp.index)
-scaled_sales_prom["time"] = x_decomp.index.dayofyear
+#combine lags with oil_21
+x_train = res_lags.merge(oil_21, how="left", left_index=True, right_index=True)
+x_train = x_train.fillna(x_train.median())
 
 
-#check if onpromotion series is stationary
-adfuller(sales_prom.onpromotion, autolag="AIC")[0]
-#test stat -1.1
-"{:.6f}".format(adfuller(sales_prom.onpromotion, autolag="AIC")[1])
-#p value 0.72, very stationary
+#combine x_train with x_decomp
+x_train = x_train.merge(x_decomp, how="left", left_index=True, right_index=True)
 
 
-#lineplot of scaled agg sales and onpromotion, by weeks of year
-ax = sns.lineplot(data=scaled_sales_prom, x=scaled_sales_prom.index.week, y="sales", label="sales")
-sns.lineplot(ax=ax, data=scaled_sales_prom, x=scaled_sales_prom.index.week, y="onpromotion", label="onpromotion")
+#linear regression
+lm = LinearRegression(fit_intercept=False)
+
+
+#crossvalidate model
+cv_res = cross_val_score(estimator=lm, X=x_train, y=y_decomp, scoring=make_scorer(mse), cv=cv5)
+np.sqrt(cv_res)
+#6.65689981, 0.12895082, 0.09362015, 0.11907198, 0.09725895 rmsle respectively
+np.sqrt(cv_res[1:4]).mean()
+#0.1138 aggregated rmsle except first fold
+
+
+#fit model on pre 2017 data, evaluate and plot it on 2017 data
+x_fit = x_train.loc[x_train.index.year!=2017]
+y_fit = y_decomp.loc[y_decomp.index.year!=2017]
+x_valid = x_train.loc[x_train.index.year==2017]
+y_valid = y_decomp.loc[y_decomp.index.year==2017]
+lm.fit(x_fit, y_fit)
+y_pred = pd.Series(lm.predict(x_valid), index=y_valid.index)
+np.sqrt(mse(y_pred, y_valid))
+#rmsle 0.092 on 2017
+
+
+#plot 2017 predictions
+ax = sns.lineplot(x=y_valid.index.dayofyear, y=y_valid, label="actual")
+sns.lineplot(ax=ax, x=y_valid.index.dayofyear, y=y_pred, label="predicted")
+ax.set_title("actual vs predicted agg sales 2017")
 plt.show()
 plt.close()
-#sometimes an increase in onpromotion precedes an increase in sales by 2-3 periods
+#not bad overall, misses the post jan 1 peak, doesn't fully capture the magnitude of some peaks and troughs
 
 
-#correlations
-
-
-#lag 0
-pearsonr(sales_prom.sales, sales_prom.onpromotion)
-#zero pearson
-spearmanr(sales_prom.sales, sales_prom.onpromotion)
-#zero spearman
-"{:.6f}".format(adjusted_mutual_info_score(sales_prom.onpromotion.values, sales_prom.sales.values))
-#zero
-
-
-#cross correlations for 365 lags
-sales_prom_ccf = ccf(sales_prom.sales, sales_prom.onpromotion, adjusted=False)[0:365]
-ax=sns.lineplot(x=range(0, len(sales_prom_ccf)), y=sales_prom_ccf)
-ax.set_title("cross correlation of sales and onpromotion")
-ax.set_xlabel("lag")
-ax.set_ylabel("corr")
+ax = sns.lineplot(x=y_valid.index.week, y=y_valid, label="actual")
+sns.lineplot(ax=ax, x=y_valid.index.week, y=y_pred, label="predicted")
+ax.set_title("actual vs predicted agg sales 2017")
 plt.show()
 plt.close()
-#none
-#sum of onpromotion is likely not predictive for aggregate sales
+#follows the annual trend and season well, but misses the magnitude of some peaks and troughs
 
 
-
-# #lag plots
-# 
-# #lag 0
-# ax = sns.regplot(data=scaled_sales_prom, x="onpromotion", y="sales_adj", label="lag 0")
-# ax.set_title("lag 0")
-# plt.show()
-# plt.close()
-# #weak relationship
-# 
-# 
-# #lag 1
-# ax = sns.regplot(data=scaled_sales_prom, x="prom_lag_1", y="sales_adj", label="lag 0")
-# ax.set_title("lag 1")
-# plt.show()
-# plt.close()
-
-
-
-
-#OIL
-
-
-#create data frame with sales and oil
-sales_oil = pd.DataFrame(res_decomp_exp, columns=["sales"], index=x_decomp.index)
-sales_oil ["oil"] = df_train.groupby("date").oil.mean()
-lags_oil = make_lags(sales_oil.oil, lags=31, prefix="oil")
-sales_oil= sales_oil.merge(lags_oil, how="left", on="date")
-
-
-#center and scale the sales and oil features
-scaled_sales_oil= scaler_std.fit_transform(sales_oil.values)
-scaled_sales_oil= pd.DataFrame(scaled_sales_oil, columns=sales_oil.columns, index=x_decomp.index)
-scaled_sales_oil["time"] = x_decomp.index.dayofyear
-
-
-#check if oil series is stationary
-adfuller(sales_oil.oil, autolag="AIC")[0]
-#test stat -0.87
-"{:.6f}".format(adfuller(sales_oil.oil, autolag="AIC")[1])
-#p value 0.8, very stationary
-
-
-#lineplot of scaled agg sales and onpromotion, by weeks of year
-ax = sns.lineplot(data=scaled_sales_oil, x=scaled_sales_oil.index.week, y="sales", label="sales")
-sns.lineplot(ax=ax, data=scaled_sales_oil, x=scaled_sales_oil.index.week, y="oil", label="oil")
+ax = sns.lineplot(x=y_valid.index.day, y=y_valid, label="actual")
+sns.lineplot(ax=ax, x=y_valid.index.day, y=y_pred, label="predicted")
+ax.set_title("actual vs predicted agg sales 2017")
 plt.show()
 plt.close()
-#oil is very stable compared to sales
+#follows the within month moves well, but doesn't fully capture the magnitudes
 
 
-#correlations
-
-
-#lag 0
-pearsonr(sales_oil.sales, sales_oil.oil)
-#zero pearson, but very high value
-spearmanr(sales_oil.sales, sales_oil.oil)
-#zero spearman, very significant p
-"{:.6f}".format(adjusted_mutual_info_score(sales_oil.sales, sales_oil.oil))
-#zero
-
-
-#cross correlations for 365 lags
-sales_oil_ccf = ccf(sales_oil.sales, sales_oil.oil, adjusted=False)[0:730]
-ax=sns.lineplot(x=range(0, len(sales_oil_ccf)), y=sales_oil_ccf)
-ax.set_title("cross correlation of sales and oil")
-ax.set_xlabel("lag")
-ax.set_ylabel("corr")
+ax = sns.lineplot(x=y_valid.index.dayofweek, y=y_valid, label="actual")
+sns.lineplot(ax=ax, x=y_valid.index.dayofweek, y=y_pred, label="predicted")
+ax.set_title("actual vs predicted agg sales 2017")
 plt.show()
 plt.close()
-#starts from 0 but increases as lags go back, reaches 0.2 at day 365, then drops again
-
-
-
-#lag plots
-
-#lag 0
-ax = sns.regplot(data=scaled_sales_oil, x="oil", y="sales", label="lag 0")
-ax.set_title("lag 0")
-plt.show()
-plt.close()
-#no relationship
-
-
-#lag 30
-ax = sns.regplot(data=scaled_sales_oil, x="oil_lag_30", y="sales", label="lag 30")
-ax.set_title("lag 30")
-plt.show()
-plt.close()
-#no relationship
-
-
-#consider moving averages of oil as predictor of aggregate sales
-oil_28=scaled_sales_oil.oil.rolling(28).mean()
-
-ax = sns.regplot(x=oil_28, y=scaled_sales_oil.sales, label="MA28")
-ax.set_title("moving average 28")
-plt.show()
-plt.close()
-#no relationship.
-#did our seasonality adjustment wipe away the effects of oil???
+#follows the within week moves well, 
+#but underestimates the wednesday drop and overestimates the weekend peak
 
 
 
 
+#BUILD PIPELINE, RECONCILE TOP-DOWN
 
 
+#create dataframes with hierarchical multi indexes
 
-
-
-
-
-
-
-#BASELINE MODEL PIPELINE
-
-
-
+#load back modified data
+df_train = pd.read_csv("./ModifiedData/train_modified.csv", encoding="utf-8")
+df_test = pd.read_csv("./ModifiedData/test_modified.csv", encoding="utf-8")
 
