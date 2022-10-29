@@ -7,6 +7,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+import sktime
 from sktime.utils.plotting import plot_series
 from sktime.utils.plotting import plot_lags
 from sktime.transformations.series.difference import Differencer
@@ -33,8 +34,10 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import cross_val_score
 from sklearn.linear_model import LinearRegression
 
-from darts.timeseries import TimeSeries
-from darts.models.forecasting.arima import ARIMA
+
+import darts
+# from darts.timeseries import TimeSeries
+# from darts.models.forecasting.arima import ARIMA
 
 # from sktime.transformations.series.detrend import STLTransformer
 # from statsmodels.tsa.seasonal import MSTL
@@ -1261,9 +1264,80 @@ plt.close()
 #BUILD PIPELINE, RECONCILE TOP-DOWN
 
 
-#create dataframes with hierarchical multi indexes
-
+#to create a hierarchy, you need to convert data to wide format, with one row per one date
+#with darts:
+  #first add all features you want to df_train and df_test. handle NAs
+  #get rid of non-features (id, city, state, store_type, store_cluster)
+  #convert all booleans to integers
+  #then convert df_train and df_test to wide (see bottom of notes). handle NAs 
+  #split the data into:
+    #target: darts time series with one row per date, one column per:
+      #total sales that date
+      #each category's total sales that date (will add up to Total)
+      #each store's total sales that date (will add up to Total)
+      #each category-store combo's sales that date (will add up to Total)
+      #more hierarchy elements? will they improve performance in reconciliation?
+        #store-cluster-type-total?
+        #city-state-total?
+      #sales lags 1 2 3 5 11 28 will be specified in RegressionModel (remember to handle NAs)
+    #past_covariates: darts time series with one row per date, one column per:
+      #trend dummy order 1
+      #fourier features, period 365, order 4
+      #oil moving average 21
+    #static covariates: add to target time series when creating
+      #calendar dummies
+      #days of week dummies
+    #how to handle the data:
+      #create target time series with static covariates from long data using:
+        #TimeSeries.from_group_dataframe() https://unit8co.github.io/darts/examples/15-static-covariates.html
+      #create past covariates separately as another time series
+      #add hierarchy dictionary to the target time series https://unit8co.github.io/darts/examples/16-hierarchical-reconciliation.html?highlight=hierarchical
+    
+    
+    
+    
 #load back modified data
 df_train = pd.read_csv("./ModifiedData/train_modified.csv", encoding="utf-8")
 df_test = pd.read_csv("./ModifiedData/test_modified.csv", encoding="utf-8")
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# #convert dates to indexes again
+# df_train.set_index(pd.PeriodIndex(df_train.date, freq="D"), inplace=True)
+# df_train.drop("date", axis=1, inplace=True)
+# 
+# df_test.set_index(pd.PeriodIndex(df_test.date, freq="D"), inplace=True)
+# df_test.drop("date", axis=1, inplace=True)
+
+
+# #combine category and store_no cols
+# df_test["category"] = df_test["category"].astype(str) + "_" + df_test["store_no"].astype(str)
+# df_train["category"] = df_train["category"].astype(str) + "_" + df_train["store_no"].astype(str)
+# df_test["category"].nunique()
+# df_train["category"].nunique()
+# #1782 unique category-store combos
+
+
+# #set date and category to multiindex
+# test_multiindex = df_test[["category", "date"]]
+# test_multiindex.date = pd.PeriodIndex(test_multiindex.date, freq="D")
+# test_multiindex = pd.MultiIndex.from_frame(test_multiindex)
+# df_test.index = test_multiindex
+# 
+# 
+# #transform to hierarchical
+# agg = Aggregator()
+# df_test = agg.fit_transform(df_test)
