@@ -2,6 +2,7 @@
 
 import pandas as pd
 import numpy as np
+from functools import reduce
 
 
 import seaborn as sns
@@ -131,21 +132,13 @@ df_trans.head()
 #rename holiday_types column to avoid clashes at merge
 df_holidays.rename(columns={"type":"holiday_type"}, inplace=True)
 
+#rename oil column
+df_oil.rename(columns={"dcoilwtico":"oil"}, inplace=True)
+
 
 #inspect unique date and duplicate date holidays
 df_holidays_unique = df_holidays.drop_duplicates(subset="date", keep=False)
 df_holidays_duplicate = df_holidays[df_holidays.duplicated(["date"], keep=False)]
-
-
-
-#add calendar_holiday and actual_holiday columns
-  #calendar_holiday=1 if: Holiday, Additional, Work Day
-  #actual_holiday=1 if: (Holiday & Transferred=FALSE), Transfer, Additional, Bridge
-df_holidays["calendar_holiday"] = df_holidays.holiday_type.isin(["Holiday", "Additional", "Work Day"])
-df_holidays["actual_holiday"] = (
-  df_holidays.holiday_type.isin(["Transfer", "Additional", "Bridge"]) | 
-((df_holidays.holiday_type=="Holiday") & (df_holidays.transferred==False))
-)
 
 
 #split special events
@@ -155,24 +148,8 @@ df_holidays = df_holidays.drop(labels=(df_events.index), axis=0)
 
 #split holidays into local, regional, national
 df_local = df_holidays.loc[df_holidays.locale=="Local"]
-df_local.rename(
-  columns={
-    "calendar_holiday":"local_calendar_holiday",
-    "actual_holiday":"local_actual_holiday"}, inplace=True)
-
 df_regional = df_holidays.loc[df_holidays.locale=="Regional"]
-df_regional.rename(
-  columns={
-    "calendar_holiday":"regional_calendar_holiday",
-    "actual_holiday":"regional_actual_holiday"}, inplace=True)
-
-
 df_national = df_holidays.loc[df_holidays.locale=="National"]
-df_national.rename(
-  columns={
-    "calendar_holiday":"national_calendar_holiday",
-    "actual_holiday":"national_actual_holiday"}, inplace=True)
-
 
 
 #check duplicate date & locale_name in each holiday dataframe
@@ -199,17 +176,46 @@ del df_national_duplicated, bridge_indexes
 
 
 #check & handle event date duplicates (all events are nationwide)
-df_events.drop("calendar_holiday", axis=1, inplace=True)
-df_events.rename(columns={"actual_holiday":"event"}, inplace=True)
-df_events["event"] = ~df_events["event"]
-
-
 df_events_duplicated = df_events[df_events.duplicated(["date"], keep=False)]
-#2 duplicates, one is earthquake, other is mother's day. drop earthquake
+#1 pair of duplicates: earthquake and mother's day in 2016-05-08
+#drop earthquake because it'll be factored in later, row 244
 df_events.loc[244]
 df_events.drop(244, axis=0, inplace=True)
-#no more date duplicates in events
+#no date duplicates in events remain
 del df_events_duplicated
+
+
+
+#add calendar_holiday and actual_holiday columns
+  #calendar_holiday=1 if: Holiday, Additional, Work Day
+  #actual_holiday=1 if: (Holiday & Transferred=FALSE), Transfer, Additional, Bridge
+# df_holidays["calendar_holiday"] = df_holidays.holiday_type.isin(["Holiday", "Additional", "Work Day"])
+# df_holidays["actual_holiday"] = (
+#   df_holidays.holiday_type.isin(["Transfer", "Additional", "Bridge"]) | 
+# ((df_holidays.holiday_type=="Holiday") & (df_holidays.transferred==False))
+# )
+
+#add local_holiday column to df_local
+df_local["local_holiday"] = (
+  df_local.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
+  ((df_local.holiday_type=="Holiday") & (df_local.transferred==False))
+)
+
+#add regional_holiday colulmn to df_regional
+df_regional["regional_holiday"] = (
+  df_regional.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
+  ((df_regional.holiday_type=="Holiday") & (df_regional.transferred==False))
+)
+
+#add national_holiday column to df_national
+df_national["national_holiday"] = (
+  df_national.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
+  ((df_national.holiday_type=="Holiday") & (df_national.transferred==False))
+)
+
+#add event column to df_events
+df_events["event"] = True
+
 
 
 
@@ -246,7 +252,6 @@ df_events.drop("date", axis=1, inplace=True)
 
 
 #join oil price into train and test, by date index
-df_oil.rename(columns={"dcoilwtico":"oil"}, inplace=True)
 df_train = df_train.join(df_oil, how="left", on="date")
 df_test = df_test.join(df_oil, how="left", on="date")
 
@@ -275,8 +280,7 @@ df_train = df_train2
 #regional
 df_regional_merge = df_regional.drop(
   labels=[
-    "holiday_type", "locale", "description", "transferred", 
-    "regional_actual_holiday"], axis=1
+    "holiday_type", "locale", "description", "transferred"], axis=1
 )
 df_regional_merge.rename(columns={"locale_name":"state"}, inplace=True)
 
@@ -319,13 +323,39 @@ df_train2 = df_train.merge(df_events_merge, how="left", on="date")
 df_train = df_train2
 
 
+#set NA holiday values to False
+holiday_cols = ['local_holiday','regional_holiday', 'national_holiday', 'event']
+
+df_test[holiday_cols] = df_test[holiday_cols].fillna(value=False)
+#worked for test data
+
+df_train[holiday_cols] = df_train[holiday_cols].fillna(value=False)
+#worked for train data
+
+
+
+#check if there are any days with more than 1 value for the holiday and event columns
+(((df_train.groupby("date").local_holiday.mean())==0) | ((df_train.groupby("date").local_holiday.mean())==1)).mean() 
+#yes, but that's normal. can't use as grouping col in hierarchical data
+
+(((df_train.groupby("date").regional_holiday.mean())==0) | ((df_train.groupby("date").regional_holiday.mean())==1)).mean() 
+#yes, but that's normal. can't use as grouping col in hierarchical data
+
+(((df_train.groupby("date").national_holiday.mean())==0) | ((df_train.groupby("date").national_holiday.mean())==1)).mean()
+#no
+
+(((df_train.groupby("date").event.mean())==0) | ((df_train.groupby("date").event.mean())==1)).mean()
+#no
+#the issue likely happens when you change the holiday-event columns again,
+#after flagging special features like new years and christmas
+
 
 
 #flag first day of year with binary feature, set national holidays columns to false at this date
 df_train["new_years_day"] = (df_train.index.dayofyear==1)
 df_test["new_years_day"] = (df_test.index.dayofyear==1)
-df_train.national_calendar_holiday.loc[df_train.new_years_day==True] = False
-df_train.national_actual_holiday.loc[df_train.new_years_day==True] = False  
+df_train.national_holiday.loc[df_train.new_years_day==True] = False
+#doesn't break one value per one date requirement
 
 
 #flag christmas, 21-26, set national holidays columns to false at christmas
@@ -333,8 +363,8 @@ df_train["christmas"] = (df_train.index.month==12) & (df_train.index.day.isin(
   [21,22,23,24,25,26])) 
 df_test["christmas"] = (df_test.index.month==12) & (df_test.index.day.isin(
   [21,22,23,24,25,26]))
-df_train.national_calendar_holiday.loc[df_train.christmas==True] = False
-df_train.national_actual_holiday.loc[df_train.christmas==True] = False  
+df_train.national_holiday.loc[df_train.christmas==True] = False
+#doesn't break one value per one date requirement
 
 
 #flag paydays: 15th and last day of each month
@@ -343,12 +373,38 @@ df_test["payday"] = ((df_test.index.day==15) | (df_test.index.to_timestamp().is_
 
 
 #flag earthquakes: 2016-04-16 to 2016-05-16. set event to False for earthquake dates
-earthquake_dates = pd.period_range(start="2016-04-16", end="2016-05-16")
+earthquake_dates = pd.period_range(start="2016-04-16", end="2016-05-16", freq="D")
 df_train["earthquake"] = (df_train.index.isin(earthquake_dates))
-df_train.loc[df_train.earthquake==True]
 df_test["earthquake"] = False
+df_train.loc[df_train.earthquake==True]
 df_train.event.loc[df_train.earthquake==True] = False
+#doesn't break one value per one date requirement
 
+
+#check if the one value per one date requirement is violated because of flagged cols
+(((df_train.groupby("date").local_holiday.mean())==0) | ((df_train.groupby("date").local_holiday.mean())==1)).mean() 
+#yes, but that's normal. can't use as grouping col in hierarchical data
+
+(((df_train.groupby("date").regional_holiday.mean())==0) | ((df_train.groupby("date").regional_holiday.mean())==1)).mean() 
+#yes, but that's normal. can't use as grouping col in hierarchical data
+
+(((df_train.groupby("date").national_holiday.mean())==0) | ((df_train.groupby("date").national_holiday.mean())==1)).mean()
+#no
+
+(((df_train.groupby("date").event.mean())==0) | ((df_train.groupby("date").event.mean())==1)).mean()
+#no
+
+(((df_train.groupby("date").new_years_day.mean())==0) | ((df_train.groupby("date").new_years_day.mean())==1)).mean()
+#no
+
+(((df_train.groupby("date").christmas.mean())==0) | ((df_train.groupby("date").christmas.mean())==1)).mean()
+#no
+
+(((df_train.groupby("date").payday.mean())==0) | ((df_train.groupby("date").payday.mean())==1)).mean()
+#no
+
+(((df_train.groupby("date").earthquake.mean())==0) | ((df_train.groupby("date").earthquake.mean())==1)).mean()
+#no
 
 
 #do some renaming and reordering
@@ -369,16 +425,14 @@ df_train = df_train.rename(columns={
 )
 
 df_test = df_test[['id', 'category', 'onpromotion', 'city', 'state', 'store_no',
-       'store_type', 'store_cluster', 'oil', 'local_calendar_holiday',
-       'local_actual_holiday', 'regional_calendar_holiday',
-       'national_calendar_holiday', 'national_actual_holiday', 'event',
+       'store_type', 'store_cluster', 'oil', 'local_holiday', 'regional_holiday', 
+       'national_holiday', 'event',
        'new_years_day', 'payday', 'earthquake', "christmas"]]
 
 
 df_train = df_train[['id', "sales", 'category', 'onpromotion', 'city', 'state', 'store_no',
-       'store_type', 'store_cluster', 'oil', 'local_calendar_holiday',
-       'local_actual_holiday', 'regional_calendar_holiday',
-       'national_calendar_holiday', 'national_actual_holiday', 'event',
+       'store_type', 'store_cluster', 'oil', 'local_holiday', 'regional_holiday', 
+       'national_holiday', 'event',
        'new_years_day', 'payday', 'earthquake', "christmas"]]
        
 
@@ -390,26 +444,9 @@ df_train = df_train[['id', "sales", 'category', 'onpromotion', 'city', 'state', 
 #check NAs
 pd.isnull(df_train).sum()
 #928422 in oil
-#close to row number in holiday and event cols
 
 pd.isnull(df_test).sum()
 #7128 in oil
-#close to row number in holiday and event cols
-
-
-
-
-#set NA holiday values to False
-holiday_cols = ['local_calendar_holiday', 'local_actual_holiday',
-       'regional_calendar_holiday', 'national_calendar_holiday',
-       'national_actual_holiday', 'event']
-
-df_test[holiday_cols] = df_test[holiday_cols].fillna(value=False, inplace=False)
-#worked for test data
-
-df_train[holiday_cols] = df_train[holiday_cols].fillna(value=False)
-#worked for train data
-
 
 
 
@@ -420,7 +457,7 @@ df_test["oil"] = df_test["oil"].interpolate("time")
 
 
 #check remaining train oil NAs 
-df_train[pd.isnull(df_train["oil"])]
+df_train[pd.isnull(df_train["oil"])].oil
 #all belong to the first day. fill them with the next day oil price
 
 
@@ -432,6 +469,10 @@ df_train.oil = df_train.oil.fillna(method="bfill")
 pd.isnull(df_train).sum()
 pd.isnull(df_test).sum()
 #all done
+
+
+#check if the oil price is the same 
+
 
 
 # #plot actual oil prices vs. filled oil prices to see quality of interpolation
@@ -456,22 +497,19 @@ df_trans.set_index(pd.PeriodIndex(df_trans.date, freq="D"), inplace=True)
 df_trans.drop("date", axis=1, inplace=True)      
 df_trans.rename(columns={"store_nbr":"store_no"}, inplace=True)
 
-df_train2 = df_train.merge(df_trans, how="left", on=["date", "store_no"])
+df_train = df_train.merge(df_trans, how="left", on=["date", "store_no"])
 #no rows added
 #no wrong columns added
-df_train2 = df_train2[['id', "sales", "transactions", 'category', 'onpromotion', 'city', 'state', 'store_no',
-       'store_type', 'store_cluster', 'oil', 'local_calendar_holiday',
-       'local_actual_holiday', 'regional_calendar_holiday',
-       'national_calendar_holiday', 'national_actual_holiday', 'event',
+df_train = df_train[['id', "sales", "transactions", 'category', 'onpromotion', 'city', 'state', 'store_no',
+       'store_type', 'store_cluster', 'oil', 'local_holiday', 'regional_holiday', 'national_holiday', 'event',
        'new_years_day', 'payday', 'earthquake', "christmas"]]
 
-pd.isnull(df_train2.transactions).sum()
+pd.isnull(df_train.transactions).sum()
 #245784 NAs 
 
-df_train2.transactions.fillna(0, inplace=True)
+df_train.transactions.fillna(0, inplace=True)
 #none left
 
-df_train = df_train2
 
 
 
@@ -482,7 +520,7 @@ df_train = df_train2
 df_train.shape
 #(3000888, 21)
 df_test.shape
-#(28512, 19)
+#(28512, 17)
 
 
 #columns
@@ -523,46 +561,6 @@ df_train.drop("date", axis=1, inplace=True)
 
 df_test.set_index(pd.PeriodIndex(df_test.date, freq="D"), inplace=True)
 df_test.drop("date", axis=1, inplace=True)
-
-
-
-
-#HIERARCHICAL STRUCTURE OF THE TIME SERIES
-#sales in one day
-  #by category: 33
-  #by location: 
-    #state: 16
-      #city: 22
-       #store no: 54
-  #by store type: 5
-    #store cluster: 17
-      
-
-#levels of aggregation, from lowest to highest: 
-  #category & location:
-    #sale of each category in each store: 1782 series
-    #sale of each category in each city: 726 series
-    #sale of each category in each state: 528 series
-  #category & store type
-    #sale of each category in each store cluster: 561 series
-    #sale of each category in each store type: 165 series
-  #location:
-    #all categories, each store: 54 series
-    #all categories, each city: 22 series
-    #all categories, each state: 16 series
-  #store type:
-    #all categories, each cluster: 17 series
-    #all categories, each store type: 5 series
-  #category: 
-    #each category: 33 series
-    
-  #alternatives: 
-    #try to group some categories together?
-    df_test.category.unique()
-    #try to apply a clustering based on location + store type?
-
-
-
 
 
 
@@ -1267,40 +1265,203 @@ plt.close()
 #to create a hierarchy, you need to convert data to wide format, with one row per one date
 #with darts:
   #first add all features you want to df_train and df_test. handle NAs
-  #get rid of non-features (id, city, state, store_type, store_cluster)
+    #add oil_ma21
+    #sales lags 1 2 3 5 11 28 will be specified in RegressionModel (remember to handle NAs)
+    #instead of adding manual trend and fourier features, apply FFT with trend (due to memory issues)
   #convert all booleans to integers
+  #get rid of non-features (id)
   #then convert df_train and df_test to wide (see bottom of notes). handle NAs 
   #split the data into:
     #target: darts time series with one row per date, one column per:
       #total sales that date
       #each category's total sales that date (will add up to Total)
-      #each store's total sales that date (will add up to Total)
-      #each category-store combo's sales that date (will add up to Total)
-      #more hierarchy elements? will they improve performance in reconciliation?
-        #store-cluster-type-total?
-        #city-state-total?
-      #sales lags 1 2 3 5 11 28 will be specified in RegressionModel (remember to handle NAs)
-    #past_covariates: darts time series with one row per date, one column per:
-      #trend dummy order 1
-      #fourier features, period 365, order 4
+      #each store type's total sales that date (will add up to Total)
+      #each category N-store K combo's total sales that date (will add to category no N and store no K)
+    #past_covariates: darts time series with one row per date, one column for:
       #oil moving average 21
-    #static covariates: add to target time series when creating
       #calendar dummies
       #days of week dummies
-    #how to handle the data:
-      #create target time series with static covariates from long data using:
-        #TimeSeries.from_group_dataframe() https://unit8co.github.io/darts/examples/15-static-covariates.html
-      #create past covariates separately as another time series
-      #add hierarchy dictionary to the target time series https://unit8co.github.io/darts/examples/16-hierarchical-reconciliation.html?highlight=hierarchical
+    #static covariates: don't have any.
+      #IMPORTANT, DOCUMENT THIS: static covariate=does not change over time. useful only to differentiate multiple time series
+        #darts takes static covariates as: data frame with 1 row per one target time series, 1 column per static covariate
+        #you have to specify a static covariate for each time series. so we don't have any applicable in our data
+    #add hierarchy dictionary to the target time series https://unit8co.github.io/darts/examples/16-hierarchical-reconciliation.html?highlight=hierarchical
     
-    
-    
+
+#HIERARCHICAL STRUCTURE OF THE TIME SERIES
+#sales in one day
+  #by category: 33
+  #by location: 
+    #state: 16
+      #city: 22
+       #store no: 54
+  #by store type: 5
+    #store cluster: 17
+      
+
+#levels of aggregation, from lowest to highest: 
+  #category & location:
+    #sale of each category in each store: 1782 series
+    #sale of each category in each city: 726 series
+    #sale of each category in each state: 528 series
+  #category & store type
+    #sale of each category in each store cluster: 561 series
+    #sale of each category in each store type: 165 series
+  #location:
+    #all categories, each store: 54 series
+    #all categories, each city: 22 series
+    #all categories, each state: 16 series
+  #store type:
+    #all categories, each cluster: 17 series
+    #all categories, each store type: 5 series
+  #category: 
+    #each category: 33 series
+
     
 #load back modified data
 df_train = pd.read_csv("./ModifiedData/train_modified.csv", encoding="utf-8")
 df_test = pd.read_csv("./ModifiedData/test_modified.csv", encoding="utf-8")
 
 
+#combine df_train and df_test to add features
+df = pd.concat([df_train, df_test])
+df.index = pd.RangeIndex(start=0, stop=len(df), step=1)
+
+
+#set datetime index
+df = df.set_index(pd.to_datetime(df.date))
+df = df.drop("date", axis=1)
+
+
+#set bools to int
+df = df * 1
+
+
+#drop id
+df = df.drop("id", axis=1)
+
+
+#add 21-day oil moving average (calculate from aggregated oil prices to avoid different values in same day)
+df_oil = pd.read_csv("./OriginalData/oil.csv", encoding="utf-8")
+df_oil.rename(columns={"dcoilwtico":"oil"}, inplace=True)
+df_oil.set_index(pd.PeriodIndex(df_oil.date, freq="D"), inplace=True)
+df_oil.drop("date", axis=1, inplace=True)
+
+oil_21 = df_oil.rolling(21).mean().fillna(method="bfill")
+oil_21 = oil_21.rename(columns={"oil":"oil_21"})
+oil_21.index = df_oil.index
+oil_21 = oil_21.set_index(pd.to_datetime(oil_21.index.to_timestamp()))
+df = df.join(oil_21, how="left", on="date")
+df.oil_21 = df.oil_21.interpolate(method="time")
+
+
+#check NAs
+pd.isnull(df).sum()
+#28512 sales and transactions NAs (test data), drop after split
+
+
+#add category:store_no column
+df["category_store_no"] = df["category"].astype(str) + "-" + df["store_no"].astype(str)
+
+
+#split df_train and df_test again
+df_train = df.iloc[0:3000888,:]
+df_test = df.iloc[3000888:len(df),:]
+
+
+#drop sales and transactions from df_test
+df_test = df_test.drop(columns=["sales", "transactions"], axis=1)
+
+
+#check columns and shapes
+df_train.columns
+df_test.columns
+
+df_train.shape
+df_test.shape
+
+#create target time series with static_covariates
+  # sales as target
+  #static covariates:
+  # "category_store_no"
+  # 'category', 'city', 'state',
+  # 'store_no', 'store_type', 'store_cluster',
+  # 'national_holiday, 'event', 'new_years_day', 'payday',
+  # 'earthquake', 'christmas'
+  
+
+#create wide dataframes with dates as rows, values for total, category, store and category_store sales as columns
+
+
+#total
+total = pd.DataFrame(
+  data=df_train.groupby("date").sales.sum(),
+  index=df_train.groupby("date").sales.sum().index)
+
+#category
+category = pd.DataFrame(
+  data=df_train.groupby(["date", "category"]).sales.sum(),
+  index=df_train.groupby(["date", "category"]).sales.sum().index)
+category = category.reset_index(level=1)
+category = category.pivot(columns="category", values="sales")
+
+#store
+store_no = pd.DataFrame(
+  data=df_train.groupby(["date", "store_no"]).sales.sum(),
+  index=df_train.groupby(["date", "store_no"]).sales.sum().index)
+store_no = store_no.reset_index(level=1)
+store_no = store_no.pivot(columns="store_no", values="sales")
+
+#category_store_no
+category_store_no = pd.DataFrame(
+  data=df_train.groupby(["date", "category_store_no"]).sales.sum(),
+  index=df_train.groupby(["date", "category_store_no"]).sales.sum().index)
+category_store_no = category_store_no.reset_index(level=1)
+category_store_no = category_store_no.pivot(columns="category_store_no", values="sales")
+
+
+#now merge it all
+wide_frames = [total, category, store_no, category_store_no]
+ts_train = reduce(lambda left, right: pd.merge(
+  left, right, how="left", on="date"), wide_frames)
+del total, category, store_no, category_store_no, wide_frames
+
+
+
+
+#create target series
+ts_train = darts.TimeSeries.from_dataframe(
+  ts_train, freq="D", fill_missing_dates=False)
+
+
+#add hierarchy dictionary to target time series
+
+
+
+
+
+
+#create past covariates time series
+  #oil_21
+  #calendar dummies
+
+#get calendar dummies
+calendar_cols = ['national_holiday', 'event',
+       'new_years_day', 'payday', 'earthquake', 'christmas']
+static_train = df_train[calendar_cols].groupby("date").mean()
+static_train["oil_21"] = df.oil_21.groupby("date").mean()
+
+
+
+
+#modeling workflow (WIP)
+
+#preprocessing steps
+  #CPI adjustment of sales (outside of pipeline?)
+  #log transformation of sales (outside of pipeline?)
+  #differencing of oil (outside of pipeline?)
+  #centering and scaling of sales, oil
+  #more?
 
 
 
@@ -1308,6 +1469,73 @@ df_test = pd.read_csv("./ModifiedData/test_modified.csv", encoding="utf-8")
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# #add date as string column named "total" to pass it to group_cols
+# ts_train["total"] = ts_train.index.astype(str)
+# 
+# #create grouped time series
+# ts_train = darts.TimeSeries.from_group_dataframe(
+#   ts_train, group_cols=[
+#     "total",  "category", "store_no", "category_store_no", "city", "state", "store_type", "store_cluster"],
+#     value_cols="sales",
+#   fill_missing_dates=False, freq="D")
+# 
+# 
+# 
+# 
+# ts_train[1781]
+# 
+# 
+# #add total sales col for hierarchy
+# sales_total = df_train.groupby("date").sales.sum()
+# ts_sales_total = darts.TimeSeries.from_series(
+#   sales_total, fill_missing_dates=False, freq="D")
+#   
+# ts_train2 = darts.TimeSeries.append(ts_train, other=ts_sales_total)
 
 
 
