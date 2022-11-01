@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 from functools import reduce
+from itertools import product
 
 
 import seaborn as sns
@@ -37,6 +38,10 @@ from sklearn.linear_model import LinearRegression
 
 
 import darts
+from darts.dataprocessing.transformers import(
+  Scaler,
+  Mapper
+)
 # from darts.timeseries import TimeSeries
 # from darts.models.forecasting.arima import ARIMA
 
@@ -1167,9 +1172,9 @@ plt.close()
 
 
 
-#FIT LAGGED PREDICTORS MODEL ON DECOMPOSED RESIDUALS
+#FIT FULL MODEL WITH LAGGED PREDICTORS
 
-#outcome series: res_decomp
+#outcome series: y_decomp
 
 #features:
   #target lag 1, 2, 3, 5, 11, 28
@@ -1186,7 +1191,7 @@ def make_lags(ts, lags, prefix):
   )
 
 
-#make lags
+#make lags (MISTAKE: )
 res_lags = make_lags(res_decomp, lags=28, prefix="sales")
 res_lags = res_lags.iloc[:,[0,1,2,4,10,27]]
 
@@ -1266,7 +1271,7 @@ plt.close()
 #with darts:
   #first add all features you want to df_train and df_test. handle NAs
     #add oil_ma21
-    #sales lags 1 2 3 5 11 28 will be specified in RegressionModel (remember to handle NAs)
+    #sales lags (1 2 3 5 11 28 in old attempt) will be specified in RegressionModel (remember to handle NAs)
     #instead of adding manual trend and fourier features, apply FFT with trend (due to memory issues)
   #convert all booleans to integers
   #get rid of non-features (id)
@@ -1380,15 +1385,22 @@ df_test.columns
 df_train.shape
 df_test.shape
 
-#create target time series with static_covariates
-  # sales as target
-  #static covariates:
-  # "category_store_no"
-  # 'category', 'city', 'state',
-  # 'store_no', 'store_type', 'store_cluster',
-  # 'national_holiday, 'event', 'new_years_day', 'payday',
-  # 'earthquake', 'christmas'
-  
+
+#sales CPI adjustment, base(100)=2010
+cpi = dict(
+  {2013:112.8,
+  2014:116.8,
+  2015:121.5,
+  2016:123.6,
+  2017:123.6}
+  )
+
+for year in cpi.keys():
+  df_train.loc[df_train.index.year==year, "sales"] = df_train.loc[df_train.index.year==year, "sales"] / cpi[year] * 100
+del year
+
+
+
 
 #create wide dataframes with dates as rows, values for total, category, store and category_store sales as columns
 
@@ -1434,34 +1446,194 @@ ts_train = darts.TimeSeries.from_dataframe(
   ts_train, freq="D", fill_missing_dates=False)
 
 
+#plot some hierarchy levels
+ts_train.columns
+ts_train[["BOOKS"]].plot()
+plt.show()
+plt.close()
+
+
 #add hierarchy dictionary to target time series
 
+#lists of hierarchy nodes
+categories = df.category.unique().tolist()
+stores = df.store_no.unique().astype(str).tolist()
+len(categories) #33
+len(stores) #54
 
+#empty dict
+ts_hierarchy = dict()
+
+#categories to sales loop
+for category in categories:
+  ts_hierarchy[category] = ["sales"]
+
+#stores to sales loop
+for store in stores:
+  ts_hierarchy[store] = ["sales"]
+
+#category-store combos to category and stores
+for category, store in product(categories, stores):
+  ts_hierarchy["{}-{}".format(category, store)] = [category, store]
+  
+ts_hierarchy
+#beautiful
+
+#map hierarchy to ts_train
+ts_train = ts_train.with_hierarchy(ts_hierarchy)
+ts_train
+
+del category, store, categories, stores
 
 
 
 
 #create past covariates time series
-  #oil_21
-  #calendar dummies
 
 #get calendar dummies
 calendar_cols = ['national_holiday', 'event',
        'new_years_day', 'payday', 'earthquake', 'christmas']
-static_train = df_train[calendar_cols].groupby("date").mean()
-static_train["oil_21"] = df.oil_21.groupby("date").mean()
+past_train = df_train[calendar_cols].groupby("date").mean()
+
+#add oil
+past_train["oil_21"] = df_train.oil_21.groupby("date").mean()
+
+#CPI adjust oil
+for year in cpi.keys():
+  past_train.loc[past_train.index.year==year,"oil_21"] = past_train.loc[past_train.index.year==year, "oil_21"] / cpi[year] * 100
+del year
+
+#difference oil
+differencer = Differencer(lags=1)
+past_train["oil_21"] = differencer.fit_transform(past_train["oil_21"])
+
+#minmax scale oil
+from sklearn.preprocessing import MinMaxScaler
+scaler_sk = MinMaxScaler()
+past_train.oil_21 = pd.Series(
+  data=scaler_sk.fit_transform(past_train.oil_21.values.reshape(-1,1)).reshape(1,-1).tolist()[0],
+  index=past_train.oil_21.index)
+
+
+#get time features
+from statsmodels.tsa.deterministic import DeterministicProcess
+dp = DeterministicProcess(
+  index=past_train.index,
+  period=365,
+  constant=True,
+  order=1,
+  fourier=4,
+  drop=True
+)
+past_train = past_train.merge(dp.in_sample(), how="left", on="date")
+
+
+
+#convert into time series
+past_train = darts.TimeSeries.from_dataframe(
+  past_train, freq="D", fill_missing_dates=False)
+past_train["oil_21"]
 
 
 
 
-#modeling workflow (WIP)
+#MODELING PIPELINE
+
 
 #preprocessing steps
-  #CPI adjustment of sales (outside of pipeline?)
-  #log transformation of sales (outside of pipeline?)
-  #differencing of oil (outside of pipeline?)
-  #centering and scaling of sales, oil
-  #more?
+
+#log transform sales series
+def log_zero(x):
+  return np.log(x+0.0001)
+
+def log_zero_inv(x):
+  return (np.exp(x)-0.0001)
+
+transform_log = Mapper(log_zero)
+reverse_log = Mapper(log_zero_inv)
+ts_train = transform_log.transform(ts_train)
+
+
+#centering and scaling of sales, oil
+scaler_minmax = Scaler()
+ts_train = scaler_minmax.fit_transform(ts_train)
+  
+  
+  
+  
+#modeling steps
+
+
+#linear regression with past covariates, sales lags
+from darts.models.forecasting.linear_regression_model import LinearRegressionModel
+model_lm = LinearRegressionModel(
+  lags=[-1, -2, -3, -5, -11, -28],
+  fit_intercept=False
+)
+
+
+#train-test crossval with pre-post 2017
+  #2017: last 227 obs
+
+#split pre-post 2017
+y_train, y_val = ts_train[:-227], ts_train[-227:]
+x_train, x_val = past_train[:-227], past_train[-227:]
+
+#predict 2017 with lm
+model_lm.fit(y_train["sales"], past_covariates=x_train)
+pred_lm = model_lm.predict(n=227)
+
+
+#score 2017 lm predictions
+from darts.metrics import rmse
+rmse(y_val["sales"], pred_lm)
+#rmsle 0.08246
+
+
+#5 fold rolling crossval
+model_lm.backtest(
+  ts_train["sales"], start=0.2, forecast_horizon=15, stride=337, metric=rmse)
+#agg rmsle 0.0259
+
+
+#plot 2017 actual vs. fft preds
+y_val["sales"].plot(label="actual")
+pred_lm.plot(label="lm preds")
+plt.show()
+plt.close()
+#follows the annual seasonality pattern, but sometimes early-late
+#seems to have a slightly increasing trend compared to actual, possibly due to spikes
+#not comparable directly with previous composition as it also included calendar features
+
+
+#get and inspect inno residuals of 2017
+res_fft = y_val["sales"] - pred_fft
+
+
+#time plot, distribution, acf
+from darts.utils.statistics import plot_residuals_analysis
+plot_residuals_analysis(res_fft)
+plt.show()
+plt.close()
+#looks stationary and patternless except for NY drop
+#acf shows clear sinusoid pattern, no spikes, few significant lags
+#distribution normal except for NY outlier
+
+
+#pacf
+from darts.utils.statistics import plot_pacf
+plot_pacf(res_fft, max_lag=48)
+plt.show()
+plt.close()
+#declining sinusoidal pattern, almost completely disappears by lag 50
+#only slightly significant lags: 3, 7
+#looks like the manual fourier transform didn't account for all the seasonality?
+
+
+#kpss test for stationarity
+from darts.utils.statistics import stationarity_test_kpss as kpss
+kpss(res_fft)
+#test stat 0.19, p value +0.1, data is stationary
 
 
 
@@ -1504,68 +1676,186 @@ static_train["oil_21"] = df.oil_21.groupby("date").mean()
 
 
 
-
-
-
-
-
-
-
-
-
-
-# #add date as string column named "total" to pass it to group_cols
-# ts_train["total"] = ts_train.index.astype(str)
+# #apply FFT
+# from darts.models import FFT
+# model_fft = FFT(
+#   nr_freqs_to_keep=4,
+#   trend="poly",
+#   trend_poly_degree=1
+# )
 # 
-# #create grouped time series
-# ts_train = darts.TimeSeries.from_group_dataframe(
-#   ts_train, group_cols=[
-#     "total",  "category", "store_no", "category_store_no", "city", "state", "store_type", "store_cluster"],
-#     value_cols="sales",
-#   fill_missing_dates=False, freq="D")
+# 
+# #train-test crossval with pre-post 2017
+#   #2017: last 227 obs
+# 
+# #split pre-post 2017
+# y_train, y_val = ts_train[:-227], ts_train[-227:]
+# x_train, x_val = past_train[:-227], past_train[-227:]
+# 
+# #predict 2017 with fft
+# model_fft.fit(y_train["sales"])
+# pred_fft = model_fft.predict(n=227)
+# 
+# 
+# #score 2017 fft predictions
+# from darts.metrics import rmse
+# rmse(y_val["sales"], pred_fft)
+# #rmsle 0.0607
+#   #better than manual approach's decomposition and hybrid model
+# 
+# 
+# #5 fold rolling crossval
+# model_fft.backtest(
+#   ts_train["sales"], start=0.2, forecast_horizon=15, stride=337, metric=rmse)
+# #agg rmsle 0.03646
+# 
+# 
+# #plot 2017 actual vs. fft preds
+# y_val["sales"].plot(label="actual")
+# pred_fft.plot(label="fft preds")
+# plt.show()
+# plt.close()
+# #follows the annual seasonality pattern, but sometimes early-late
+# #seems to have a slightly increasing trend compared to actual, possibly due to spikes
+# #not comparable directly with previous composition as it also included calendar features
+# 
+# 
+# #get and inspect inno residuals of 2017
+# res_fft = y_val["sales"] - pred_fft
+# 
+# 
+# #time plot, distribution, acf
+# from darts.utils.statistics import plot_residuals_analysis
+# plot_residuals_analysis(res_fft)
+# plt.show()
+# plt.close()
+# #looks stationary and patternless except for NY drop
+# #acf shows clear sinusoid pattern, no spikes, few significant lags
+# #distribution normal except for NY outlier
+# 
+# 
+# #pacf
+# from darts.utils.statistics import plot_pacf
+# plot_pacf(res_fft, max_lag=48)
+# plt.show()
+# plt.close()
+# #declining sinusoidal pattern, almost completely disappears by lag 50
+# #only slightly significant lags: 3, 7
+# #looks like the manual fourier transform didn't account for all the seasonality?
+# 
+# 
+# #kpss test for stationarity
+# from darts.utils.statistics import stationarity_test_kpss as kpss
+# kpss(res_fft)
+# #test stat 0.19, p value +0.1, data is stationary
 # 
 # 
 # 
 # 
-# ts_train[1781]
+# #apply decomposition to all training data, total sales
+#   #unlike the manual approach, this gets the residuals for time index i with a model trained from all previous time indexes
+#   #this generates missing values for a few obs at the start, as a model couldn't be fit for them. drop these from the training set
+# res_train = model_fft.residuals(ts_train["sales"])
 # 
 # 
-# #add total sales col for hierarchy
-# sales_total = df_train.groupby("date").sales.sum()
-# ts_sales_total = darts.TimeSeries.from_series(
-#   sales_total, fill_missing_dates=False, freq="D")
-#   
-# ts_train2 = darts.TimeSeries.append(ts_train, other=ts_sales_total)
-
-
-
-
-
-
-
-# #convert dates to indexes again
-# df_train.set_index(pd.PeriodIndex(df_train.date, freq="D"), inplace=True)
-# df_train.drop("date", axis=1, inplace=True)
-# 
-# df_test.set_index(pd.PeriodIndex(df_test.date, freq="D"), inplace=True)
-# df_test.drop("date", axis=1, inplace=True)
-
-
-# #combine category and store_no cols
-# df_test["category"] = df_test["category"].astype(str) + "_" + df_test["store_no"].astype(str)
-# df_train["category"] = df_train["category"].astype(str) + "_" + df_train["store_no"].astype(str)
-# df_test["category"].nunique()
-# df_train["category"].nunique()
-# #1782 unique category-store combos
-
-
-# #set date and category to multiindex
-# test_multiindex = df_test[["category", "date"]]
-# test_multiindex.date = pd.PeriodIndex(test_multiindex.date, freq="D")
-# test_multiindex = pd.MultiIndex.from_frame(test_multiindex)
-# df_test.index = test_multiindex
+# #time plot, acf, distribution
+# plot_residuals_analysis(res_train)
+# plt.show()
+# plt.close()
 # 
 # 
-# #transform to hierarchical
-# agg = Aggregator()
-# df_test = agg.fit_transform(df_test)
+# #pacf
+# plot_pacf(res_train, max_lag=24)
+# plt.show()
+# plt.close()
+# 
+# 
+# #kpss test for stationarity
+# kpss(res_train)
+# #not stationary
+
+
+
+
+
+#split res_train as res_train, res_valid
+
+
+
+
+
+  #apply linear regression with past_covariates on fft residuals
+    #crossvalidate top level, 
+  #reconcile top-down
+    #crossvalidate top level and bottom level,
+  #reversing transformations:
+    #sales: inverse minmax - exponential - inverse CPI
+    #oil: inverse minmax - inverse difference - inverse CPI
+
+
+
+
+
+
+
+
+
+
+
+
+#NOTES FOR SECOND MODELING ATTEMPT:
+  #CPI adjust sales and oil at the start
+  #difference oil, onpromotion, transactions at the start
+  #log transform sales as part of pipeline, after ts conversion
+  #utilize the darts statistics and plots to evaluate time series characteristics such a seasonality
+  #decompose sales with a STL, FFT or another advanced method, ideally non-linear trend
+  #reevaluate lag features and rolling features with ewm or another advanced method, utilise darts plots and stats
+  #fit an advanced suitable method to stationary data, in a hybrid model
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
