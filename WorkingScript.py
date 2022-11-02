@@ -4,47 +4,48 @@ import pandas as pd
 import numpy as np
 from functools import reduce
 from itertools import product
-
-
-import seaborn as sns
 import matplotlib.pyplot as plt
-
-import sktime
-from sktime.utils.plotting import plot_series
-from sktime.utils.plotting import plot_lags
 from sktime.transformations.series.difference import Differencer
-from sktime.transformations.hierarchical.aggregate import Aggregator
-# from sktime.forecasting.arima import AutoARIMA
-# from sktime.forecasting.arima import ARIMA
-
-
-from statsmodels.graphics.tsaplots import plot_pacf
-from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.tsa.deterministic import DeterministicProcess
-from statsmodels.tsa.stattools import adfuller
-from statsmodels.tsa.stattools import ccf
-
-from scipy.signal import periodogram
-from scipy.stats import pearsonr
-from scipy.stats import spearmanr
-
-from sklearn.metrics import adjusted_mutual_info_score
-from sklearn.metrics import mean_squared_error as mse
-from sklearn.metrics import make_scorer
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.model_selection import cross_val_score
-from sklearn.linear_model import LinearRegression
-
-
 import darts
+from darts.timeseries import TimeSeries
 from darts.dataprocessing.transformers import(
   Scaler,
   Mapper
 )
-# from darts.timeseries import TimeSeries
-# from darts.models.forecasting.arima import ARIMA
 
+np.set_printoptions(suppress=True, precision=8)
+pd.options.display.float_format = '{:.8f}'.format
+
+# import sktime
+# from sktime.utils.plotting import plot_series
+# from sktime.utils.plotting import plot_lags
+# from sktime.transformations.hierarchical.aggregate import Aggregator
+# from sktime.forecasting.arima import AutoARIMA
+# from sktime.forecasting.arima import ARIMA
+# 
+# 
+# from statsmodels.graphics.tsaplots import plot_pacf
+# from statsmodels.graphics.tsaplots import plot_acf
+# from statsmodels.tsa.stattools import adfuller
+# from statsmodels.tsa.stattools import ccf
+# 
+# from scipy.signal import periodogram
+# from scipy.stats import pearsonr
+# from scipy.stats import spearmanr
+# 
+# from sklearn.metrics import adjusted_mutual_info_score
+# from sklearn.metrics import mean_squared_error as mse
+# from sklearn.metrics import make_scorer
+# from sklearn.preprocessing import StandardScaler
+# from sklearn.model_selection import TimeSeriesSplit
+# from sklearn.model_selection import cross_val_score
+# from sklearn.linear_model import LinearRegression
+# 
+# 
+# 
+# from darts.models.forecasting.arima import ARIMA
+# 
 # from sktime.transformations.series.detrend import STLTransformer
 # from statsmodels.tsa.seasonal import MSTL
 # from statsmodels.tsa.seasonal import DecomposeResult
@@ -53,8 +54,6 @@ from darts.dataprocessing.transformers import(
 
 
 
-np.set_printoptions(suppress=True, precision=8)
-pd.options.display.float_format = '{:.8f}'.format
 
 
 #LOAD DATASETS
@@ -1436,7 +1435,7 @@ category_store_no = category_store_no.pivot(columns="category_store_no", values=
 wide_frames = [total, category, store_no, category_store_no]
 ts_train = reduce(lambda left, right: pd.merge(
   left, right, how="left", on="date"), wide_frames)
-del total, category, store_no, category_store_no, wide_frames
+del total, category, store_no, wide_frames, category_store_no
 
 
 
@@ -1444,13 +1443,6 @@ del total, category, store_no, category_store_no, wide_frames
 #create target series
 ts_train = darts.TimeSeries.from_dataframe(
   ts_train, freq="D", fill_missing_dates=False)
-
-
-#plot some hierarchy levels
-ts_train.columns
-ts_train[["BOOKS"]].plot()
-plt.show()
-plt.close()
 
 
 #add hierarchy dictionary to target time series
@@ -1498,6 +1490,36 @@ past_train = df_train[calendar_cols].groupby("date").mean()
 #add oil
 past_train["oil_21"] = df_train.oil_21.groupby("date").mean()
 
+
+#find the missing dates
+data_dates = past_train.index.values.astype(str).tolist()
+full_dates = pd.date_range(start="2013-01-01", end="2017-08-15").values.astype(str).tolist()
+missing_dates = list(set(full_dates) - set(data_dates))
+#missing dates: 25 dec 2013, 25 dec 2014, 25 dec 2015, 25 dec 2016
+
+
+#add these to the future covariates manually.
+  #for sales series, interpolate in darts
+append_series = pd.DataFrame(
+  data={
+    "national_holiday":[0,0,0,0],
+    "event":[0,0,0,0],
+    "new_years_day":[0,0,0,0],
+    "payday":[0,0,0,0],
+    "earthquake":[0,0,0,0],
+    "christmas":[1,1,1,1]
+  },
+  index=pd.to_datetime(missing_dates)
+  )
+past_train = past_train.append(append_series).sort_index()
+past_train.index.names = ["date"]
+
+#interpolate oil NAs for manually added dates
+past_train["oil_21"] = past_train["oil_21"].interpolate(method="time")
+pd.isnull(past_train).sum()  
+#done
+
+
 #CPI adjust oil
 for year in cpi.keys():
   past_train.loc[past_train.index.year==year,"oil_21"] = past_train.loc[past_train.index.year==year, "oil_21"] / cpi[year] * 100
@@ -1528,11 +1550,43 @@ dp = DeterministicProcess(
 past_train = past_train.merge(dp.in_sample(), how="left", on="date")
 
 
+#add days of week dummies
+days_week = pd.Series((past_train.index.dayofweek + 1), index=past_train.index)
+past_train = past_train.merge(pd.get_dummies(
+  days_week, prefix="weekday", drop_first=True), how="left", on="date"
+)
+
+
+
+#rename into future covariates because darts accepts 0 lag only for future covariates
+future_train = past_train
+pd.isnull(future_train).sum()
+
+
+# #split into past and future covariates
+# 
+# #future:
+#   #calendar features
+#   #trend, const, fourier
+# future_train = past_train.drop("oil_21", axis=1)
+# 
+# #past:
+#   #oil_21
+# past_train = pd.DataFrame(
+#   data=past_train["oil_21"],
+#   index=past_train.index,
+#   columns=["oil_21"])
+# #shift back 1 period because darts wants past covariates to have at least 1 lag
+# past_train["oil_21"] = past_train["oil_21"].shift(1).fillna(method="bfill")
+# 
 
 #convert into time series
-past_train = darts.TimeSeries.from_dataframe(
-  past_train, freq="D", fill_missing_dates=False)
-past_train["oil_21"]
+# past_train = darts.TimeSeries.from_dataframe(
+#   past_train, freq="D", fill_missing_dates=False)
+
+future_train = darts.TimeSeries.from_dataframe(
+  future_train
+)
 
 
 
@@ -1541,6 +1595,19 @@ past_train["oil_21"]
 
 
 #preprocessing steps
+
+
+#interpolate sales for missing dates (25 december 2013-2016)
+from darts.dataprocessing.transformers import MissingValuesFiller
+filler = MissingValuesFiller()
+ts_train = filler.transform(ts_train)
+
+#check missing values
+from darts.utils.missing_values import missing_values_ratio
+missing_values_ratio(ts_train)
+missing_values_ratio(future_train)
+#handled
+
 
 #log transform sales series
 def log_zero(x):
@@ -1554,7 +1621,7 @@ reverse_log = Mapper(log_zero_inv)
 ts_train = transform_log.transform(ts_train)
 
 
-#centering and scaling of sales, oil
+#centering and scaling of sales
 scaler_minmax = Scaler()
 ts_train = scaler_minmax.fit_transform(ts_train)
   
@@ -1568,6 +1635,7 @@ ts_train = scaler_minmax.fit_transform(ts_train)
 from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 model_lm = LinearRegressionModel(
   lags=[-1, -2, -3, -5, -11, -28],
+  lags_future_covariates=[0],
   fit_intercept=False
 )
 
@@ -1577,23 +1645,24 @@ model_lm = LinearRegressionModel(
 
 #split pre-post 2017
 y_train, y_val = ts_train[:-227], ts_train[-227:]
-x_train, x_val = past_train[:-227], past_train[-227:]
+x_train_future, x_val_future = future_train[:-227], future_train[-227:]
+
 
 #predict 2017 with lm
-model_lm.fit(y_train["sales"], past_covariates=x_train)
-pred_lm = model_lm.predict(n=227)
+model_lm.fit(y_train["sales"], future_covariates=x_train_future)
+pred_lm = model_lm.predict(future_covariates=x_val_future, n=227)
 
 
 #score 2017 lm predictions
 from darts.metrics import rmse
 rmse(y_val["sales"], pred_lm)
-#rmsle 0.08246
+#rmsle 0.0267
 
 
 #5 fold rolling crossval
 model_lm.backtest(
-  ts_train["sales"], start=0.2, forecast_horizon=15, stride=337, metric=rmse)
-#agg rmsle 0.0259
+  ts_train["sales"], future_covariates=future_train, start=0.2, forecast_horizon=15, stride=337, metric=rmse)
+#agg rmsle 0.019
 
 
 #plot 2017 actual vs. fft preds
@@ -1601,39 +1670,33 @@ y_val["sales"].plot(label="actual")
 pred_lm.plot(label="lm preds")
 plt.show()
 plt.close()
-#follows the annual seasonality pattern, but sometimes early-late
-#seems to have a slightly increasing trend compared to actual, possibly due to spikes
-#not comparable directly with previous composition as it also included calendar features
+
 
 
 #get and inspect inno residuals of 2017
-res_fft = y_val["sales"] - pred_fft
+res_lm = y_val["sales"] - pred_lm
 
 
 #time plot, distribution, acf
 from darts.utils.statistics import plot_residuals_analysis
-plot_residuals_analysis(res_fft)
+plot_residuals_analysis(res_lm)
 plt.show()
 plt.close()
-#looks stationary and patternless except for NY drop
-#acf shows clear sinusoid pattern, no spikes, few significant lags
-#distribution normal except for NY outlier
+
 
 
 #pacf
 from darts.utils.statistics import plot_pacf
-plot_pacf(res_fft, max_lag=48)
+plot_pacf(res_lm, max_lag=48)
 plt.show()
 plt.close()
-#declining sinusoidal pattern, almost completely disappears by lag 50
-#only slightly significant lags: 3, 7
-#looks like the manual fourier transform didn't account for all the seasonality?
+
 
 
 #kpss test for stationarity
 from darts.utils.statistics import stationarity_test_kpss as kpss
-kpss(res_fft)
-#test stat 0.19, p value +0.1, data is stationary
+kpss(res_lm)
+
 
 
 
