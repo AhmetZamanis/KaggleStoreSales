@@ -1448,8 +1448,8 @@ ts_train = darts.TimeSeries.from_dataframe(
 #add hierarchy dictionary to target time series
 
 #lists of hierarchy nodes
-categories = df.category.unique().tolist()
-stores = df.store_no.unique().astype(str).tolist()
+categories = df_train.category.unique().tolist()
+stores = df_train.store_no.unique().astype(str).tolist()
 len(categories) #33
 len(stores) #54
 
@@ -1473,9 +1473,9 @@ ts_hierarchy
 
 #map hierarchy to ts_train
 ts_train = ts_train.with_hierarchy(ts_hierarchy)
-ts_train
+ts_train.hierarchy
 
-del category, store, categories, stores
+del category, store
 
 
 
@@ -1594,7 +1594,7 @@ future_train = darts.TimeSeries.from_dataframe(
 #MODELING PIPELINE
 
 
-#preprocessing steps
+#PREPROCESSING STEPS
 
 
 #interpolate sales for missing dates (25 december 2013-2016)
@@ -1621,23 +1621,25 @@ reverse_log = Mapper(log_zero_inv)
 ts_train = transform_log.transform(ts_train)
 
 
-#centering and scaling of sales
-scaler_minmax = Scaler()
-ts_train = scaler_minmax.fit_transform(ts_train)
+# #centering and scaling of sales
+# scaler_minmax = Scaler()
+# ts_train = scaler_minmax.fit_transform(ts_train)
+# IMPORTANT: IF YOU SCALE THE TARGETS, YOU NEED TO SCALE THEM ALL TOGETHER BEFORE THIS STEP!
   
   
   
-  
-#modeling steps
+#MODELING STEPS FOR AGGREGATE SALES
 
 
 #linear regression with past covariates, sales lags
 from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 model_lm = LinearRegressionModel(
-  lags=[-1, -2, -3, -5, -11, -28],
+  lags=[-28, -11, -5, -3, -2, -1],
   lags_future_covariates=[0],
+  output_chunk_length=15,
   fit_intercept=False
 )
+#the model will predict 15 days into the future at a time
 
 
 #train-test crossval with pre-post 2017
@@ -1651,18 +1653,22 @@ x_train_future, x_val_future = future_train[:-227], future_train[-227:]
 #predict 2017 with lm
 model_lm.fit(y_train["sales"], future_covariates=x_train_future)
 pred_lm = model_lm.predict(future_covariates=x_val_future, n=227)
+#the forecast horizon in predict is 227 (all of 2017), 
+#but the model's output chunk length is 15.
+#in this case, the model will predict the 227 periods 15 at a time,
+  #autoregressively building on its own predictions
 
 
 #score 2017 lm predictions
 from darts.metrics import rmse
 rmse(y_val["sales"], pred_lm)
-#rmsle 0.0267
+#rmsle 0.13
 
 
-#5 fold rolling crossval
+#rolling crossval, starting with 2013 as training data, predicting next 15, moving training forward 15 days
 model_lm.backtest(
-  ts_train["sales"], future_covariates=future_train, start=0.2, forecast_horizon=15, stride=337, metric=rmse)
-#agg rmsle 0.019
+  ts_train["sales"], future_covariates=future_train, start=366, forecast_horizon=15, stride=15, metric=rmse)
+#agg rmsle 0.2
 
 
 #plot 2017 actual vs. fft preds
@@ -1670,7 +1676,8 @@ y_val["sales"].plot(label="actual")
 pred_lm.plot(label="lm preds")
 plt.show()
 plt.close()
-
+#accounts for the seasonality well
+#misses the magnitude of some peaks and drops
 
 
 #get and inspect inno residuals of 2017
@@ -1682,7 +1689,9 @@ from darts.utils.statistics import plot_residuals_analysis
 plot_residuals_analysis(res_lm)
 plt.show()
 plt.close()
-
+#residuals seem stationary except for the new years day drop and a few peaks
+#ACF value significant for lags 1, 2, 3. exponential decline
+#distribution very centered around 0 except for the new years day outlier
 
 
 #pacf
@@ -1690,14 +1699,167 @@ from darts.utils.statistics import plot_pacf
 plot_pacf(res_lm, max_lag=48)
 plt.show()
 plt.close()
-
+#PACF spike in lag 1, lag 3 is barely significant, rest are insignificant
 
 
 #kpss test for stationarity
 from darts.utils.statistics import stationarity_test_kpss as kpss
-kpss(res_lm)
+from darts.utils.statistics import stationarity_test_adf as adf
+kpss_res = kpss(res_lm)
+kpss_res
+#test stat 0.68, p val 0.015, data is non-stationary
+adf_res = adf(res_lm)
+adf_res
+#test stat -5.58, p val very small, data is stationary
+#since ADF is stationary and KPSS is not, the series is difference stationary
+  #if both tests give stationary or not, the series is stationary or not,
+  #if ADF gives non-stationary and KPSS gives stationary, the series is stationary around a trend - remove it.
+  #if ADF gives stationary and KPSS gives non-stationary, the differenced series is stationary.
 
 
+
+
+#RECONCILIATION (FIGURE OUT WHY YOU GET ARBITRARY VALUES)
+
+
+#fit and predict all nodes of the hierarchy, pre-post 2017 split
+# categories_stores = []
+# for category, store in product(categories, stores):
+#   categories_stores.append("{}-{}".format(category, store))
+# 
+# 
+# nodes = ["sales", categories, stores, categories_stores]
+# y_train_nodes = [y_train[nodes[0]], y_train[nodes[1]], y_train[nodes[2]], y_train[nodes[3]]]
+# 
+# 
+# 
+# model_lm.fit(
+#   series=[y_train[nodes[0]], y_train[nodes[1]], y_train[nodes[2]], y_train[nodes[3]]], 
+#   future_covariates=x_train_future)
+#   
+#   
+# pred_nodes = [
+#   model_lm.predict(series=y_val[nodes][0], future_covariates=x_val_future, n=227),
+#   model_lm.predict(series=y_val[nodes][1], future_covariates=x_val_future, n=227),
+#   model_lm.predict(series=y_val[nodes][2], future_covariates=x_val_future, n=227),
+#   model_lm.predict(series=y_val[nodes][3], future_covariates=x_val_future, n=227)
+#   ]
+# 
+# 
+
+
+model_lm.fit(y_train, future_covariates=x_train_future)
+pred_full = model_lm.predict(future_covariates=x_val_future, n=227)
+
+y_val["sales"]
+pred_full["sales"]
+y_val["AUTOMOTIVE-1"]
+pred_full["AUTOMOTIVE-1"]
+
+
+
+#plot predictions by node of hierarchy
+
+#aggregate series
+y_val["sales"].plot(label="actual")
+pred_full["sales"].plot(label="lm preds")
+plt.title("total_sales")
+plt.show()
+plt.close()
+#the predictions for agg sales are quite different from the standalone predictions
+
+
+# #categories
+# y_val[categories[0]].plot(label="actual")
+# pred_full[categories[0]].plot(label="lm preds")
+# plt.title("category_sales")
+# plt.show()
+# plt.close()
+
+
+
+
+#score predictions for each node of the hierarchy
+
+
+from statistics import stdev
+from statistics import fmean
+  
+def measure_rmse(val, pred, subset):
+  return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+#scores
+measure_rmse(y_val, pred_full, ["sales"])
+#mean rmsle of total sales 0.89
+
+fmean(measure_rmse(y_val, pred_full, categories))
+stdev(measure_rmse(y_val, pred_full, categories))
+#mean rmsle across categories 2.56, sd 2.33
+
+fmean(measure_rmse(y_val, pred_full, stores))
+stdev(measure_rmse(y_val, pred_full, stores))
+#mean rmsle across stores 2.44, sd 2.26
+
+fmean(measure_rmse(y_val, pred_full, categories_stores))
+stdev(measure_rmse(y_val, pred_full, categories_stores))
+#mean rmsle across category-store combos 3.39, sd 2.04
+
+
+#see how the nodes sum up before reconciliation
+def plot_forecast_sums(pred_series):
+    plt.figure(figsize=(10, 5))
+
+    pred_series["sales"].plot(label="total", alpha=0.3, color="grey")
+    sum([pred_series[r] for r in categories]).plot(label="sum of categories")
+    sum([pred_series[r] for r in stores]).plot(label="sum of stores")
+    sum([pred_series[t] for t in categories_stores]).plot(
+        label="sum of categories_stores"
+    )
+
+    legend = plt.legend(loc="best", frameon=1)
+    frame = legend.get_frame()
+    frame.set_facecolor("white")
+
+
+plot_forecast_sums(pred_full)
+plt.show()
+plt.close()
+#these are very arbitrary. somethings wrong with model spec
+
+
+
+
+
+#perform top down reconciliation
+from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator
+topdown_reconciler = TopDownReconciliator()
+topdown_reconciler.fit(y_train)
+pred_topdown = topdown_reconciler.transform(pred_full)
+
+
+#see how nodes sum up after reconciliation
+plot_forecast_sums(pred_topdown)
+plt.show()
+plt.close()
+pred_topdown
+#very arbitrary. something went wrong
+
+
+#score preds of each node
+
+measure_rmse(y_val, pred_topdown, ["sales"])
+
+
+fmean(measure_rmse(y_val, pred_topdown, categories))
+stdev(measure_rmse(y_val, pred_topdown, categories))
+
+
+fmean(measure_rmse(y_val, pred_topdown, stores))
+stdev(measure_rmse(y_val, pred_topdown, stores))
+
+
+fmean(measure_rmse(y_val, pred_topdown, categories_stores))
+stdev(measure_rmse(y_val, pred_topdown, categories_stores))
 
 
 
