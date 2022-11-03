@@ -1839,69 +1839,73 @@ for category, store in product(categories, stores):
 # 
 # 
 
-#training the entire multivariate set at once
-model_lm.fit(y_train, future_covariates=x_train_future)
-pred_full = model_lm.predict(future_covariates=x_val_future, n=227)
-
-y_val["sales"]
-pred_full["sales"]
-y_val["AUTOMOTIVE-1"]
-pred_full["AUTOMOTIVE-1"]
-#seems realistic
-
-
-#plot some predictions by node of hierarchy
-
-#aggregate series
-y_val["sales"].plot(label="actual")
-pred_full["sales"].plot(label="lm preds")
-plt.title("total_sales")
-plt.show()
-plt.close()
-#predictions are in the correct scale now, but fluctuate way too much
-  #with log transformation the predictions for agg sales are in the wrong scale
-  #likely due to the nature of addition with logarithms (which is multiplication)
-
-
-#categories
-y_val[categories[5]].plot(label="actual")
-pred_full[categories[5]].plot(label="lm preds")
-plt.title("category_sales")
-plt.show()
-plt.close()
-#scale correct, seasonality mostly matches, but too much fluctuation
-
-
-#stores
-y_val[stores[9]].plot(label="actual")
-pred_full[stores[9]].plot(label="lm preds")
-plt.title("store_sales")
-plt.show()
-plt.close()
-#scale correct, too much fluctuation, preds too low in general
-
-
-#category-store
-y_val["BREAD/BAKERY-9"].plot(label="actual")
-pred_full["BREAD/BAKERY-9"].plot(label="lm preds")
-plt.title("category_store_sales")
-plt.show()
-plt.close()
-#scale correct, trend correct, too much fluctuation
-  #though the scale is very small. maybe fluctuation is much less on the true scale?
-
+# #training the entire multivariate set at once
+# model_lm.fit(y_train, future_covariates=x_train_future)
+# pred_full = model_lm.predict(future_covariates=x_val_future, n=227)
+# 
+# y_val["sales"]
+# pred_full["sales"]
+# y_val["AUTOMOTIVE-1"]
+# pred_full["AUTOMOTIVE-1"]
+# #seems realistic
+# 
+# 
+# #plot some predictions by node of hierarchy
+# 
+# #aggregate series
+# y_val["sales"].plot(label="actual")
+# pred_full["sales"].plot(label="lm preds")
+# plt.title("total_sales")
+# plt.show()
+# plt.close()
+# #predictions are in the correct scale now, but fluctuate way too much
+#   #with log transformation the predictions for agg sales are in the wrong scale
+#   #likely due to the nature of addition with logarithms (which is multiplication)
+# 
+# 
+# #categories
+# y_val[categories[5]].plot(label="actual")
+# pred_full[categories[5]].plot(label="lm preds")
+# plt.title("category_sales")
+# plt.show()
+# plt.close()
+# #scale correct, seasonality mostly matches, but too much fluctuation
+# 
+# 
+# #stores
+# y_val[stores[9]].plot(label="actual")
+# pred_full[stores[9]].plot(label="lm preds")
+# plt.title("store_sales")
+# plt.show()
+# plt.close()
+# #scale correct, too much fluctuation, preds too low in general
+# 
+# 
+# #category-store
+# y_val["BREAD/BAKERY-9"].plot(label="actual")
+# pred_full["BREAD/BAKERY-9"].plot(label="lm preds")
+# plt.title("category_store_sales")
+# plt.show()
+# plt.close()
+# #scale correct, trend correct, too much fluctuation
+#   #though the scale is very small. maybe fluctuation is much less on the true scale?
+# 
 
 
 #see how the nodes sum up before reconciliation
-def plot_forecast_sums(pred_series):
+def plot_forecast_sums(pred_series, val_series=None):
     plt.figure(figsize=(10, 5))
-
+    
+    sum([val_series[t] for t in categories_stores]).plot(
+      label="actual categories_stores"
+    )
     pred_series["sales"].plot(label="total", alpha=0.3, color="grey")
     sum([pred_series[r] for r in categories]).plot(label="sum of categories")
     sum([pred_series[r] for r in stores]).plot(label="sum of stores")
     sum([pred_series[t] for t in categories_stores]).plot(
         label="sum of categories_stores"
     )
+    
 
     legend = plt.legend(loc="best", frameon=1)
     frame = legend.get_frame()
@@ -1944,33 +1948,247 @@ from statistics import fmean
 def measure_rmsle(val, pred, subset):
   return rmsle([val[c] for c in subset], [pred[c] for c in subset])
 
+# 
+# #scores of unreconciliated nodes
+# 
+# measure_rmsle(y_val, pred_full, ["sales"])
+# #mean rmsle of total sales 0.5763
+# 
+# fmean(measure_rmsle(y_val, pred_full, categories))
+# stdev(measure_rmsle(y_val, pred_full, categories))
+# #mean rmsle across categories 0.08, sd 0.13, +2sd 0.34
+# 
+# fmean(measure_rmsle(y_val, pred_full, stores))
+# stdev(measure_rmsle(y_val, pred_full, stores))
+# #mean rmsle across stores 0.076, sd 0.04, +2sd 0.156
+# 
+# fmean(measure_rmsle(y_val, pred_full, categories_stores))
+# stdev(measure_rmsle(y_val, pred_full, categories_stores))
+# #mean rmsle across category-store combos 0.0037, sd 0.0095, +2sd = 0.023
+# 
+# 
+# #WITHOUT RECONCILIATION
+# #the hierarchy nodes sum perfectly,
+#   #error is very large at the top node, gets much smaller down the hierarchy
+#   #does this mean darts uses automatic bottom-up reconciliation?
+#   #or maybe it only fits on the lowest nodes of the hierarchy?
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# #TOP DOWN RECONCILIATION
+# from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator
+# topdown_reconciler = TopDownReconciliator()
+# topdown_reconciler.fit(y_train)
+# pred_topdown = topdown_reconciler.transform(pred_full)
+# 
+# 
+# #see how nodes sum up after reconciliation
+# plot_forecast_sums(pred_topdown)
+# plt.show()
+# plt.close()
+# #nothing changed?
+# 
+# 
+# 
+# 
+# #score preds of each node
+# measure_rmsle(y_val, pred_topdown, ["sales"])
+# #0.5763 rmsle on total sales
+#   #same as unreconciled
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_topdown, categories))
+# stdev(measure_rmsle(y_val, pred_topdown, categories))
+# #mean rmsle across categories 0.06, sd 0.1, +2sd 0.26
+#   #lower than unreconciled
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_topdown, stores))
+# stdev(measure_rmsle(y_val, pred_topdown, stores))
+# #mean rmsle across stores 0.06, sd 0.03, +2sd 0.12
+#   #lower than unreconciled
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_topdown, categories_stores))
+# stdev(measure_rmsle(y_val, pred_topdown, categories_stores))
+# #mean rmsle across category-store combos 0.0024, sd 0.006, +2sd 0.014
+#   #lower than unreconciled
+# 
+# 
+# 
+# 
+# 
+# 
+# #MIN T RECONCILIATION
+# from darts.dataprocessing.transformers.reconciliation import MinTReconciliator
+# mint_reconciler= MinTReconciliator(method="wls_struct")
+# #mint_cov wls_val and wls_var didn't work because the matrix is singular and has no determinant
+# # res_full = y_val - pred_full
+# mint_reconciler.fit(y_train)
+# pred_mint = mint_reconciler.transform(pred_full)
+# 
+# 
+# #see how nodes sum up after reconciliation
+# plot_forecast_sums(pred_mint)
+# plt.show()
+# plt.close()
+# #nothing changed
+# 
+# 
+# 
+# #score preds of each node
+# measure_rmsle(y_val, pred_mint, ["sales"])
+# #0.5763 rmsle on total sales
+#   #same as unreconciled and top down
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_mint, categories))
+# stdev(measure_rmsle(y_val, pred_mint, categories))
+# #mean rmsle across categories 0.08, sd 0.14, +2sd 0.35
+#   #higher than top down, same as unreconciled
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_mint, stores))
+# stdev(measure_rmsle(y_val, pred_mint, stores))
+# #mean rmsle across stores 0.076, sd 0.04, +2sd 0.156
+#   #higher than top down, same as unreconciled
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_mint, categories_stores))
+# stdev(measure_rmsle(y_val, pred_mint, categories_stores))
+# #mean rmsle across category-store combos 0.0038, sd 0.0095, +2sd 0.0228
+#   #higher than top down, same as unreconciled
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# #BOTTOM UP RECONCILIATION
+# from darts.dataprocessing.transformers.reconciliation import BottomUpReconciliator
+# bottomup_reconciler = BottomUpReconciliator()
+# pred_bottomup = bottomup_reconciler.transform(pred_full)
+# 
+# 
+# 
+# #see how nodes sum up after reconciliation
+# plot_forecast_sums(pred_bottomup)
+# plt.show()
+# plt.close()
+# #nothing changed
+# 
+# 
+# 
+# 
+# #score preds of each node
+# measure_rmsle(y_val, pred_bottomup, ["sales"])
+# #0.5763 rmsle on total sales
+#   #same as unreconciled, top down and mint
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_bottomup, categories))
+# stdev(measure_rmsle(y_val, pred_bottomup, categories))
+# #mean rmsle across categories 0.08, sd 0.14, +2sd 0.35
+#   #higher than top down, same as unreconciled and mint
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_bottomup, stores))
+# stdev(measure_rmsle(y_val, pred_bottomup, stores))
+# #mean rmsle across stores 0.076, sd 0.04, +2sd 0.156
+#   #higher than top down, same as unreconciled and mint
+# 
+# 
+# fmean(measure_rmsle(y_val, pred_bottomup, categories_stores))
+# stdev(measure_rmsle(y_val, pred_bottomup, categories_stores))
+#mean rmsle across category-store combos 0.0038, sd 0.0095, +2sd 0.0228
+  #higher than top down, same as unreconciled and mint
 
-#scores
 
-measure_rmsle(y_val, pred_full, ["sales"])
-#mean rmsle of total sales 0.5763
-
-fmean(measure_rmsle(y_val, pred_full, categories))
-stdev(measure_rmsle(y_val, pred_full, categories))
-#mean rmsle across categories 0.08, sd 0.13, +2sd 0.34
-
-fmean(measure_rmsle(y_val, pred_full, stores))
-stdev(measure_rmsle(y_val, pred_full, stores))
-#mean rmsle across stores 0.076, sd 0.04, +2sd 0.156
-
-fmean(measure_rmsle(y_val, pred_full, categories_stores))
-stdev(measure_rmsle(y_val, pred_full, categories_stores))
-#mean rmsle across category-store combos 0.0037, sd 0.0095, +2sd = 0.023
+#SUMMARY RECONCILATION WITH MODEL TRAINED ON ALL NODES:
+  #top down reconciliation slightly improved performance of all nodes except total compared to unreconciled
+  #bottom up and mint didn't make a difference from unreconciled
+  #looks like training the model on all hierarchy nodes together is like reconciling them, 
+  #but it's likely not optimal as the bottom nodes have a lot of noise, 
+  #and the top node did much worse compared to a model trained just on the top node.
 
 
 
 
-#WITHOUT RECONCILIATION
-#the hierarchy nodes sum perfectly,
-  #error is very large at the top node, gets much smaller down the hierarchy
-  #does this mean darts uses automatic bottom-up reconciliation?
-  #or maybe it only fits on the lowest nodes of the hierarchy?
+#TRAIN A SEPARATE MODEL FOR EACH NODE MEMBER, GATHER PREDICTIONS, RECONCILE, SCORE
 
+#components of the hierarchical series to iterate over (excluding total sales)
+ts_train.components[1:]
+
+#fitting and predicting first component: total
+model_lm.fit(y_train["sales"], future_covariates=x_train_future)
+pred_lm = model_lm.predict(future_covariates=x_val_future, n=227)
+
+# #fitting and predicting second component: AUTOMOTIVE
+# model_lm.fit(y_train["AUTOMOTIVE"], future_covariates=x_train_future)
+# pred_lm2 = model_lm.predict(future_covariates=x_val_future, n=227)
+# 
+# #stacking the two components:
+# pred_lm.stack(pred_lm2)
+#yes, that should work
+
+#fit and predict all components after total sales, stack them to pred_lm
+for component in ts_train.components[1:]:
+  model_lm.fit(y_train[component], future_covariates=x_train_future)
+  pred_comp = model_lm.predict(future_covariates=x_val_future, n=227)
+  pred_lm = pred_lm.stack(pred_comp)
+
+del pred_comp
+#yes, that should work
+
+
+#embed the hierarchy to the predictions series
+pred_lm = pred_lm.with_hierarchy(ts_hierarchy) 
+pred_lm
+
+
+
+
+#see how nodes sum up before reconciliation
+plot_forecast_sums(pred_lm, y_val)
+plt.title("unreconciled")
+plt.show()
+plt.close()
+#the nodes sum up very closely, but not perfectly
+#none of the node sums capture the peaks and drops in actual sales
+  #sum of stores comes closer to the peaks
+  #sum of categories comes closer to the dips
+
+
+
+
+#SCORE UNRECONCILED NODES
+
+measure_rmsle(y_val, pred_lm, ["sales"])
+#0.1353 rmsle on total sales
+
+
+fmean(measure_rmsle(y_val, pred_lm, categories))
+stdev(measure_rmsle(y_val, pred_lm, categories))
+#mean rmsle across categories 0.0185, sd 0.027, +2sd 0.073
+  #way better than training on all multivariates
+
+
+fmean(measure_rmsle(y_val, pred_lm, stores))
+stdev(measure_rmsle(y_val, pred_lm, stores))
+#mean rmsle across stores 0.023, sd 0.017, +2sd 0.057
+  #way better than training on all multivariates
+
+
+fmean(measure_rmsle(y_val, pred_lm, categories_stores))
+stdev(measure_rmsle(y_val, pred_lm, categories_stores))
+#mean rmsle across category-store combos 0.001, sd 0.0026, +2sd 0.0062
+  #way better than training on all multivariates
 
 
 
@@ -1981,40 +2199,42 @@ stdev(measure_rmsle(y_val, pred_full, categories_stores))
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator
 topdown_reconciler = TopDownReconciliator()
 topdown_reconciler.fit(y_train)
-pred_topdown = topdown_reconciler.transform(pred_full)
+pred_topdown = topdown_reconciler.transform(pred_lm)
 
 
-#see how nodes sum up after reconciliation
-plot_forecast_sums(pred_topdown)
+#see how nodes sum up after top down reconciliation
+plot_forecast_sums(pred_topdown, y_val)
+plt.title("top down reconciled")
 plt.show()
 plt.close()
-#nothing changed?
+#top down reconciled nodes sum up perfectly within themselves
+#but also seem to miss peaks and drops slightly more
 
 
 
 
 #score preds of each node
 measure_rmsle(y_val, pred_topdown, ["sales"])
-#0.5763 rmsle on total sales
+#0.1353 rmsle on total sales
   #same as unreconciled
 
 
 fmean(measure_rmsle(y_val, pred_topdown, categories))
 stdev(measure_rmsle(y_val, pred_topdown, categories))
-#mean rmsle across categories 0.06, sd 0.1, +2sd 0.26
-  #lower than unreconciled
+#mean rmsle across categories 0.028, sd 0.042, +2sd 0.112
+  #doubly worse compared to unreconciled
 
 
 fmean(measure_rmsle(y_val, pred_topdown, stores))
 stdev(measure_rmsle(y_val, pred_topdown, stores))
-#mean rmsle across stores 0.06, sd 0.03, +2sd 0.12
-  #lower than unreconciled
+#mean rmsle across stores 0.03, sd 0.019, +2sd 0.068
+  #worse than unreconciled
 
 
 fmean(measure_rmsle(y_val, pred_topdown, categories_stores))
 stdev(measure_rmsle(y_val, pred_topdown, categories_stores))
-#mean rmsle across category-store combos 0.0024, sd 0.006, +2sd 0.014
-  #lower than unreconciled
+#mean rmsle across category-store combos 0.0015, sd 0.0034, +2sd 0.083
+  #worse than unreconciled
 
 
 
@@ -2022,26 +2242,146 @@ stdev(measure_rmsle(y_val, pred_topdown, categories_stores))
 
 
 
+#BOTTOM UP RECONCILIATION
+pred_bottomup = bottomup_reconciler.transform(pred_lm)
+
+
+
+
+#see how nodes sum up after bottom up reconciliation
+plot_forecast_sums(pred_bottomup, y_val)
+plt.title("bottom up reconciled")
+plt.show()
+plt.close()
+#bottom up reconciled nodes sum up perfectly within themselves
+#also seem to reach for the peaks and drops a bit better compared to top down
+
+
+
+
+#score preds of each node
+measure_rmsle(y_val, pred_bottomup, ["sales"])
+#0.1366 rmsle on total sales
+  #slightly worse than unreconciled and top down
+
+
+fmean(measure_rmsle(y_val, pred_bottomup, categories))
+stdev(measure_rmsle(y_val, pred_bottomup, categories))
+#mean rmsle across categories 0.018, sd 0.027, +2sd 0.072
+  #doubly better compared to top down, slightly better than unreconciled
+
+
+fmean(measure_rmsle(y_val, pred_bottomup, stores))
+stdev(measure_rmsle(y_val, pred_bottomup, stores))
+#mean rmsle across stores 0.023, sd 0.017, +2sd 0.057
+  #same as unreconciled, better than top down
+
+
+fmean(measure_rmsle(y_val, pred_bottomup, categories_stores))
+stdev(measure_rmsle(y_val, pred_bottomup, categories_stores))
+#mean rmsle across category-store combos 0.001, sd 0.0026, +2sd 0.0062
+  #sames unreconciled, better than top down
 
 
 
 
 
 
+#MINT RECONCILATION
+mint_reconciler= MinTReconciliator(method="wls_struct")
+#mint_cov wls_val and wls_var didn't work because the matrix is singular and has no determinant
+#res_full = y_val - pred_lm
+mint_reconciler.fit(y_train)
+pred_mint = mint_reconciler.transform(pred_lm)
+
+
+
+
+#see how nodes sum up after bottom up reconciliation
+plot_forecast_sums(pred_mint, y_val)
+plt.title("minT reconciled")
+plt.show()
+plt.close()
+#minT reconciled nodes sum up perfectly within themselves
+#also seem to predict slightly higher compared to bottom up
+
+
+
+
+#score preds of each node
+measure_rmsle(y_val, pred_mint, ["sales"])
+#0.1358 rmsle on total sales
+  #slightly worse than unreconciled and top down, slightly better than bottom up
+
+
+fmean(measure_rmsle(y_val, pred_mint, categories))
+stdev(measure_rmsle(y_val, pred_mint, categories))
+#mean rmsle across categories 0.019, sd 0.027, +2sd 0.073
+  #doubly better compared to top down, sligthly worse than bottom up, same as unreconciled
+
+
+fmean(measure_rmsle(y_val, pred_mint, stores))
+stdev(measure_rmsle(y_val, pred_mint, stores))
+#mean rmsle across stores 0.023, sd 0.017, +2sd 0.057
+  #same as unreconciled and bottom up, better than top down
+
+
+fmean(measure_rmsle(y_val, pred_mint, categories_stores))
+stdev(measure_rmsle(y_val, pred_mint, categories_stores))
+#mean rmsle across category-store combos 0.001, sd 0.0026, +2sd 0.0062
+  #same as unreconciled and bottom up, better than top down
+
+
+
+#SUMMARY OF MODELING EACH NODE SEPARATELY AND RECONCILING:
+  #all node sums are very close even before reconciliation
+  #unreconciled performs slightly better at the top node
+  #bottom up performs slightly better in the other nodes
 
 
 
 
 
 
-
-
-
-
-
-
-
-
+#NOTES FOR SECOND MODELING ATTEMPT:
+  #keep a pandas copy of the original (merged) data
+    #work through the dirty script to get the cleanest data manipulation workflow possible
+    #make it easy to work back
+  #think about more calendar features:
+    #something to capture new years day and +1 peaks-drops better?
+  #think about making a separate covariate serie for each category and/or store?
+    #shouldn't be to different for calender features
+    #could be tough for lag features
+  #CPI adjust sales and oil at the data handling phase
+    #level of aggregation doesn't matter as it's reversible anytime
+  #difference oil, onpromotion, transactions at the data handling phase
+    #check if they are non-stationary first. if one is non-stationary, difference all
+  #figure out what to to with the log transformation:
+    #is there a way to use it for separate node modeling, then reverse it before summation / reconciliation?
+    #perform it in a pipeline?
+  #figure out the way to apply min-max scaling in a way that makes reconciliation/summing correct  
+    #figure out if there is a way to reverse the effect of min-max scaling on the rmsle metrics
+    #or, make sure they are applied the same way in the dirty script
+    #use the pred vs actual plots above all to evaluate performance
+  #utilize the darts statistics and plots to evaluate time series characteristics such a seasonality, lags
+    #evaluate lags and covariates after decomposition and differencing
+  #decompose sales with a STL, FFT or another advanced method, ideally non-linear trend
+    #consider evaluating different parameters for different hierarchy nodes
+    #train and evaluate with split and rolling, using 2013-2017
+    #get the residuals with darts' built in function. 
+    #don't get residuals for 2013, start training with 2013 and onwards to get the residuals for the rest of the data.
+    #train the second model on 2014-2016, validate on 2017, and do rolling validation.
+  #reevaluate lag features, and rolling features with ewm or another advanced method, utilise darts plots and stats
+    #consider onpromotion as a leading feature
+    #consider transactions as a 15+ day lag or rolling stat (test data is 15 days into the future)
+  #fit an advanced suitable method to stationary data, in a hybrid model
+    #fit STL/FFT decomposition, train and validate with 2013-2017 split and rolling
+    #use residuals function to get decomposed residuals for 2014-2017
+    #fit second model to 2014-2017 residuals, train and validate with split and rolling
+    #sum up second model preds with first model preds to get final preds
+    #evaluate performance with plots above all
+  #throughout the whole modeling process, fit models on each hierarchy component separately!
+    #maybe even introduce other groupings like city, state, store cluster, store type?
 
 
 
@@ -2176,20 +2516,6 @@ stdev(measure_rmsle(y_val, pred_topdown, categories_stores))
 
 
 
-
-
-
-
-
-
-#NOTES FOR SECOND MODELING ATTEMPT:
-  #CPI adjust sales and oil at the start
-  #difference oil, onpromotion, transactions at the start
-  #log transform sales as part of pipeline, after ts conversion
-  #utilize the darts statistics and plots to evaluate time series characteristics such a seasonality
-  #decompose sales with a STL, FFT or another advanced method, ideally non-linear trend
-  #reevaluate lag features and rolling features with ewm or another advanced method, utilise darts plots and stats
-  #fit an advanced suitable method to stationary data, in a hybrid model
 
 
 
