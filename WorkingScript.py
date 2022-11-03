@@ -1399,6 +1399,21 @@ for year in cpi.keys():
 del year
 
 
+#minmax scale sales before aggregation
+from sklearn.preprocessing import MinMaxScaler
+scaler_sk = MinMaxScaler(feature_range=(0,1))
+
+df_train.sales = pd.Series(
+  data=scaler_sk.fit_transform(df_train.sales.values.reshape(-1,1)).reshape(1,-1).tolist()[0],
+  index=df_train.sales.index
+)
+
+df_train.sales
+min(df_train.sales)
+max(df_train.sales)
+#yes,that should work
+
+
 
 
 #create wide dataframes with dates as rows, values for total, category, store and category_store sales as columns
@@ -1437,6 +1452,32 @@ ts_train = reduce(lambda left, right: pd.merge(
   left, right, how="left", on="date"), wide_frames)
 del total, category, store_no, wide_frames, category_store_no
 
+
+# #minmax scale all time series, BUT ALL WITH THE TOTAL SALES' PARAMETERS
+#   #if you scale every series within itself, they won't be summable
+#   #0-1 results in negatives for small series. use 0-100
+# from sklearn.preprocessing import MinMaxScaler
+# scaler_sk = MinMaxScaler(feature_range=(0,100))
+# 
+# 
+# #fit and transform total sales
+# ts_train
+# 
+# ts_train.sales = pd.Series(
+#   data=scaler_sk.fit_transform(ts_train.sales.values.reshape(-1,1)).reshape(1,-1).tolist()[0],
+#   index=ts_train.sales.index)
+# 
+# 
+# #transform other series
+# ts_train.iloc[:,1:1870]
+# 
+# for i in range(1,1870):
+#   ts_train.iloc[:,i] = pd.Series(
+#   data=scaler_sk.transform(ts_train.iloc[:,i].values.reshape(-1,1)).reshape(1,-1).tolist()[0],
+#   index=ts_train.iloc[:,i].index
+#   )
+# 
+# ts_train
 
 
 
@@ -1609,22 +1650,34 @@ missing_values_ratio(future_train)
 #handled
 
 
-#log transform sales series
-def log_zero(x):
-  return np.log(x+0.0001)
-
-def log_zero_inv(x):
-  return (np.exp(x)-0.0001)
-
-transform_log = Mapper(log_zero)
-reverse_log = Mapper(log_zero_inv)
-ts_train = transform_log.transform(ts_train)
+#final check
+ts_train
+ts_train["sales"]
+ts_train["AUTOMOTIVE"]
+ts_train["1"]
+ts_train["AUTOMOTIVE-1"]
+#looks good
 
 
-# #centering and scaling of sales
-# scaler_minmax = Scaler()
-# ts_train = scaler_minmax.fit_transform(ts_train)
-# IMPORTANT: IF YOU SCALE THE TARGETS, YOU NEED TO SCALE THEM ALL TOGETHER BEFORE THIS STEP!
+# #log transform sales series
+# def log_zero(x):
+#   return np.log(x+0.0001)
+# 
+# def log_zero_inv(x):
+#   return (np.exp(x)-0.0001)
+# 
+# transform_log = Mapper(log_zero)
+# reverse_log = Mapper(log_zero_inv)
+# ts_train = transform_log.transform(ts_train)
+# IMPORTANT: LOG TRANSFORMING EACH SERIES MESSES UP THE MULTIVARIATE TRAINING - RECONCILIATION
+  #IT'S BECAUSE SUMMING UP TWO LOGARITHMS = MULTIPLYING THEM. ANY WORKAROUND TO THIS?
+
+
+#centering and scaling of sales
+#scaler_minmax = Scaler()
+# ts_train["sales"] = scaler_minmax.fit_transform(ts_train["sales"])
+#IMPORTANT: IF YOU SCALE THE MULTIVARIATE SERIES, YOU HAVE TO FIT ON THE TOP LEVEL ONLY!
+  #otherwise every series will be 0-1 scaled within itself and won't be comparable
   
   
   
@@ -1660,15 +1713,18 @@ pred_lm = model_lm.predict(future_covariates=x_val_future, n=227)
 
 
 #score 2017 lm predictions
-from darts.metrics import rmse
-rmse(y_val["sales"], pred_lm)
-#rmsle 0.13
+# from darts.metrics import rmse
+from darts.metrics import rmsle
+rmsle(y_val["sales"], pred_lm)
+#rmsle 0.1353
+  #keep in mind these metrics are for scaled data, and may underestimate the real error
+  #though they can be comparable with the same scaling applied
 
 
 #rolling crossval, starting with 2013 as training data, predicting next 15, moving training forward 15 days
 model_lm.backtest(
-  ts_train["sales"], future_covariates=future_train, start=366, forecast_horizon=15, stride=15, metric=rmse)
-#agg rmsle 0.2
+  ts_train["sales"], future_covariates=future_train, start=366, forecast_horizon=15, stride=15, metric=rmsle)
+#agg rmsle 0.152
 
 
 #plot 2017 actual vs. fft preds
@@ -1676,8 +1732,8 @@ y_val["sales"].plot(label="actual")
 pred_lm.plot(label="lm preds")
 plt.show()
 plt.close()
-#accounts for the seasonality well
-#misses the magnitude of some peaks and drops
+#accounts for the seasonality pattern well
+#misses the magnitude of fluctuations, especially some peaks and drops by quite a bit without the log transform
 
 
 #get and inspect inno residuals of 2017
@@ -1690,7 +1746,8 @@ plot_residuals_analysis(res_lm)
 plt.show()
 plt.close()
 #residuals seem stationary except for the new years day drop and a few peaks
-#ACF value significant for lags 1, 2, 3. exponential decline
+#ACF value significant for lag 1. then declines immediately
+  #with log transformed sales, it was lags 1, 2, 3, 4, and an exponential decline
 #distribution very centered around 0 except for the new years day outlier
 
 
@@ -1699,7 +1756,8 @@ from darts.utils.statistics import plot_pacf
 plot_pacf(res_lm, max_lag=48)
 plt.show()
 plt.close()
-#PACF spike in lag 1, lag 3 is barely significant, rest are insignificant
+#PACF spike in lag 1, then a few far away significants in 27, 28, 30, 34...
+  #with log transformation PACF spike in lag 1, lag 3 is barely significant, rest are insignificant
 
 
 #kpss test for stationarity
@@ -1707,11 +1765,14 @@ from darts.utils.statistics import stationarity_test_kpss as kpss
 from darts.utils.statistics import stationarity_test_adf as adf
 kpss_res = kpss(res_lm)
 kpss_res
-#test stat 0.68, p val 0.015, data is non-stationary
+#test stat 0.46, p value 0.05, data is barely stationary
+  #with log transform, test stat 0.68, p val 0.015, data is non-stationary
 adf_res = adf(res_lm)
 adf_res
-#test stat -5.58, p val very small, data is stationary
-#since ADF is stationary and KPSS is not, the series is difference stationary
+#test stat -11.34, p value very small, data is stationary
+  #with log transform, test stat -5.58, p val very small, data is stationary
+#the series is stationary  
+  #with log transform, ADF is stationary and KPSS is not, the series is difference stationary
   #if both tests give stationary or not, the series is stationary or not,
   #if ADF gives non-stationary and KPSS gives stationary, the series is stationary around a trend - remove it.
   #if ADF gives stationary and KPSS gives non-stationary, the differenced series is stationary.
@@ -1719,14 +1780,45 @@ adf_res
 
 
 
-#RECONCILIATION (FIGURE OUT WHY YOU GET ARBITRARY VALUES)
+#FIT ON MULTIVARIATE SERIES, PERFORM RECONCILIATION
+
+
+#check if your hierarchy is properly mapped: do components add up as they should?
+
+##categories and total
+# sum_categories = (
+#   sum([ts_train[category] for category in categories])
+# )
+# 
+# 
+# sum_categories.plot(label="sum of categories")
+# ts_train["sales"].plot(label="total sales")
+# plt.show()
+# plt.close()
+# #no they don't. is this because of the log transformation?
+# #try again with log transformations reversed
+# 
+# #reverse log transformation
+# ts_train_exp = reverse_log.transform(ts_train)
+# 
+# sum_categories_exp = (
+#   sum([ts_train_exp[category] for category in categories])
+# )
+# 
+# 
+# sum_categories_exp.plot(label="sum of categories")
+# ts_train_exp["sales"].plot(label="total sales")
+# plt.show()
+# plt.close()
+# #now they add up. don't use the log transform!
+
 
 
 #fit and predict all nodes of the hierarchy, pre-post 2017 split
-# categories_stores = []
-# for category, store in product(categories, stores):
-#   categories_stores.append("{}-{}".format(category, store))
-# 
+categories_stores = []
+for category, store in product(categories, stores):
+  categories_stores.append("{}-{}".format(category, store))
+
 # 
 # nodes = ["sales", categories, stores, categories_stores]
 # y_train_nodes = [y_train[nodes[0]], y_train[nodes[1]], y_train[nodes[2]], y_train[nodes[3]]]
@@ -1747,7 +1839,7 @@ adf_res
 # 
 # 
 
-
+#training the entire multivariate set at once
 model_lm.fit(y_train, future_covariates=x_train_future)
 pred_full = model_lm.predict(future_covariates=x_val_future, n=227)
 
@@ -1755,10 +1847,10 @@ y_val["sales"]
 pred_full["sales"]
 y_val["AUTOMOTIVE-1"]
 pred_full["AUTOMOTIVE-1"]
+#seems realistic
 
 
-
-#plot predictions by node of hierarchy
+#plot some predictions by node of hierarchy
 
 #aggregate series
 y_val["sales"].plot(label="actual")
@@ -1766,43 +1858,38 @@ pred_full["sales"].plot(label="lm preds")
 plt.title("total_sales")
 plt.show()
 plt.close()
-#the predictions for agg sales are quite different from the standalone predictions
+#predictions are in the correct scale now, but fluctuate way too much
+  #with log transformation the predictions for agg sales are in the wrong scale
+  #likely due to the nature of addition with logarithms (which is multiplication)
 
 
-# #categories
-# y_val[categories[0]].plot(label="actual")
-# pred_full[categories[0]].plot(label="lm preds")
-# plt.title("category_sales")
-# plt.show()
-# plt.close()
+#categories
+y_val[categories[5]].plot(label="actual")
+pred_full[categories[5]].plot(label="lm preds")
+plt.title("category_sales")
+plt.show()
+plt.close()
+#scale correct, seasonality mostly matches, but too much fluctuation
 
 
+#stores
+y_val[stores[9]].plot(label="actual")
+pred_full[stores[9]].plot(label="lm preds")
+plt.title("store_sales")
+plt.show()
+plt.close()
+#scale correct, too much fluctuation, preds too low in general
 
 
-#score predictions for each node of the hierarchy
+#category-store
+y_val["BREAD/BAKERY-9"].plot(label="actual")
+pred_full["BREAD/BAKERY-9"].plot(label="lm preds")
+plt.title("category_store_sales")
+plt.show()
+plt.close()
+#scale correct, trend correct, too much fluctuation
+  #though the scale is very small. maybe fluctuation is much less on the true scale?
 
-
-from statistics import stdev
-from statistics import fmean
-  
-def measure_rmse(val, pred, subset):
-  return rmse([val[c] for c in subset], [pred[c] for c in subset])
-
-#scores
-measure_rmse(y_val, pred_full, ["sales"])
-#mean rmsle of total sales 0.89
-
-fmean(measure_rmse(y_val, pred_full, categories))
-stdev(measure_rmse(y_val, pred_full, categories))
-#mean rmsle across categories 2.56, sd 2.33
-
-fmean(measure_rmse(y_val, pred_full, stores))
-stdev(measure_rmse(y_val, pred_full, stores))
-#mean rmsle across stores 2.44, sd 2.26
-
-fmean(measure_rmse(y_val, pred_full, categories_stores))
-stdev(measure_rmse(y_val, pred_full, categories_stores))
-#mean rmsle across category-store combos 3.39, sd 2.04
 
 
 #see how the nodes sum up before reconciliation
@@ -1824,13 +1911,73 @@ def plot_forecast_sums(pred_series):
 plot_forecast_sums(pred_full)
 plt.show()
 plt.close()
-#these are very arbitrary. somethings wrong with model spec
+#the nodes sum up perfectly. how?
+
+
+
+
+#score predictions for each node of the hierarchy
+
+
+from statistics import stdev
+from statistics import fmean
+  
+# def measure_rmse(val, pred, subset):
+#   return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+
+#rmsle throws error for negative predictions, so we 0-1 scale the predictions
+  #NOTE: SCALED SERIES WON'T BE CORRECTLY COMPARABLE-SUMMABLE WITH ONE ANOTHER
+  #to ensure they will be correctly comparable here, we fit it on predictions only
+# scaler_minmax = Scaler()
+# pred_full_scaled = scaler_minmax.fit_transform(pred_full)
+# y_val_scaled = scaler_minmax.transform(y_val)
+
+#sanity check
+# y_val["sales"][0] #9775.48624353
+# pred_full["sales"][0] #839241.83111653
+# y_val_scaled["sales"][0] #0.11570099
+# pred_full_scaled["sales"][0] #0.52329089
+#yes, that should work
+
+
+def measure_rmsle(val, pred, subset):
+  return rmsle([val[c] for c in subset], [pred[c] for c in subset])
+
+
+#scores
+
+measure_rmsle(y_val, pred_full, ["sales"])
+#mean rmsle of total sales 0.5763
+
+fmean(measure_rmsle(y_val, pred_full, categories))
+stdev(measure_rmsle(y_val, pred_full, categories))
+#mean rmsle across categories 0.08, sd 0.13, +2sd 0.34
+
+fmean(measure_rmsle(y_val, pred_full, stores))
+stdev(measure_rmsle(y_val, pred_full, stores))
+#mean rmsle across stores 0.076, sd 0.04, +2sd 0.156
+
+fmean(measure_rmsle(y_val, pred_full, categories_stores))
+stdev(measure_rmsle(y_val, pred_full, categories_stores))
+#mean rmsle across category-store combos 0.0037, sd 0.0095, +2sd = 0.023
+
+
+
+
+#WITHOUT RECONCILIATION
+#the hierarchy nodes sum perfectly,
+  #error is very large at the top node, gets much smaller down the hierarchy
+  #does this mean darts uses automatic bottom-up reconciliation?
+  #or maybe it only fits on the lowest nodes of the hierarchy?
 
 
 
 
 
-#perform top down reconciliation
+
+
+#TOP DOWN RECONCILIATION
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator
 topdown_reconciler = TopDownReconciliator()
 topdown_reconciler.fit(y_train)
@@ -1841,26 +1988,33 @@ pred_topdown = topdown_reconciler.transform(pred_full)
 plot_forecast_sums(pred_topdown)
 plt.show()
 plt.close()
-pred_topdown
-#very arbitrary. something went wrong
+#nothing changed?
+
+
 
 
 #score preds of each node
-
-measure_rmse(y_val, pred_topdown, ["sales"])
-
-
-fmean(measure_rmse(y_val, pred_topdown, categories))
-stdev(measure_rmse(y_val, pred_topdown, categories))
+measure_rmsle(y_val, pred_topdown, ["sales"])
+#0.5763 rmsle on total sales
+  #same as unreconciled
 
 
-fmean(measure_rmse(y_val, pred_topdown, stores))
-stdev(measure_rmse(y_val, pred_topdown, stores))
+fmean(measure_rmsle(y_val, pred_topdown, categories))
+stdev(measure_rmsle(y_val, pred_topdown, categories))
+#mean rmsle across categories 0.06, sd 0.1, +2sd 0.26
+  #lower than unreconciled
 
 
-fmean(measure_rmse(y_val, pred_topdown, categories_stores))
-stdev(measure_rmse(y_val, pred_topdown, categories_stores))
+fmean(measure_rmsle(y_val, pred_topdown, stores))
+stdev(measure_rmsle(y_val, pred_topdown, stores))
+#mean rmsle across stores 0.06, sd 0.03, +2sd 0.12
+  #lower than unreconciled
 
+
+fmean(measure_rmsle(y_val, pred_topdown, categories_stores))
+stdev(measure_rmsle(y_val, pred_topdown, categories_stores))
+#mean rmsle across category-store combos 0.0024, sd 0.006, +2sd 0.014
+  #lower than unreconciled
 
 
 
