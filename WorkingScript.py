@@ -2352,6 +2352,7 @@ stdev(measure_rmsle(y_val, pred_mint, categories_stores))
   #think about making a separate covariate serie for each category and/or store?
     #shouldn't be to different for calender features
     #could be tough for lag features
+    #or just use auto arima?
   #CPI adjust sales and oil at the data handling phase
     #level of aggregation doesn't matter as it's reversible anytime
   #difference oil, onpromotion, transactions at the data handling phase
