@@ -86,6 +86,16 @@ ts = ts %>% mutate(sales = ifelse(year(date)=="2013", sales / cpi["2013"] * 100,
 
 
 
+#evaluate features to add
+  #pre-post holiday, new years, christmas etc. features
+
+#plot aggregated sales, grouped by holiday vs no holiday
+ts %>%
+  group_by(christmas) %>%
+  summarise(agg_sales = sum(sales)) %>%
+  autoplot()
+
+
 
 
 
