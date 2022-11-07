@@ -65,15 +65,6 @@ scan_gaps(ts)$date
 #no more missing dates
 
 
-#replace NA values for missing dates
-  #sales, transactions, onpromotion, oil: spline interpolate
-  #calendar features: all false, except christmas true
-ts_missing = ts %>% filter_index("2013-12-25", "2014-12-25", "2015-12-25", "2016-12-25")
-ts_missing[,13:19] = "False"
-ts_missing$christmas = "True"
-ts 
-
-
 #CPI adjust sales and oil
 cpi = c(112.8,
         116.8,
@@ -82,9 +73,37 @@ cpi = c(112.8,
         123.6)
 names(cpi) = c("2013", "2014", "2015", "2016", "2017")
 
-for (years in names(cpi)){
-  ts$sales[ts$date]
-}  
+ts = ts %>% mutate(sales = ifelse(year(date)=="2013", sales / cpi["2013"] * 100, 
+                             ifelse(year(date)=="2014", sales / cpi["2014"] * 100,
+                                    ifelse(year(date)=="2015", sales / cpi["2015"] * 100,
+                                           sales / cpi["2016"] * 100))))
+
+# max(na.omit(df$sales))
+# max(na.omit(ts$sales))
+# max(na.omit(df$oil))
+# max(na.omit(ts$oil))
+
+
+
+
+
+
+
+
+
+
+#replace NA values for missing dates in train data, after splitting train-test: 
+  #msales: spline interpolate.
+  #transactions, onpromotion, oil: spline interpolate
+  #calendar features: christmas true, all others false
+
+
+#drop sales from test data
+
+
+
+
+
 
 
 
