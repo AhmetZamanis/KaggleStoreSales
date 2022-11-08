@@ -170,6 +170,8 @@ colSums(is.na(ts_train))
 
 ##Time plots####
 
+###Aggregate####
+
 #overall trend
 ts_train %>%
   summarise(agg_sales=sum(sales)) %>%
@@ -177,50 +179,22 @@ ts_train %>%
   labs(title="overall trend",
        y="total sales",
        x="year")
-
-
-#seasonality plots:
-
-
-#annual seasonality
-ts_train %>% 
-  #summarise(agg_sales=sum(sales)) %>%
-  gg_season() +
-  labs(title="annual seasonality",
-       y="aggregated sales",
-       color="year") +
-  theme_bw()
-
-#monthly seasonality
-ts_train %>% 
-  summarise(agg_sales=sum(sales)) %>%
-  gg_season(period="week") +
-  labs(title="annual seasonality",
-       y="aggregated sales",
-       color="year") +
-  theme_bw()
-
-ts_train %>% 
-  summarise(agg_sales=sum(sales)) %>%
-  gg_subseries(period="year")
-
-
-
-
-
-#seasonality plots, aggregated:
+#sales generally peak at the end of each year, drop at the start of each year
+#overall increasing trend, will be non linear if not fit smoothly
 
 
 #annual seasonality
+ts_train %>% 
+  summarise(agg_sales=sum(sales)) %>%
+  gg_season(period="year") +
+  labs(title="annual seasonality",
+       y="total sales",
+       color="year") +
+  theme_bw()
+#too noisy to read
 
-#   #across months of year
-# ts_train %>% summarise(agg_sales=sum(sales)) %>%
-#   fill_gaps(.full=FALSE) %>%
-#   gg_season(period="year") +
-#   labs(title="annual seasonality across months")
 
-
-#across months of year
+#annual seasonality, months aggregated
 ts_train %>%
   summarise(agg_sales=sum(sales)) %>%
   mutate(month=month(date)) %>%
@@ -233,10 +207,16 @@ ts_train %>%
   geom_line(size=1) +
   geom_point(size=2) +
   scale_x_continuous(breaks=seq(1,12,1)) +
-  labs(title="annual seasonality across months") +
+  labs(title="annual seasonality, months aggregated",
+       y="total sales",
+       color="year") +
   theme_bw()
+#sales peak in december
+#drop from january to february
+#increase from feb to march
 
-#across weeks of year
+
+#annual seasonality, weeks aggregated
 ts_train %>%
   summarise(agg_sales=sum(sales)) %>%
   mutate(week=week(date)) %>%
@@ -248,29 +228,107 @@ ts_train %>%
   ggplot(aes(x=week, y=weekly_sales, color=year)) + 
   geom_line(size=1) +
   geom_point(size=2) +
-  scale_x_continuous(breaks=seq(1,52,2)) +
-  labs(title="annual seasonality across weeks") +
+  scale_x_continuous(breaks=seq(1,52,1)) +
+  labs(title="annual seasonality, weeks aggregated",
+       y="total sales",
+       color="year") +
   theme_bw()
+#holiday rise starts from wk 47, peaks in wk 51, crashes in wk 1-2
+#strong weekly annual pattern that holds across years, except:
+  #2014: strong drop between weeks 6-8, 14-26, 31-35
+  #2016: strong peak between weeks 14-18 (earthquake)
 
 
+#monthly seasonality, days aggregated
+ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  mutate(month=month(date)) %>%
+  mutate(day=day(date)) %>%
+  as_tibble() %>%
+  select(-date) %>%
+  group_by(month, day) %>% summarise(daily_sales=sum(agg_sales)) %>%
+  mutate(month=as.factor(month)) %>%
+  ggplot(aes(x=day, y=daily_sales, color=month)) + 
+  geom_line(size=1) +
+  geom_point(size=2) +
+  scale_x_continuous(breaks=seq(1,31,1)) +
+  labs(title="monthly seasonality, days aggregated",
+       y="total sales",
+       color="month") +
+  theme_bw()
+#sales generally decline from day 1 to 15, increase in day 16 (payday +1 effect)
+  #flag day 16 for payday instead of 15
+#stable from 16-29, another increase in day 30 (payday)
+  #highest sales in days 1-6, flag as post payday week
+  #flag day 31 as payday +1
+#unusually high sales in days 20-24 in december, flag as christmas eve
+  #drop in day 25 december, flag as christmas day
+#very sharp drop at day 1 jan, marked as new years day
+  #stronger than usual recovery in day 2 jan, mark as new years +1
+#very sharp drop on feb 29, this is misleading because there are fewer feb 29s
 
-#monthly seasonality
-  #across days
+
 
 #weekly seasonality
-  #across days
+ts_train %>% 
+  # mutate(month=month(date), year=year(date)) %>%
+  # group_by(month, year) %>%
+  summarise(agg_sales=sum(sales)) %>%
+  gg_season(period="week") +
+  labs(title="weekly seasonality",
+       y="total sales",
+       color="year") +
+  theme_bw()
+#non-linear decline into thursday
+#non linear increase into sunday
 
 
 
 
-#evaluate features to add
-  #pre-post holiday, new years, christmas etc. features
-
-#plot aggregated sales, grouped by holiday vs no holiday
+#examine the drops in 2014. is it due to oil perchance?
 ts_train %>%
-  summarise(agg_sales = sum(sales)) %>%
-  group_by(national_holiday) %>%
-  gg_season(agg_sales, period="day")
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  mutate(week=week(date)) %>%
+  mutate(year=year(date)) %>%
+  as_tibble() %>%
+  select(-date) %>%
+  group_by(week, year) %>% summarise(weekly_sales=sum(agg_sales), oil=mean(oil)) %>%
+  mutate(weekly_sales = scale(weekly_sales), oil=scale(oil)) %>%
+  filter(year==2014) %>%
+  ggplot(aes(x=week, y=weekly_sales)) + 
+  geom_line(size=1, color="#F8766D") +
+  geom_point(size=2, color="#F8766D") +
+  geom_line(aes(x=week, y=oil), size=1, color="#00BFC4") +
+  geom_point(aes(x=week, y=oil), size=1, color="#00BFC4") +
+  scale_x_continuous(breaks=seq(1,52,1)) +
+  labs(title="sales vs oil 2014, weeks aggregated, values scaled",
+       y="total sales, oil",
+       color="color") +
+  scale_color_manual(labels=c("sales", "oil"), values=c("#F8766D", "#00BFC4")) +
+  theme_bw()
+  
+
+
+###Modify calendar features####
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
