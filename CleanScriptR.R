@@ -164,13 +164,13 @@ colSums(is.na(ts_train))
 
 
 
-#EDA 1#### 
-#TREND & SEASONALITY, CALENDAR EFFECTS
+#EDA 1 - TIME & CALENDAR EFFECTS#### 
 
 
 ##Time plots####
 
-###Aggregate####
+
+###Total sales####
 
 #overall trend
 ts_train %>%
@@ -234,8 +234,11 @@ ts_train %>%
        color="year") +
   theme_bw()
 #holiday rise starts from wk 47, peaks in wk 51, crashes in wk 1-2
-#strong weekly annual pattern that holds across years, except:
-  #2014: strong drop between weeks 6-8, 14-26, 31-35
+#sales increase over years. strong annual pattern that holds across years, except:
+  #2014: strong drop between weeks 6-8, 14-26, 31-35 (why?)
+    #or: is it a strong spike between wk 1-4, 9-13, 27?
+  #2015: sales dropped lower than 2014 until week 21, 
+    #suddenly spiked in week 22, stayed elevated after that. (why?)
   #2016: strong peak between weeks 14-18 (earthquake)
 
 
@@ -259,13 +262,13 @@ ts_train %>%
 #sales generally decline from day 1 to 15, increase in day 16 (payday +1 effect)
   #flag day 16 for payday instead of 15
 #stable from 16-29, another increase in day 30 (payday)
-  #highest sales in days 1-6, flag as post payday week
   #flag day 31 as payday +1
+  #highest sales in days 1-6, flag as post_payday
 #unusually high sales in days 20-24 in december, flag as christmas eve
   #drop in day 25 december, flag as christmas day
 #very sharp drop at day 1 jan, marked as new years day
   #stronger than usual recovery in day 2 jan, mark as new years +1
-#very sharp drop on feb 29, this is misleading because there are fewer feb 29s
+#very sharp drop on feb 29, this is misleading because there are fewer february 29s
 
 
 
@@ -285,7 +288,7 @@ ts_train %>%
 
 
 
-#examine the drops in 2014. is it due to oil perchance?
+#examine the sudden changes in 2014-2015. is it due to oil perchance?
 ts_train %>%
   summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
   mutate(week=week(date)) %>%
@@ -294,20 +297,77 @@ ts_train %>%
   select(-date) %>%
   group_by(week, year) %>% summarise(weekly_sales=sum(agg_sales), oil=mean(oil)) %>%
   mutate(weekly_sales = scale(weekly_sales), oil=scale(oil)) %>%
-  filter(year==2014) %>%
-  ggplot(aes(x=week, y=weekly_sales)) + 
-  geom_line(size=1, color="#F8766D") +
-  geom_point(size=2, color="#F8766D") +
-  geom_line(aes(x=week, y=oil), size=1, color="#00BFC4") +
-  geom_point(aes(x=week, y=oil), size=1, color="#00BFC4") +
-  scale_x_continuous(breaks=seq(1,52,1)) +
-  labs(title="sales vs oil 2014, weeks aggregated, values scaled",
-       y="total sales, oil",
-       color="color") +
-  scale_color_manual(labels=c("sales", "oil"), values=c("#F8766D", "#00BFC4")) +
+  filter(year %in% c(2014, 2015)) %>%
+  mutate(week=ifelse(year==2015, week + 52, week)) %>%
+  ggplot(aes(x=week, y=weekly_sales, color=as.factor(year))) + 
+  geom_line(size=1) +
+  geom_point(size=2) +
+  geom_line(aes(x=week, y=oil), size=1, linetype=2) +
+  geom_point(aes(x=week, y=oil), size=1, shape=5) +
+  scale_x_continuous(breaks=seq(1,104,2)) +
+  labs(title="sales vs oil 2014-2015, weeks aggregated, values scaled",
+       y="total sales, oil") +
   theme_bw()
+
+
+#oil vs overall trend
+ts_train %>%
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  autoplot(agg_sales) +
+  ts_train %>%
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  autoplot(oil)
+#oil price was around 90-110 until mid 2014
+#after that, it sharply declined to 30-60, and stayed there
+#THEORY: elevated-dropped oil prices for a 3-6 month period leads to elevated-dropped sales 4-6 months ahead
+  #oil spike: 2013 M6-9. sales spike: 2014 M1-3
+
+
+#scatterplot of oil vs sales, without time
+o1 <- ts_train %>%
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  ggplot(aes(x=oil, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(x="oil at T")
+#two distinct groups, 30-60 oil and 90-110 oil. few obs between
+#considerable decline in sales with high CURRENT oil prices
+
+
+#scatterplot of oil lagged vs sales, without time
+o2 <- ts_train %>%
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  mutate(oil=dplyr::lag(oil, n=60)) %>%
+  ggplot(aes(x=oil, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(x="oil at T-60")
   
 
+#scatterplot of oil lagged vs sales, without time
+o3 <- ts_train %>%
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  mutate(oil=dplyr::lag(oil, n=120)) %>%
+  ggplot(aes(x=oil, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(x="oil at T-120")
+
+
+#scatterplot of oil lagged vs sales, without time
+o4 <- ts_train %>%
+  summarise(agg_sales=sum(sales), oil=mean(oil)) %>%
+  mutate(oil=dplyr::lag(oil, n=180)) %>%
+  ggplot(aes(x=oil, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(x="oil at T-180")
+
+
+#all oil scatterplots together
+(o1 | o2) / (o3 | o4)
+#the relationship generally holds at all T values
+#however, it is most linear at T-60. it becomes non-linear/sigmoidal at 120 and 180
+#re-evaluate this with rolling stats instead of actual values
+  #evaluate after you remove trend & seasonality with STL
+
+
+
+ 
+
+#FEATURE ENGINEERING 1####
 
 ###Modify calendar features####
 
@@ -316,10 +376,28 @@ ts_train %>%
 
 
 
+#MODEL 1 - DECOMPOSITION####
 
 
 
 
+
+#EDA 2 - LAGS AND COVARIATES####
+
+
+
+
+
+
+
+
+
+#FEATURE ENGINEERING 2####
+
+
+
+
+#MODEL 2 - LAGS AND COVARIATES####
 
 
 
