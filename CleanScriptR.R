@@ -286,6 +286,35 @@ ts_train %>%
 #non linear increase into sunday
 
 
+#sales lag plots
+ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  gg_lag(geom="point")
+#lag 7 and lag 1 are particularly strong
+  #this shows strong weekly seasonality
+
+
+#ACF and PACF for sales
+ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  ACF(agg_sales) %>%
+  autoplot() +
+  labs(title="ACF total sales")
+#strong at lag 1, declines until lag 4, increases again and peaks at lag 7,
+  #pattern repeats weekly, declining increasingly
+  #the decline is due to trend. the pattern is due to weekly seasonality
+
+
+ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  PACF(agg_sales) %>%
+  autoplot() +
+  labs(title="PACF total sales")
+#lag 1 strongest.
+  #other strong lags: 3, 5, 6, 7, 8, 9, 13, 14
+  #other numerous slightly significant lags
+  #declining weekly pattern
+
 
 
 #examine the sudden changes in 2014-2015. is it due to oil perchance?
@@ -361,7 +390,7 @@ o4 <- ts_train %>%
 #the relationship generally holds at all T values
 #however, it is most linear at T-60. it becomes non-linear/sigmoidal at 120 and 180
 #re-evaluate this with rolling stats instead of actual values
-  #evaluate after you remove trend & seasonality with STL
+  #evaluate after you remove trend & seasonality
 
 
 
@@ -369,15 +398,57 @@ o4 <- ts_train %>%
 
 #FEATURE ENGINEERING 1####
 
+
 ###Modify calendar features####
 
+#drop old versions
+ts_train = ts_train %>% select(-payday, christmas, new_years_day)
 
 
+#payday features:
+  #payday_16: day 16
+  #payday_31: day 31
+  #payday_n: day 1-6
+ts_train = ts_train %>%
+  mutate(payday_16 = ifelse(day(date)==16, "True", "False"),
+         payday_31 = ifelse(day(date)==31, "True", "False"),
+         payday_1 = ifelse(day(date)==1, "True", "False"),
+         payday_2 = ifelse(day(date)==2, "True", "False"),
+         payday_3 = ifelse(day(date)==3, "True", "False"),
+         payday_4 = ifelse(day(date)==4, "True", "False"),
+         payday_5 = ifelse(day(date)==5, "True", "False"),
+         payday_6 = ifelse(day(date)==6, "True", "False"))
+
+
+#christmas features:
+  #christmas_eve: 20-24 december
+  #christmas_day: 25 december
+
+
+
+
+#new year features:
+  #new_year_1: january 1
+  #new_year_2: january 2
+
+
+
+
+#days of week dummies: use monday as intercept, because it has the least fluctuation-outliers
 
 
 
 #MODEL 1 - DECOMPOSITION####
 
+#trend
+  #linear/smooth or wiggly to account for 2014-2015 fluctuations? 
+    #look into STL's method and decide
+
+#annual, monthly and weekly seasonality
+  #annual: STL
+  #monthly: STL or calendar features?
+    #look into STL's method and decide
+  #weekly: calendar features
 
 
 
