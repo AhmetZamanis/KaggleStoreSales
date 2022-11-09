@@ -26,6 +26,11 @@ df_train = read.csv("./ModifiedData/train_modified.csv", encoding="UTF-8", heade
 df_test = read.csv("./ModifiedData/test_modified.csv", encoding="UTF-8", header=TRUE)
 
 
+#load holidays data
+df_holidays = read.csv("./OriginalData/holidays_events.csv", encoding="UTF-8", header=TRUE)
+
+
+
 # #summarize raw data
 # names(df_train)
 # dim(df_train)
@@ -154,10 +159,6 @@ ts_train$sales = imp_sales$sales
 rm(imp_sales)
 
 
-#ALTERNATIVE: CONVERT TO ts, USE imputeTS TO IMPUTE WITH ADVANCED METHODS AND PLOT?
-  #too much work for 4 missing periods?
-
-
 colSums(is.na(ts_train))
 #yes, that should work
 
@@ -240,6 +241,9 @@ ts_train %>%
   #2015: sales dropped lower than 2014 until week 21, 
     #suddenly spiked in week 22, stayed elevated after that. (why?)
   #2016: strong peak between weeks 14-18 (earthquake)
+    #earthquake previously flagged from apr 16 to may 16 (weeks 15, 16, 17, 18)
+
+
 
 
 #monthly seasonality, days aggregated
@@ -394,6 +398,22 @@ o4 <- ts_train %>%
 
 
 
+
+#zoom in on the earthquake days. which days to flag?
+ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  filter(year(date)==2016) %>%
+  autoplot()
+
+ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  filter(year(date)==2016 & month(date) %in% c(3,4,5,6)) %>%
+  autoplot()
+#the start will definitely be apr 16
+  #earthquake: apr 16
+  #+n features until and including may 15
+
+
  
 
 #FEATURE ENGINEERING 1####
@@ -402,7 +422,8 @@ o4 <- ts_train %>%
 ###Modify calendar features####
 
 #drop old versions
-ts_train = ts_train %>% select(-payday, christmas, new_years_day)
+ts_train = ts_train %>% select(-c("payday", "new_years_day", "christmas", "earthquake"))
+
 
 
 #payday features:
@@ -423,6 +444,19 @@ ts_train = ts_train %>%
 #christmas features:
   #christmas_eve: 20-24 december
   #christmas_day: 25 december
+ts_train = ts_train %>%
+  mutate(
+    christmas_eve = ifelse(
+      day(date) %in% c(20:24) &
+        month(date) == 12,
+      "True", "False"
+    ),
+    christmas_day = ifelse(
+      day(date) == 25 &
+        month(date) == 12,
+      "True", "False"
+    )
+  )
 
 
 
@@ -430,11 +464,139 @@ ts_train = ts_train %>%
 #new year features:
   #new_year_1: january 1
   #new_year_2: january 2
+ts_train = ts_train %>%
+  mutate(
+    new_year_1 = ifelse(
+      day(date) == 1 &
+        month(date) == 1,
+      "True", "False"
+    ),
+    new_year_2 = ifelse(
+      day(date) == 2 &
+        month(date) == 1,
+      "True", "False"
+    )
+  )
 
 
+
+#earthquake features:
+  #earthquake_1 = apr 16
+  #earthquake_2,3,4,5,6,7 = apr 17, 18, 19, 20, 21
+  #earthquake_16 = may 1
+
+ts_train = ts_train %>%
+  mutate(
+    earthquake_1 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) == 
+                            16,
+                          "True", "False"
+                          ),
+    earthquake_2 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) == 
+                            17,
+                          "True", "False"
+    ),
+    earthquake_3 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) ==
+                            18,
+                          "True", "False"
+    ),
+    earthquake_7 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) %in% 
+                            c(19:22),
+                          "True", "False"
+    ),
+    earthquake_15 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) %in% 
+                             c(23:30),
+                            "True", "False"
+                           ),
+    earthquake_30 = ifelse(year(date) == 2016 & month(date) == 5 & day(date) %in% 
+                              c(1:16),
+                            "True", "False"
+    )
+  )
+
+
+
+#addition to holiday features:
+  #x_holiday_n: n days before x holiday
+ts_train = ts_train %>%
+  mutate(local_holiday_lead1 = lead(local_holiday, 1),
+         local_holiday_lead2 = lead(local_holiday, 2),
+         local_holiday_lead3 = lead(local_holiday, 3),
+         regional_holiday_lead1 = lead(regional_holiday, 1),
+         regional_holiday_lead2 = lead(regional_holiday, 2),
+         regional_holiday_lead3 = lead(regional_holiday, 3),
+         national_holiday_lead1 = lead(national_holiday, 1),
+         national_holiday_lead2 = lead(national_holiday, 2),
+         national_holiday_lead3 = lead(national_holiday, 3), .after=national_holiday)
+#yes, that should work
+
+
+#events: split into different event types
+  #dia_madre: events = TRUE & date in may 8, 10, 11, 12, 14
+  #futbol: events = TRUE & date in 2014-06-12 / 2014-07-13
+  #black_friday: event = TRUE & (date in 2014-11-28, 2015-11-27, 2016-11-25)
+  #cyber_monday: event = TRUe & (date in 2014-12-01, 2015-11-30, 2016-11-28)
+  #drop event afterwards
+ts_train = ts_train %>%
+  mutate(dia_madre = ifelse(
+    event=="True" & month(date) == 5 & day(date) %in% c(8, 10, 11, 12, 14),
+    "True", "False"
+  ),
+  futbol = ifelse(
+    event=="True" & date %within% interval("2014-06-12", "2014-07-13"),
+    "True", "False"
+  ),
+  black_friday = ifelse(
+    event=="True" & as.character(date) %in% c("2014-11-28", "2015-11-27", "2016-11-25"),
+    "True", "False"
+  ),
+  cyber_monday = ifelse(
+    event=="True" & as.character(date) %in% c("2014-12-01", "2015-11-30", "2016-11-28"),
+    "True", "False"
+  ),
+  .after=event)
+#yes, that should work
+
+
+ts_train = ts_train %>%
+  select(-event)
 
 
 #days of week dummies: use monday as intercept, because it has the least fluctuation-outliers
+ts_train = ts_train %>%
+  mutate(
+    tuesday = ifelse(
+      wday(date) == 2, "True", "False"
+    ),
+    wednesday = ifelse(
+      wday(date) == 3, "True", "False"
+    ),
+    thursday = ifelse(
+      wday(date) == 4, "True", "False"
+    ),
+    friday = ifelse(
+      wday(date) == 5, "True", "False"
+    ),
+    saturday = ifelse(
+      wday(date) == 6, "True", "False"
+    ),
+    sunday = ifelse(
+      wday(date) == 7, "True", "False"
+    )
+  )
+
+
+
+
+#save new version of ts_train
+write.csv(ts_train, "./ModifiedData/train_modified2.csv", row.names = FALSE)
+
+
+##Reload new version of ts_train####
+ts_train = read.csv("./ModifiedData/train_modified2.csv", encoding="UTF-8", header=TRUE)
+ts_train$date = as_date(ts_train$date)
+ts_train = as_tsibble(ts_train, key=c("category", "city", "state", "store_no", "store_type",
+                          "store_cluster"), index="date")
+
 
 
 
@@ -448,7 +610,31 @@ ts_train = ts_train %>%
   #annual: STL
   #monthly: STL or calendar features?
     #look into STL's method and decide
-  #weekly: calendar features
+  #weekly: leave to calendar features
+
+
+##STL decomposition, total sales####
+
+#default trend, monthly and weekly seasonality
+stl_decomp_train = ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  model(STL(
+    log(agg_sales) ~ trend() +
+                     season(period=31) +
+                     season(period=7)
+    )
+  )
+stl_decomp_train %>%
+  components() 
+
+
+
+
+
+
+
+
+
 
 
 
