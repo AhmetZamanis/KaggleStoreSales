@@ -628,18 +628,119 @@ ts_train = as_tsibble(ts_train, key=c("category", "city", "state", "store_no", "
   #weekly: leave to calendar features
 
 
-##Calendar adjustment, total sales####
-cal_cols = names(ts_train)[12:50]
-ts_decomp = ts_train %>%
-  summarise(agg_sales=sum(sales),
-            across(cal_cols, mean)) 
+##STL decomposition, total sales####
 
-ts_decomp %>%
-  model(
-    TSLM(agg_sales ~ .-date)
-  ) %>%
-  residuals() %>%
-  autoplot()
+#default trend, monthly and weekly annual seasonality
+stl_decomp = ts_train %>%
+  summarise(agg_sales=sum(sales)) %>%
+  model(STL(
+    log(agg_sales) ~ trend() +
+                     season(period=28) +
+                     season(period=7)
+    )
+  )
+
+#retrieve components
+stl_components = stl_decomp %>%
+  components() 
+#actual = trend + season 7 + season 28 + remainder
+  #use the remainder for lags & covariates EDA
+  #fit the second model on the remainder
+  #sum the predictions of the second model with the trend and seasonality from STL to get actual preds
+
+#rename log(agg_sales) in the components tsibble
+stl_components = stl_components %>%
+  rename(agg_sales = "log(agg_sales)")
+
+
+#plot trend vs actual
+stl_components %>%
+  ggplot(aes(x=date, y=agg_sales)) +
+  geom_line() +
+  geom_line(aes(x=date, y=trend), color="#F8766D", size=1) +
+  labs(title="STL decomposed trend vs actual values",
+       y="total sales") +
+  theme_bw()
+#trend follows the actual prices very well,
+  #except for ny 2017 where it drops too early
+#without the 28-period seasonality, the trend becomes way too wiggly
+
+
+#plot seasonal adjusted vs actual, 2017
+stl_components %>%
+  filter(year(date)==2016) %>%
+  ggplot(aes(x=date, y=agg_sales)) +
+  geom_line() +
+  geom_line(aes(x=date, y=season_adjust), color="#F8766D") +
+  labs(title="STL seasonally adjusted values vs actual values",
+       y="total sales") +
+  theme_bw()
+
+
+
+#plot seasonal component vs actual values
+stl_components %>%
+  filter(year(date)==2017) %>%
+  ggplot(aes(x=date, y=scale(agg_sales))) +
+  geom_line() +
+  geom_line(aes(x=date, y=scale(season_7 + season_28)), color="#F8766D") +
+  labs(title="STL decomposed seasonality vs actual values",
+       subtitle="seasonality = sum of weekly and monthly annual seasonality",
+       y="total sales") +
+  theme_bw()
+#catches the seasonality waveshape well, but not the magnitudes.
+  #mostly overpredicts the peaks and drops
+
+
+
+
+#STL decomposed innovation residuals analysis
+stl_decomp %>%
+  gg_tsresiduals()
+#residuals are normally distributed around 0, except for new years outliers
+#strong ACF correlation with lags 7 and its multiples
+  #day of week seasonality is still present
+#slightly significant acf correlation with lags 1, 8, 9, 10, 11
+  #sigmoidal decline
+
+
+#test stationarity
+
+#kpss test
+stl_components %>%
+  features(remainder, unitroot_kpss)
+#null hypothesis: data is stationary around a linear trend
+  #the null is accepted with a p value of 0.1 or higher
+  #the residuals are stationary with a possible trend
+
+
+#philips-perron test
+stl_components %>%
+  features(remainder, unitroot_pp)
+#null hypothesis: data is non-stationary around a constant trend
+  #the null is rejected with a p value of 0.01 or lower
+  #the residuals are stationary with no trend
+
+
+
+
+
+
+##LM calendar adjustment, total sales####
+# cal_cols = names(ts_train)[12:50]
+# ts_decomp = ts_train %>%
+#   summarise(agg_sales=sum(sales),
+#             across(cal_cols, mean)) %>%
+#   stretch_tsibble(.init=365, .step=15) %>%
+#   relocate(.id, .after=date)
+# 
+# lm_decomp = ts_decomp %>%
+#   model(TSLM(agg_sales ~ .-date)) %>%
+#   forecast(h=15)
+# 
+# lm_decomp_fit = lm_decomp %>% fitted()
+
+
 
 
 # res_decomp = ts_decomp %>%
@@ -653,39 +754,20 @@ ts_decomp %>%
 
 
 
-##STL decomposition, total sales####
-
-#default trend, monthly and weekly seasonality
-stl_decomp = ts_train %>%
-  summarise(agg_sales=sum(sales)) %>%
-  model(STL(
-    log(agg_sales) ~ trend() +
-                     season(period=28) +
-                     season(period=7)
-    )
-  )
-
-stl_decomp %>%
-  components() 
-
-stl_decomp %>%
-  components() %>%
-  autoplot()
-
-
-
-
-
-
-
-
-
-
-
-
 
 #EDA 2 - LAGS AND COVARIATES####
 
+
+##sales lags X total sales####
+
+
+##oil X total sales####
+
+
+##onpromotion X total sales####
+
+
+#transactions X total_sales####
 
 
 
