@@ -301,7 +301,7 @@ ts_train %>%
 #ACF and PACF for sales
 ts_train %>%
   summarise(agg_sales=sum(sales)) %>%
-  ACF(agg_sales) %>%
+  ACF(agg_sales, lag_max = 60) %>%
   autoplot() +
   labs(title="ACF total sales")
 #strong at lag 1, declines until lag 4, increases again and peaks at lag 7,
@@ -425,20 +425,31 @@ ts_train %>%
 ts_train = ts_train %>% select(-c("payday", "new_years_day", "christmas", "earthquake"))
 
 
+#convert holiday features to dummies
+ts_train$local_holiday = ts_train$local_holiday %>%
+  recode("True" = 1, "False" = 0)
+
+ts_train$regional_holiday = ts_train$regional_holiday %>%
+  recode("True" = 1, "False" = 0)
+
+ts_train$national_holiday = ts_train$national_holiday %>%
+  recode("True" = 1, "False" = 0)
+
+
 
 #payday features:
   #payday_16: day 16
   #payday_31: day 31
   #payday_n: day 1-6
 ts_train = ts_train %>%
-  mutate(payday_16 = ifelse(day(date)==16, "True", "False"),
-         payday_31 = ifelse(day(date)==31, "True", "False"),
-         payday_1 = ifelse(day(date)==1, "True", "False"),
-         payday_2 = ifelse(day(date)==2, "True", "False"),
-         payday_3 = ifelse(day(date)==3, "True", "False"),
-         payday_4 = ifelse(day(date)==4, "True", "False"),
-         payday_5 = ifelse(day(date)==5, "True", "False"),
-         payday_6 = ifelse(day(date)==6, "True", "False"))
+  mutate(payday_16 = ifelse(day(date)==16, 1, 0),
+         payday_31 = ifelse(day(date)==31, 1, 0),
+         payday_1 = ifelse(day(date)==1, 1, 0),
+         payday_2 = ifelse(day(date)==2, 1, 0),
+         payday_3 = ifelse(day(date)==3, 1, 0),
+         payday_4 = ifelse(day(date)==4, 1, 0),
+         payday_5 = ifelse(day(date)==5, 1, 0),
+         payday_6 = ifelse(day(date)==6, 1, 0))
 
 
 #christmas features:
@@ -449,12 +460,12 @@ ts_train = ts_train %>%
     christmas_eve = ifelse(
       day(date) %in% c(20:24) &
         month(date) == 12,
-      "True", "False"
+      1, 0
     ),
     christmas_day = ifelse(
       day(date) == 25 &
         month(date) == 12,
-      "True", "False"
+      1, 0
     )
   )
 
@@ -469,12 +480,12 @@ ts_train = ts_train %>%
     new_year_1 = ifelse(
       day(date) == 1 &
         month(date) == 1,
-      "True", "False"
+      1, 0
     ),
     new_year_2 = ifelse(
       day(date) == 2 &
         month(date) == 1,
-      "True", "False"
+      1, 0
     )
   )
 
@@ -489,27 +500,27 @@ ts_train = ts_train %>%
   mutate(
     earthquake_1 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) == 
                             16,
-                          "True", "False"
+                          1, 0
                           ),
     earthquake_2 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) == 
                             17,
-                          "True", "False"
+                          1, 0
     ),
     earthquake_3 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) ==
                             18,
-                          "True", "False"
+                          1, 0
     ),
     earthquake_7 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) %in% 
                             c(19:22),
-                          "True", "False"
+                          1, 0
     ),
     earthquake_15 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) %in% 
                              c(23:30),
-                            "True", "False"
+                            1, 0
                            ),
     earthquake_30 = ifelse(year(date) == 2016 & month(date) == 5 & day(date) %in% 
                               c(1:16),
-                            "True", "False"
+                            1, 0
     )
   )
 
@@ -539,19 +550,19 @@ ts_train = ts_train %>%
 ts_train = ts_train %>%
   mutate(dia_madre = ifelse(
     event=="True" & month(date) == 5 & day(date) %in% c(8, 10, 11, 12, 14),
-    "True", "False"
+    1, 0
   ),
   futbol = ifelse(
     event=="True" & date %within% interval("2014-06-12", "2014-07-13"),
-    "True", "False"
+    1, 0
   ),
   black_friday = ifelse(
     event=="True" & as.character(date) %in% c("2014-11-28", "2015-11-27", "2016-11-25"),
-    "True", "False"
+    1, 0
   ),
   cyber_monday = ifelse(
     event=="True" & as.character(date) %in% c("2014-12-01", "2015-11-30", "2016-11-28"),
-    "True", "False"
+    1, 0
   ),
   .after=event)
 #yes, that should work
@@ -565,22 +576,22 @@ ts_train = ts_train %>%
 ts_train = ts_train %>%
   mutate(
     tuesday = ifelse(
-      wday(date) == 2, "True", "False"
+      wday(date) == 2, 1, 0
     ),
     wednesday = ifelse(
-      wday(date) == 3, "True", "False"
+      wday(date) == 3, 1, 0
     ),
     thursday = ifelse(
-      wday(date) == 4, "True", "False"
+      wday(date) == 4, 1, 0
     ),
     friday = ifelse(
-      wday(date) == 5, "True", "False"
+      wday(date) == 5, 1, 0
     ),
     saturday = ifelse(
-      wday(date) == 6, "True", "False"
+      wday(date) == 6, 1, 0
     ),
     sunday = ifelse(
-      wday(date) == 7, "True", "False"
+      wday(date) == 7, 1, 0
     )
   )
 
@@ -602,6 +613,10 @@ ts_train = as_tsibble(ts_train, key=c("category", "city", "state", "store_no", "
 
 #MODEL 1 - DECOMPOSITION####
 
+
+#calendar adjustment: with linear regression
+
+
 #trend
   #linear/smooth or wiggly to account for 2014-2015 fluctuations? 
     #look into STL's method and decide
@@ -613,19 +628,49 @@ ts_train = as_tsibble(ts_train, key=c("category", "city", "state", "store_no", "
   #weekly: leave to calendar features
 
 
+##Calendar adjustment, total sales####
+cal_cols = names(ts_train)[12:50]
+ts_decomp = ts_train %>%
+  summarise(agg_sales=sum(sales),
+            across(cal_cols, mean)) 
+
+ts_decomp %>%
+  model(
+    TSLM(agg_sales ~ .-date)
+  ) %>%
+  residuals() %>%
+  autoplot()
+
+
+# res_decomp = ts_decomp %>%
+#   model(decomposition_model(
+#     STL(log(agg_sales) ~ trend() +
+#                          season(period=28) +
+#                          season(period=7)),
+#     TSLM(season_adjust ~ .)
+#   ))
+# 
+
+
+
 ##STL decomposition, total sales####
 
 #default trend, monthly and weekly seasonality
-stl_decomp_train = ts_train %>%
+stl_decomp = ts_train %>%
   summarise(agg_sales=sum(sales)) %>%
   model(STL(
     log(agg_sales) ~ trend() +
-                     season(period=31) +
+                     season(period=28) +
                      season(period=7)
     )
   )
-stl_decomp_train %>%
+
+stl_decomp %>%
   components() 
+
+stl_decomp %>%
+  components() %>%
+  autoplot()
 
 
 
