@@ -768,8 +768,7 @@ lm_model = ts_lm %>%
                trend(knots=c(date("2015-06-01"))) +
                fourier(period=28, K=7) +
                fourier(period=7, K=2) -
-               date -
-               agg_sales
+               date - agg_sales
              )
         )
 
@@ -904,6 +903,70 @@ augment(lm_model) %>%
   #predictions are good overall, 6.5% MAPE, 0.083 RMSLE, 61338.21 RMSE
   #preds sometimes miss the magnitude of waves, sometimes the timing
   #ACF autocorrelations remain, cyclic components such as christmas and 2014-2015 cycles remain
+
+
+
+
+#rolling CV the LM model
+ts_lm_cv = ts_lm %>%
+  stretch_tsibble(.step=15, .init=365)
+
+table(ts_lm_cv$.id)
+#training sets start from first 365, progresses as n+15, ends with first 1685 rows
+#won't be able to predict set id 89 with a window of 15
+  #filter the data and keep only first 88 sets as training (first 1670 rows)
+  #give the original data as new_data
+    #create matching .id column if needed
+ts_lm_cv = ts_lm_cv %>%
+  filter(.id!=89)
+#88 training sets, starting from first 365, ending with first 1670
+
+
+#create validation data with matching .id col
+  #drop 2013 rows because they won't be predicted
+ts_lm_cv_val = ts_lm %>%
+  filter(year(date)!=2013) %>%
+  tile_tsibble(.size=15) %>%
+  filter(.id!=89)
+
+table(ts_lm_cv_val$.id)
+#89 testing sets with window 15, starting from 2014
+
+
+#perform cv
+lm_cv = ts_lm_cv %>%
+  model(TSLM(agg_sales ~ . +
+               trend(knots=c(date("2015-06-01"))) +
+               fourier(period=28, K=7) +
+               fourier(period=7, K=2) -
+               date - agg_sales
+  )
+  ) %>%
+  forecast(new_data=ts_lm_cv_val)
+
+
+#score the predictions with rmse, mape and rmsle
+  #reverse the log transform for mape
+lm_cv_scores = lm_cv %>% 
+  mutate(agg_sales=exp(agg_sales)) %>%
+  accuracy(ts_lm_cv_val %>%
+             mutate(agg_sales=exp(agg_sales)))
+
+#get the RMSLE as well
+lm_cv_scores$RMSLE = lm_cv %>%
+  accuracy(ts_lm_cv_val) %>%
+  select(RMSE)
+
+#scores
+mean(lm_cv_scores$RMSE)
+mean(c(lm_cv_scores$RMSLE))
+mean(lm_cv_scores$MAPE)
+#rmse 98834.61
+#rmsle ???
+#mape 16.37
+  
+#figure out the issue with rmsle?
+#get the SDs, ranges, plots for these scores?
 
 
 
