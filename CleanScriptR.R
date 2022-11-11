@@ -596,6 +596,18 @@ ts_train = ts_train %>%
   )
 
 
+#check NAs
+colSums(is.na(ts_train))
+#we have a few NAs in the holiday leads columns
+  #2017-08-13, 14, 15
+#check if there are any holidays in 2017-08-16
+
+df_holidays = read.csv("./OriginalData/holidays_events.csv", encoding="UTF-8", header=TRUE)
+#no holidays in 2017-08-16. replace the na's with 0's
+ts_train[is.na(ts_train)] = 0
+#yes, that should work
+
+
 
 
 #save new version of ts_train
@@ -614,24 +626,15 @@ ts_train = as_tsibble(ts_train, key=c("category", "city", "state", "store_no", "
 #MODEL 1 - DECOMPOSITION####
 
 
-#calendar adjustment: with linear regression
-
-
-#trend
-  #linear/smooth or wiggly to account for 2014-2015 fluctuations? 
-    #look into STL's method and decide
-
-#annual, monthly and weekly seasonality
-  #annual: STL
-  #monthly: STL or calendar features?
-    #look into STL's method and decide
-  #weekly: leave to calendar features
-
-
 ##STL decomposition, total sales####
 
+#NOTE: STL in feasts cannot make predictions. therefore it can't be part of the model.
+  #use STL to examine the trend and seasonality, and then model them in the LM
+  #use a piecewise linear trend with knots. derive the number of knots from STL
+
+
 #default trend, monthly and weekly annual seasonality
-stl_decomp = ts_train %>%
+stl_model = ts_train %>%
   summarise(agg_sales=sum(sales)) %>%
   model(STL(
     log(agg_sales) ~ trend() +
@@ -639,14 +642,23 @@ stl_decomp = ts_train %>%
                      season(period=7)
     )
   )
+#7-period seasonality only doesn't rid the trend from the seasonality
+#28-period only, and 28-period together with 7-period have similar trends
+  #but the residuals for the multiseason decomposition are smaller. go with that
+
 
 #retrieve components
-stl_components = stl_decomp %>%
+stl_components = stl_model %>%
   components() 
-#actual = trend + season 7 + season 28 + remainder
-  #use the remainder for lags & covariates EDA
-  #fit the second model on the remainder
-  #sum the predictions of the second model with the trend and seasonality from STL to get actual preds
+#actual - trend - season 7 - season 28 =  remainder
+
+
+#plot all components
+stl_model %>% components %>% autoplot()
+#trend: 2-piece linear, after adjusting for holidays, new years, and the cylicality?
+#seasonality: multiseason captures it better than single season.
+  #two separate sets of fourier features, for period 28 and period 7?
+
 
 #rename log(agg_sales) in the components tsibble
 stl_components = stl_components %>%
@@ -666,42 +678,40 @@ stl_components %>%
 #without the 28-period seasonality, the trend becomes way too wiggly
 
 
-#plot seasonal adjusted vs actual, 2017
+# #plot seasonal adjusted vs actual, 2017
+# stl_components %>%
+#   filter(year(date)==2016) %>%
+#   ggplot(aes(x=date, y=agg_sales)) +
+#   geom_line() +
+#   geom_line(aes(x=date, y=season_adjust), color="#F8766D") +
+#   labs(title="STL seasonally adjusted values vs actual values",
+#        y="total sales") +
+#   theme_bw()
+
+
+#plot seasonal components vs actual values, only 2016 for ease of viewing
 stl_components %>%
   filter(year(date)==2016) %>%
-  ggplot(aes(x=date, y=agg_sales)) +
-  geom_line() +
-  geom_line(aes(x=date, y=season_adjust), color="#F8766D") +
-  labs(title="STL seasonally adjusted values vs actual values",
-       y="total sales") +
-  theme_bw()
-
-
-
-#plot seasonal component vs actual values
-stl_components %>%
-  filter(year(date)==2017) %>%
   ggplot(aes(x=date, y=scale(agg_sales))) +
   geom_line() +
-  geom_line(aes(x=date, y=scale(season_7 + season_28)), color="#F8766D") +
+  geom_line(aes(x=date, y=scale(season_7 + season_28)), color="#00BFC4") +
   labs(title="STL decomposed seasonality vs actual values",
-       subtitle="seasonality = sum of weekly and monthly annual seasonality",
+       subtitle="seasonality = sum of period_7 and period_28 seasonality",
        y="total sales") +
   theme_bw()
-#catches the seasonality waveshape well, but not the magnitudes.
-  #mostly overpredicts the peaks and drops
+#catches the seasonality waveshape well, but not the magnitudes
+  #1 peak-trough pair per 1 week. 52 movements in total
 
 
 
-
-#STL decomposed innovation residuals analysis
-stl_decomp %>%
+#STL decomped innovation residuals analysis
+stl_model %>%
   gg_tsresiduals()
 #residuals are normally distributed around 0, except for new years outliers
 #strong ACF correlation with lags 7 and its multiples
-  #day of week seasonality is still present
+  #day of week seasonality is still present. will be accounted for with dummies
 #slightly significant acf correlation with lags 1, 8, 9, 10, 11
-  #sigmoidal decline
+  #sigmoidal decline. not significant past lag 11. is this the day of week seasonality?
 
 
 #test stationarity
@@ -726,36 +736,185 @@ stl_components %>%
 
 
 
-##LM calendar adjustment, total sales####
-# cal_cols = names(ts_train)[12:50]
-# ts_decomp = ts_train %>%
-#   summarise(agg_sales=sum(sales),
-#             across(cal_cols, mean)) %>%
-#   stretch_tsibble(.init=365, .step=15) %>%
-#   relocate(.id, .after=date)
-# 
-# lm_decomp = ts_decomp %>%
-#   model(TSLM(agg_sales ~ .-date)) %>%
-#   forecast(h=15)
-# 
-# lm_decomp_fit = lm_decomp %>% fitted()
+##LM time & calendar model, total sales####
+
+
+#trend: piecewise linear 
+  #knots at:
+    #mid 2015?
+#seasonality: fourier features
+  #one set for period 7, or two for period 7 and 28?
+#calendar effects: dummies
+
+
+#create tsibble with all dummy predictors and total sales
+  #log transform to get multiplicative decomposition
+cal_cols = names(ts_train)[12:51]
+ts_lm = ts_train %>%
+  summarise(agg_sales=sum(sales),
+            across(cal_cols, mean)) %>%
+  mutate(agg_sales=log(agg_sales))
+
+
+#create validation set
+ts_lm_val = ts_lm %>%
+  filter(year(date)==2017)
+
+
+#fit LM on 2013-2016
+lm_model = ts_lm %>%
+  filter(year(date)!=2017) %>%
+  model(TSLM(agg_sales ~ . + 
+               trend(knots=c(date("2015-06-01"))) +
+               fourier(period=28, K=7) +
+               fourier(period=7, K=2) -
+               date -
+               agg_sales
+             )
+        )
 
 
 
 
-# res_decomp = ts_decomp %>%
-#   model(decomposition_model(
-#     STL(log(agg_sales) ~ trend() +
-#                          season(period=28) +
-#                          season(period=7)),
-#     TSLM(season_adjust ~ .)
-#   ))
-# 
+#predict LM on 2017
+lm_preds = lm_model %>%
+  forecast(ts_lm_val) 
+
+
+#plot actual vs predicted, time plot
+lm_preds %>%
+  autoplot(ts_lm_val) +
+  labs(title="predicted vs actual total sales",
+       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       y="total sales") +
+  theme_bw()
+#looks good overall
+  #catches the waveshape every time except for the last wave
+    #might indicate some special effect in the last week of the training data,
+      #may apply to the testing data
+  #the magnitude of the wave is close to actual, 
+    #matches the actual values exactly in some weeks,
+    #misses them considerably in other weeks
+    #the timing is slightly early or late for some waves
+      #possibly due to cyclicality
+  #matches the new years' drop, and the subsequent recovery very well
+
+
+#plot actual vs predicted, scatterplot
+ts_lm_val %>%
+  ggplot(aes(x=agg_sales, y=lm_preds$.mean)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0, color="red") +
+  labs(title="predicted vs actual total sales",
+       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       y="total sales, predicted",
+       x="total sales, actual") +
+  theme_bw()
+
+
+
+#score the predictions with rmse, mape and rmsle
+  #reverse the log transform for mape
+lm_scores = lm_preds %>% 
+  mutate(agg_sales=exp(agg_sales)) %>%
+  accuracy(ts_lm_val %>%
+             mutate(agg_sales=exp(agg_sales)))
+
+#get the RMSLE as well
+lm_scores$RMSLE = lm_preds %>%
+  accuracy(ts_lm_val) %>%
+  select(RMSE)
+
+#scores
+lm_scores$RMSE
+lm_scores$RMSLE
+lm_scores$MAPE
+#rmse 61338.21
+#rmsle 0.0836
+#mape 6.434653
+
+
+
+
+#diagnose the model fit
+
+
+#retrieve LM model report
+lm_model %>% report()
+#r square 85%
+#large and significant coefs:
+#regional_holiday_lead3,
+#payday dummies:
+#payday + 1, 2, 3, 4, 5 all have larger magnitude than both paydays
+#sd's are low as well
+#christmas eve,
+#new year 1
+#earthquake 2,3,7
+
+
+#innovation residuals analysis
+lm_model %>% gg_tsresiduals() +
+  labs(title="innovation residuals diagnostics, lm model")
+#generally seems statonary, except for:
+  #start of 2014 - mid 2015 cyclicality is not captured
+  #christmas peaks are not well captured, or they are backed by other cyclical components?
+  #the increase in the end of the training set (2017 jul-aug) is not well captured
+    #figure out the cause of this
+#ACF lags persist all the way to lag 28, linearish decline
+  #also a slight weekly sigmoidal pattern persists, but only between lag 1-7
+  #strongest at lag 1 with 0.8, weakest at lag 28 with 0.2
+#residual distribution centered normally around 0, except for few outliers
+
+
+#test stationarity
+
+#kpss test
+augment(lm_model) %>%
+  features(.innov, unitroot_kpss)
+#null hypothesis: data is stationary around a linear trend
+  #the null is accepted with a p value of 0.1 or higher
+  #the residuals are stationary with a possible trend
+    #although the test stat is 0.2, less than half of the STL decomp
+
+
+#philips-perron test
+augment(lm_model) %>%
+  features(.innov, unitroot_pp)
+#null hypothesis: data is non-stationary around a constant trend
+  #the null is rejected with a p value of 0.01 or lower
+  #the residuals are stationary with no trend
+
+
+#plot residuals against fitted values
+augment(lm_model) %>%
+  ggplot(aes(x=.fitted, y=.resid)) +
+  geom_point() +
+  labs(title="fitted vs residuals plot, lm model",
+    x="fitted", y="residuals")
+#4 huge outliers (new years days)
+  #besides the outliers, the residuals are larger around fitted 0,
+    #and get smaller with lower and higher fitted values
+    #maybe the model isn't great at predicting zero or small sales
+
+
+
+
+#MODEL 1 RESULT:
+  #it seems the trend and seasonality is captured well, in shape if not magnitude
+  #predictions are good overall, 6.5% MAPE, 0.083 RMSLE, 61338.21 RMSE
+  #preds sometimes miss the magnitude of waves, sometimes the timing
+  #ACF autocorrelations remain, cyclic components such as christmas and 2014-2015 cycles remain
+
+
 
 
 
 
 #EDA 2 - LAGS AND COVARIATES####
+
+#perform EDA for sales lags, covariates, covariate lags and rolling features,
+  #use the residuals from the LM model
+    #all of them, or just 2017 residuals???
 
 
 ##sales lags X total sales####
