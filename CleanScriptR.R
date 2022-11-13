@@ -959,15 +959,19 @@ lm_cv_scores$RMSLE = lm_cv %>%
 
 #scores
 mean(lm_cv_scores$RMSE)
-mean(c(lm_cv_scores$RMSLE))
+mean(lm_cv_scores$RMSLE$RMSE)
 mean(lm_cv_scores$MAPE)
 #rmse 98834.61
-#rmsle ???
+#rmsle 0.164
 #mape 16.37
   
-#figure out the issue with rmsle?
-#get the SDs, ranges, plots for these scores?
 
+#plot the mape
+ggplot(data=lm_cv_scores, aes(x=.id, y=MAPE)) + geom_line() + geom_point() +
+  labs(title="rolling CV results, LM model with time & calendar features",
+       subtitle="starts from 2014, each id is 15 days of test data")
+#scores decline linearly from 35 MAPE to 5-10
+  #except for the peaks in error likely in late 2014-2015 due to cyclicality
 
 
 
