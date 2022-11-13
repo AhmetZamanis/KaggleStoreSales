@@ -976,6 +976,30 @@ ggplot(data=lm_cv_scores, aes(x=.id, y=MAPE)) + geom_line() + geom_point() +
 
 
 
+###Get residuals from model 1####
+
+#fit LM on 2013-2017
+lm_model_full = ts_lm %>%
+  model(TSLM(agg_sales ~ . + 
+               trend(knots=c(date("2015-06-01"))) +
+               fourier(period=28, K=7) +
+               fourier(period=7, K=2) -
+               date - agg_sales
+  )
+  )
+
+
+#get decomped resids from LM
+total_sales_decomped = lm_model_full %>%
+  residuals()
+
+
+#put decomped resids in a tsibble, reverse log transformation
+ts_decomped = ts_lm %>%
+  mutate(agg_sales=total_sales_decomped$.resid)
+
+
+
 
 #EDA 2 - LAGS AND COVARIATES####
 
@@ -984,10 +1008,88 @@ ggplot(data=lm_cv_scores, aes(x=.id, y=MAPE)) + geom_line() + geom_point() +
     #all of them, or just 2017 residuals???
 
 
+#add in oil, onpromotion, transactions
+covariates_total = ts_train %>%
+  summarise(oil=mean(oil), onpromotion=sum(onpromotion), transactions=sum(transactions)) 
+ts_decomped = left_join(x=ts_decomped, y=covariates_total, by="date")
+
+
+#test covariates' stationarity
+  #kpss null: data is stationary around a linear trend
+  #pp null: data is non-stationary around a constant trend
+
+unitroot_kpss(ts_decomped$oil)
+#null rejected, oil not stationary around a linear trend
+unitroot_pp(ts_decomped$oil)
+#null accepted, oil not stationary around a constant trend
+
+
+unitroot_kpss(ts_decomped$onpromotion)
+#null rejected, onpromotion not stationary around a linear trend
+unitroot_pp(ts_decomped$onpromotion)
+#null rejected, onpromotion stationary around a constant trend
+
+
+unitroot_kpss(ts_decomped$transactions)
+#null rejected, transactions not stationary around a linear trend
+unitroot_pp(ts_decomped$transactions)
+#null rejected, transactions stationary around a constant trend
+
+
+#determine number of differences necessary to make covariates stationary
+unitroot_ndiffs(ts_decomped$oil) #once
+unitroot_ndiffs(ts_decomped$onpromotion) #once
+unitroot_ndiffs(ts_decomped$transactions) #once
+
+
+#difference all covariates
+ts_decomped = ts_decomped %>%
+  mutate(oil=difference(oil),
+         onpromotion=difference(onpromotion),
+         transactions=difference(transactions))
+ts_decomped[is.na(ts_decomped)] = 0
+
+
+
+
 ##sales lags X total sales####
 
 
+#PACF
+ts_decomped %>%
+  PACF(agg_sales) %>% autoplot() +
+  labs(title="PACF of decomposed residuals, total sales")
+#lag 1 0.8 PACF
+#lags 2-7 0.1-0.2 PACF
+#last significant lag at ~61
+
+
+#scatterplots
+ts_decomped %>%
+  gg_lag(agg_sales, geom="point")
+#lag 1 super linear
+
+
+
+
 ##oil X total sales####
+
+
+#CCF (cross covariation / cross correlation)
+
+#long term pattern
+ts_decomped %>%
+  CCF(x=oil, y=agg_sales, lag_max=28, type="correlation") %>% autoplot()
+#sigmoidal pattern in CCF plots, declines as it gets farther from origin point
+#few significant spikes, though all low at 0.06-0.04 corr
+  #biggest one in lag 7, others 2, 3, 8
+  #several in leads 1-60
+#LOOK INTO INTERPRETATION, MAYBE SCALING?
+
+
+#plots
+
+
 
 
 ##onpromotion X total sales####
