@@ -1075,19 +1075,126 @@ ts_decomped %>%
 ##oil X total sales####
 
 
-#CCF (cross covariation / cross correlation)
-
-#long term pattern
+#timeplot of total sales and oil, scaled
 ts_decomped %>%
-  CCF(x=oil, y=agg_sales, lag_max=28, type="correlation") %>% autoplot()
+  autoplot(scale(agg_sales)) /
+  ts_decomped %>%
+  autoplot(scale(oil)) +
+  plot_annotation(title="total sales (decomposed) vs. oil prices (differenced)")
+#it looks like sharp movements in oil price leads to sharp movements in sales in ~ 7 days
+#still doesn't fully explain the cyclicality in 2014-2015
+
+
+
+
+#scatterplot of total sales and oil at time T, scaled
+ts_decomped %>%
+  ggplot(aes(x=scale(oil), y=scale(agg_sales))) +
+  geom_point()
+#no apparent relation
+
+
+
+
+#CCF (cross covariation / cross correlation)
+ts_decomped %>%
+  CCF(x=oil, y=agg_sales, lag_max=365, type="correlation") %>% autoplot() +
+  labs(title="cross correlation of total sales (decomposed) and oil (differenced)",
+       x="oil lags & leads",
+       y="cross-correlation with total sales")
+
+
+ts_decomped %>%
+  CCF(x=oil, y=agg_sales, type="correlation") %>% autoplot() +
+  labs(title="cross correlation of total sales (decomposed) and oil (differenced)",
+       x="oil lags & leads",
+       y="cross-correlation with total sales")
 #sigmoidal pattern in CCF plots, declines as it gets farther from origin point
 #few significant spikes, though all low at 0.06-0.04 corr
   #biggest one in lag 7, others 2, 3, 8
   #several in leads 1-60
-#LOOK INTO INTERPRETATION, MAYBE SCALING?
 
 
-#plots
+
+
+#plots of significant lags
+
+#lag 7
+ts_decomped %>%
+  mutate(oil_7 = lag(oil, 7)) %>%
+  ggplot(aes(x=scale(oil_7), y=scale(agg_sales))) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. oil prices at lag 7 (differenced)",
+       x="oil price change, scaled",
+       y="total sales, scaled")
+#no relation for small movements in oil price
+#but linear increase in sales with large increase in oil price, for the few outliers
+#non-linear, tangent-like relationship
+
+
+#same plot, with extreme values only
+ts_decomped %>%
+  mutate(oil_7 = scale(lag(oil, 7)),
+         agg_sales = scale(agg_sales)) %>%
+  filter(oil_7 < -2.5 | oil_7 > 2.5) %>%
+  ggplot(aes(x=oil_7, y=agg_sales)) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. oil prices at lag 7 (differenced)",
+       subtitle="extreme values only",
+       x="oil price change, scaled",
+       y="total sales, scaled")
+#linearish increase in sales with large increase in oil price 
+
+
+
+
+#lags 2, 3, 8
+
+
+#lag 2
+ts_decomped %>%
+  mutate(oil_2 = scale(lag(oil, 2)),
+         agg_sales = scale(agg_sales)) %>%
+  ggplot(aes(x=oil_2, y=agg_sales)) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. oil prices at lag 2 (differenced)",
+       x="oil price change, scaled",
+       y="total sales, scaled")
+#slight linear decline in sales as oil price increases
+
+
+#lag 3
+ts_decomped %>%
+  mutate(oil_3 = scale(lag(oil, 3)),
+         agg_sales = scale(agg_sales)) %>%
+  ggplot(aes(x=oil_3, y=agg_sales)) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. oil prices at lag 3 (differenced)",
+       x="oil price change, scaled",
+       y="total sales, scaled")
+#decline in sales as oil price increases, only for negative outliers
+#increase in sales as oil price increases, only for positive outliers
+#neutral for most observations
+#non-linear reverse U shaped relationship
+
+
+#lag 8
+ts_decomped %>%
+  mutate(oil_8 = scale(lag(oil, 8)),
+         agg_sales = scale(agg_sales)) %>%
+  ggplot(aes(x=oil_8, y=agg_sales)) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. oil prices at lag 8 (differenced)",
+       x="oil price change, scaled",
+       y="total sales, scaled")
+#slight linear decline in sales as oil price increases
+
+
+
+
+#compute some sort of rolling stat from lags 2-8? or another range?
+  #consider 21 and 28 day rolling stats, as they had the highest corr in the first analysis
+  #especially look at the relationship for extreme oil price change values
 
 
 
