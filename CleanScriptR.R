@@ -6,9 +6,11 @@
 library(tidyverse)
 library(tsibble) #time series tibbles
 library(lubridate) #date objects
+library(pracma) #exponential weighted moving averages
 
 #visualization
 library(patchwork)
+library(GGally)
 
 #TS modeling
 library(feasts)
@@ -612,6 +614,7 @@ ts_train[is.na(ts_train)] = 0
 
 #save new version of ts_train
 write.csv(ts_train, "./ModifiedData/train_modified2.csv", row.names = FALSE)
+#WARNING: THIS VERSION IS CPI ADJUSTED!
 
 
 ##Reload new version of ts_train####
@@ -1070,6 +1073,41 @@ ts_decomped %>%
 #lag 1 super linear
 
 
+#rolling stat, scaterplot
+ts_decomped %>%
+  mutate(sales_ma7 = movavg(ts_decomped$agg_sales, n=7, type="e")) %>%
+  ggplot(aes(x=sales_ma7, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(title="total decomposed sales and its EMA7",
+        x="sales EMA7",
+        y="sales at 0")
+#very linear. maybe even better than single lags? check correlations
+
+
+#rolling stat, timeplot
+ts_decomped %>%
+  mutate(sales_ma7 = movavg(ts_decomped$agg_sales, n=7, type="e")) %>%
+  select(agg_sales, sales_ma7) %>%
+  pivot_longer(cols=agg_sales:sales_ma7, names_to="series") %>%
+  ggplot(aes(x=date, y=value, color=series)) + geom_line() +
+  labs(title="total decomposed sales and its EMA7",
+       x="date",
+       y="total sales and its EMA7")
+#follows the cylicality well
+
+
+
+#spearman correlations with lag 1 and ma7
+sales_lags = ts_decomped %>%
+  mutate(sales_ma7 = movavg(ts_decomped$agg_sales, n=7, type="e"),
+         sales_1 = lag(agg_sales, n=1)) %>%
+  select(agg_sales, sales_ma7, sales_1)
+
+cor(na.omit(sales_lags[1:3]), method="spearman")
+#0.86 between sales and sales ma7
+#0.75 between sales and sales lag 1
+#0.87 between sales lag 1 and sales ma 7
+#use the MA. or an ARIMA component?
+
 
 
 ##oil X total sales####
@@ -1196,13 +1234,291 @@ ts_decomped %>%
   #consider 21 and 28 day rolling stats, as they had the highest corr in the first analysis
   #especially look at the relationship for extreme oil price change values
 
+#time plot with sales and various oil rolling MAs
+ts_decomped %>%
+  mutate(oil_ma7 = scale(movavg(ts_decomped$oil, n=7, type="e")),
+         #oil_ma14 = scale(movavg(ts_decomped$oil, n=14, type="e")),
+         oil_ma21 = scale(movavg(ts_decomped$oil, n=21, type="e")),
+         #oil_ma28 = scale(movavg(ts_decomped$oil, n=28, type="e")),
+         oil_ma54 = scale(movavg(ts_decomped$oil, n=54, type="e")),
+         #oil_ma112 = scale(movavg(ts_decomped$oil, n=112, type="e")),
+         oil_ma168 = scale(movavg(ts_decomped$oil, n=168, type="e")),
+         agg_sales = scale(agg_sales)) %>%
+  select(agg_sales,
+         oil_ma7, 
+         #oil_ma14, 
+         oil_ma21, 
+         #oil_ma28, 
+         oil_ma54, 
+         #oil_ma112, 
+         oil_ma168) %>%
+  pivot_longer(cols = agg_sales:oil_ma168,
+               names_to = "series") %>%
+  ggplot(aes(x=date, y=value, color=series)) + geom_line() + geom_smooth()
+#looks like oil prices changes MAs and total sales diverge at cyclical times like 2014-2015
+#otherwise, they fluctuate around 0
+  #narrower periods seem more stable, while larger periods fluctuate more?
+  #hard to read this plot
+
+
+#scatterplot with sales and oil rolling MAs
+ts_decomped %>%
+  mutate(oil_ma7 = scale(movavg(ts_decomped$oil, n=7, type="e")),
+         oil_ma14 = scale(movavg(ts_decomped$oil, n=14, type="e")),
+         oil_ma21 = scale(movavg(ts_decomped$oil, n=21, type="e")),
+         oil_ma28 = scale(movavg(ts_decomped$oil, n=28, type="e")),
+         oil_ma54 = scale(movavg(ts_decomped$oil, n=54, type="e")),
+         oil_ma112 = scale(movavg(ts_decomped$oil, n=112, type="e")),
+         oil_ma168 = scale(movavg(ts_decomped$oil, n=168, type="e")),
+         agg_sales = scale(agg_sales)) %>%
+  select(agg_sales,
+         oil_ma7, 
+         oil_ma14, 
+         oil_ma21, 
+         oil_ma28, 
+         oil_ma54, 
+         oil_ma112, 
+         oil_ma168) %>%
+  ggplot(aes(x=oil_ma54, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(title="decomposed total sales and differenced oil EMA",
+       x="54-period EMA of oil, scaled",
+       y="total sales, scaled")
+#ma7: slight decline in sales as oil increases, uncertain relationship
+#ma14: pronounced decline in sales as oil increases, more certain relationship than 7
+  #influenced by 2 large outliers to the right
+#ma21: more certain version of 14
+#ma28: bit less certain version of 21
+#ma54: decline in sales as oil increases, even more certain and linear relationship
+#ma112: close to no relationship
+#ma168: close to no relationship
+
+
+
+
+#calculate spearman correlations for the MAs
+ts_oil_ma = ts_decomped %>%
+  mutate(oil_ma7 = scale(movavg(ts_decomped$oil, n=7, type="e")),
+         oil_ma14 = scale(movavg(ts_decomped$oil, n=14, type="e")),
+         oil_ma21 = scale(movavg(ts_decomped$oil, n=21, type="e")),
+         oil_ma28 = scale(movavg(ts_decomped$oil, n=28, type="e")),
+         oil_ma54 = scale(movavg(ts_decomped$oil, n=54, type="e")),
+         oil_ma112 = scale(movavg(ts_decomped$oil, n=112, type="e")),
+         oil_ma168 = scale(movavg(ts_decomped$oil, n=168, type="e")),
+         agg_sales = scale(agg_sales)) %>%
+  select(agg_sales,
+         oil_ma7, 
+         oil_ma14, 
+         oil_ma21, 
+         oil_ma28, 
+         oil_ma54, 
+         oil_ma112, 
+         oil_ma168) 
+
+cor(ts_oil_ma[1:8], method="spearman")
+#strongest corr with MA 51, -0.1836
+  #54 correlated 0.66 with 7. others all high
+  #maybe use MA54, + lags from 2-8?
+
+
+#check the spearman correlations of oil lags 2, 3, 7, 8
+oil_lags = ts_decomped %>%
+  mutate(oil_2 = lag(oil, 2),
+         oil_3 = lag(oil, 3),
+         oil_7 = lag(oil, 7),
+         oil_8 = lag(oil, 8)) %>%
+  select(oil_2:oil_8)
+
+cor(na.omit(oil_lags[1:4]), method="spearman")
+#they are not correlated at all
+
+
+
+
+
 
 
 
 ##onpromotion X total sales####
 
 
-#transactions X total_sales####
+#timeplot of total sales and onpromotion, scaled
+ts_decomped %>%
+  autoplot(scale(agg_sales)) /
+  ts_decomped %>%
+  autoplot(scale(onpromotion)) +
+  plot_annotation(title="total sales (decomposed) vs. onpromotion (differenced)")
+#noisy plot, but 2 observations:
+  #the relative number of change of items on promotion is very low before mid 2014
+  #then it ramps up until mid 2015
+  #afterward it fluctuates around a very steady constant
+  #possibly because promotions became more utilized after the 2014-2015 cyclicality?
+
+  
+#scatterplot of total sales and onpromotion at time T, scaled
+  ts_decomped %>%
+    ggplot(aes(x=scale(onpromotion), y=scale(agg_sales))) +
+    geom_point() + geom_smooth() +
+    labs(title="total decomposed sales and differenced onpromotion",
+         x="onpromotion, scaled",
+         y="total sales, scaled")
+#very slight linearish increase in sales with increase in onpromotion
+  #could do decently with LM
+
+
+  
+#CCF (cross covariation / cross correlation)
+  ts_decomped %>%
+    CCF(x=onpromotion, y=agg_sales, lag_max=28, type="correlation") %>% autoplot() +
+    labs(title="cross correlation of total sales (decomposed) and onpromotion (differenced)",
+         x="onpromotion lags & leads",
+         y="cross-correlation with total sales")
+#clear weekly pattern
+#lags & leads that are the multiple of 7 are significant, but very low correlation
+  #for lags, it's 0 to 119
+  #for leads, it's up until 56
+  #only use the most recent ones, if any
+#most significant correlation is at T 0,
+  #followed by lead 7, lag 7, lead 14...
+#consider using current value of onpromotion + lag 7
+  #would lead 7 be hard to impute for the test data?
+  #also consider rolling stats?
+
+  
+#plots of significant lags / leads
+
+    
+#lag 7
+ts_decomped %>%
+  mutate(onp_7 = lag(onpromotion, 7)) %>%
+  ggplot(aes(x=scale(onp_7), y=scale(agg_sales))) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. onpromotion at lag 7 (differenced)",
+         x="onpromotion change, scaled",
+         y="total sales, scaled")  
+#slight linear increase with a large increase in onpromotion,
+#otherwise no effect. 
+  #it's likely a large increase in promotion increases sales, but a decrease doesn't drop them
+
+
+#lead 7
+ts_decomped %>%
+  mutate(onp_7_lead = lead(onpromotion, 7)) %>%
+  ggplot(aes(x=scale(onp_7_lead), y=scale(agg_sales))) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. onpromotion at lead 7 (differenced)",
+       x="onpromotion change, scaled",
+       y="total sales, scaled")  
+#same relationship as lag 7
+  #this is likely because of the weekly seasonality in onpromotion
+  #maybe promotions are announced 1 week in advance all the time?
+
+
+
+
+#time plot with sales and various onpromotion rolling MAs
+ts_decomped %>%
+  mutate(onp_ma7 = scale(movavg(ts_decomped$onpromotion, n=7, type="e")),
+         onp_ma14 = scale(movavg(ts_decomped$onpromotion, n=14, type="e")),
+         onp_ma21 = scale(movavg(ts_decomped$onpromotion, n=21, type="e")),
+         agg_sales = scale(agg_sales)) %>%
+  select(agg_sales,
+         onp_ma7,
+         onp_ma14,
+         onp_ma21) %>%
+  pivot_longer(cols = agg_sales:onp_ma21,
+               names_to = "series") %>%
+  ggplot(aes(x=date, y=value, color=series)) + geom_line() 
+#too noisy to read
+
+
+
+
+#scatterplot with sales and various onpromotion rolling MAs 
+ts_decomped %>%
+  mutate(onp_ma7 = scale(movavg(ts_decomped$onpromotion, n=7, type="e")),
+         onp_ma14 = scale(movavg(ts_decomped$onpromotion, n=14, type="e")),
+         onp_ma21 = scale(movavg(ts_decomped$onpromotion, n=21, type="e")),
+         agg_sales = scale(agg_sales)) %>%
+  select(agg_sales,
+         onp_ma7,
+         onp_ma14,
+         onp_ma21) %>%
+  ggplot(aes(x=onp_ma7, y=agg_sales)) + geom_point() + geom_smooth() +
+  labs(title="total decomposed sales vs EMA7 of differenced onpromotion",
+       x="EMA7 of differenced onpromotion",
+       y="total decomposed sales")
+#for extremely low values of ma7, an increase leads to a strong increase in sales
+  #but this is strongly impacted by few outliers
+#for the rest, ma7 has no effect on sales, except:
+  #a small decrease from around 0 will cause a sharp drop in sales
+  #can't likely model this with LM
+#same story for MA 14 and 21
+#MA 7 is the most linear one, so use that if you will
+
+
+
+
+
+
+
+
+
+##transactions X total_sales####
+
+#consider only lag 15+ as that's what you'll have for test data
+
+
+#timeplot of total sales and transactions, scaled
+ts_decomped %>%
+  autoplot(scale(agg_sales)) /
+  ts_decomped %>%
+  autoplot(scale(transactions)) +
+  plot_annotation(title="total sales (decomposed) vs. transactions (differenced)")
+#transactions are very stationary with seasonality similar to sales
+#there are drops and peaks around new years
+
+
+
+
+#scatterplot of total sales and transactions at time T, scaled
+ts_decomped %>%
+  ggplot(aes(x=scale(transactions), y=scale(agg_sales))) +
+  geom_point() + geom_smooth() +
+  labs(title="total decomposed sales and differenced transactions",
+       x="transactions, scaled",
+       y="total sales, scaled")
+#for the vast majority of obs, more transactions means a linearish increase in sales
+#when you factor in outliers, the relationship is sin-like
+
+
+
+#CCF (cross covariation / cross correlation)
+ts_decomped %>%
+  CCF(x=transactions, y=agg_sales, lag_max=28, type="correlation") %>% autoplot() +
+  labs(title="cross correlation of total sales (decomposed) and transactions (differenced)",
+       x="transactions lags & leads",
+       y="cross-correlation with total sales")
+#only significant for a few lags and leads around T 0
+  #most significant at lead 2, then 0, then lead 1 and 7
+  #this is likely caused by some other factor affecting sales & transactions for a few days
+#likely not a significant predictor for total sales as leads are unusable in test data.
+#still worth to consider for subcategories and for insight
+
+
+
+#plots of significant lags / leads
+
+
+#lag 2
+ts_decomped %>%
+  mutate(trans_7 = lag(transactions, 2)) %>%
+  ggplot(aes(x=scale(trans_7), y=scale(agg_sales))) +
+  geom_point() + geom_smooth() +
+  labs(title="total sales (decomposed) vs. transactions at lag 2 (differenced)",
+       x="transactions change, scaled",
+       y="total sales, scaled")
+#no relationship for vast majority of obs
+
 
 
 
@@ -1214,11 +1530,156 @@ ts_decomped %>%
 #FEATURE ENGINEERING 2####
 
 
+#add oil features to ts_decomped:
+#lags 2, 3, 7, 8
+#EMA 54
+ts_decomped = ts_decomped %>%
+  mutate(oil_2 = lag(oil, 2),
+         oil_3 = lag(oil, 3),
+         oil_7 = lag(oil, 7),
+         oil_8 = lag(oil, 8),
+         oil_ma54 = movavg(ts_decomped$oil, n=54, type="e"))
+
+#check NAs
+colSums(is.na(ts_decomped))
+#a few in the oil lags
+#fill them with their medians
+ts_decomped = ts_decomped %>%
+  mutate(oil_2 = ifelse(is.na(oil_2), median(na.omit(oil_2)), oil_2),
+         oil_3 = ifelse(is.na(oil_3), median(na.omit(oil_3)), oil_3),
+         oil_7 = ifelse(is.na(oil_7), median(na.omit(oil_7)), oil_7),
+         oil_8 = ifelse(is.na(oil_8), median(na.omit(oil_8)), oil_8))
+
+
+#drop original oil column
+ts_decomped = ts_decomped %>%
+  select(-oil)
+
+
+#do keep the onpromotion features, but:
+  #they likely won't do well in LM. don't use them in LMs
+  #except onpromotion at time T. it may be modeled decently with LM
+  #they probably matter less for total sales and more for specific categories
+ts_decomped = ts_decomped %>% 
+  mutate(onp_7 = lag(onpromotion, n=7),
+         onp_ma7 = movavg(ts_decomped$onpromotion, n=7, type="e"))
+ts_decomped[is.na(ts_decomped)] = 0
+
+
+#don't use transcations as a predictor, at least for total sales
+ts_decomped = ts_decomped  %>%
+  select(-transactions)
+
+
+
+
+#create tsibble for the second model:
+  #get undecomped agg_sales from ts_lm
+  #get the predictors from ts_decomped
+ts_lm2 = ts_decomped %>%
+  mutate(agg_sales = ts_lm$agg_sales)
+
+
+#add sales MA to ts_decomped
+ts_lm2 = ts_lm2 %>%
+  mutate(sales_ma7 = movavg(ts_lm2$agg_sales, n=7, type="e"))
+
+
+
+#check NAs
+colSums(is.na(ts_lm2)) > 0
+#no issue
+
+
 
 
 #MODEL 2 - LAGS AND COVARIATES####
 
 
+#use sales_ma7 to account for autoregression, or use an ARIMA component?
+#how to scale and center the train-test data? with a recipe?
+
+
+
+
+#--------------MODIFY CODE BELOW---------------
+
+
+#create training set
+
+
+#create validation set
+ts_lm2_val = ts_lm2 %>%
+  filter(year(date)==2017)
+
+
+#fit LM on 2013-2016
+lm_model2 = ts_lm2 %>%
+  filter(year(date)!=2017) %>%
+  model(TSLM(agg_sales ~ . + 
+               trend(knots=c(date("2015-06-01"))) +
+               fourier(period=28, K=7) +
+               fourier(period=7, K=2) -
+               date - agg_sales
+  )
+  )
+
+
+
+
+#predict LM on 2017
+lm_preds = lm_model %>%
+  forecast(ts_lm_val) 
+
+
+#plot actual vs predicted, time plot
+lm_preds %>%
+  autoplot(ts_lm_val) +
+  labs(title="predicted vs actual total sales",
+       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       y="total sales") +
+  theme_bw()
+#looks good overall
+#catches the waveshape every time except for the last wave
+#might indicate some special effect in the last week of the training data,
+#may apply to the testing data
+#the magnitude of the wave is close to actual, 
+#matches the actual values exactly in some weeks,
+#misses them considerably in other weeks
+#the timing is slightly early or late for some waves
+#possibly due to cyclicality
+#matches the new years' drop, and the subsequent recovery very well
+
+
+#plot actual vs predicted, scatterplot
+ts_lm_val %>%
+  ggplot(aes(x=agg_sales, y=lm_preds$.mean)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0, color="red") +
+  labs(title="predicted vs actual total sales",
+       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       y="total sales, predicted",
+       x="total sales, actual") +
+  theme_bw()
+
+
+
+#score the predictions with rmse, mape and rmsle
+#reverse the log transform for mape
+lm_scores = lm_preds %>% 
+  mutate(agg_sales=exp(agg_sales)) %>%
+  accuracy(ts_lm_val %>%
+             mutate(agg_sales=exp(agg_sales)))
+
+#get the RMSLE as well
+lm_scores$RMSLE = lm_preds %>%
+  accuracy(ts_lm_val) %>%
+  select(RMSE)
+
+#scores
+lm_scores$RMSE
+lm_scores$RMSLE
+lm_scores$MAPE
 
 
 
@@ -1240,27 +1701,17 @@ ts_decomped %>%
 
 
 
+#RECONCILIATION#### 
+
+#top down, with total sales model only
+
+#bottom up and minT, with separate models for each node?
+  #use a different feature set for each node?
+  #move on to darts for this?
 
 
 
+#TUNING-OPTIMIZATION####
 
-#PREPROCESSING - DECOMPOSITION
-
-
-#coerce df_train and df_test to tsibble
-  #index=date
-  #key=category, store_no, store_cluster, store_type, city, state
-#log transformation of sales
-#scaling of sales
-
-
-
-
-
-#PREPROCESSING - STATIONARY MODEL
-
-
-#impute NAs in lags and rolling features
-#differencing of features (and decomposed sales?)
-#scaling of features
-
+#order and period of fourier features? tune with AICc?
+#ARIMA order? tune with AICc?
