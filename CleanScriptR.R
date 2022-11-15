@@ -739,7 +739,7 @@ stl_components %>%
 
 
 
-##LM time & calendar model, total sales####
+##LM1 time & calendar model, total sales####
 
 
 #trend: piecewise linear 
@@ -787,7 +787,7 @@ lm_preds = lm_model %>%
 lm_preds %>%
   autoplot(ts_lm_val) +
   labs(title="predicted vs actual total sales",
-       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       subtitle="model: lm1 with 2-piece trend, fourier pairs, calendar dummies",
        y="total sales") +
   theme_bw()
 #looks good overall
@@ -808,7 +808,7 @@ ts_lm_val %>%
   geom_point() +
   geom_abline(slope=1, intercept=0, color="red") +
   labs(title="predicted vs actual total sales",
-       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       subtitle="model: lm1 with 2-piece trend, fourier pairs, calendar dummies",
        y="total sales, predicted",
        x="total sales, actual") +
   theme_bw()
@@ -856,7 +856,7 @@ lm_model %>% report()
 
 #innovation residuals analysis
 lm_model %>% gg_tsresiduals() +
-  labs(title="innovation residuals diagnostics, lm model")
+  labs(title="innovation residuals diagnostics, lm1 model")
 #generally seems statonary, except for:
   #start of 2014 - mid 2015 cyclicality is not captured
   #christmas peaks are not well captured, or they are backed by other cyclical components?
@@ -891,7 +891,7 @@ augment(lm_model) %>%
 augment(lm_model) %>%
   ggplot(aes(x=.fitted, y=.resid)) +
   geom_point() +
-  labs(title="fitted vs residuals plot, lm model",
+  labs(title="fitted vs residuals plot, lm1 model",
     x="fitted", y="residuals")
 #4 huge outliers (new years days)
   #besides the outliers, the residuals are larger around fitted 0,
@@ -901,7 +901,7 @@ augment(lm_model) %>%
 
 
 
-#MODEL 1 RESULT:
+###LM1 RESULT####
   #it seems the trend and seasonality is captured well, in shape if not magnitude
   #predictions are good overall, 6.5% MAPE, 0.083 RMSLE, 61338.21 RMSE
   #preds sometimes miss the magnitude of waves, sometimes the timing
@@ -1566,18 +1566,15 @@ ts_decomped = ts_decomped %>%
 ts_decomped[is.na(ts_decomped)] = 0
 
 
-#don't use transcations as a predictor, at least for total sales
+#don't use transactions as a predictor, at least for total sales
 ts_decomped = ts_decomped  %>%
   select(-transactions)
 
 
 
 
-#create tsibble for the second model:
-  #get undecomped agg_sales from ts_lm
-  #get the predictors from ts_decomped
-ts_lm2 = ts_decomped %>%
-  mutate(agg_sales = ts_lm$agg_sales)
+#create tsibble for the second model
+ts_lm2 = ts_decomped
 
 
 #add sales MA to ts_decomped
@@ -1591,6 +1588,10 @@ colSums(is.na(ts_lm2)) > 0
 #no issue
 
 
+#drop time and calendar features
+ts_lm2 = ts_lm2 %>%
+  select(!(local_holiday:sunday))
+
 
 
 #MODEL 2 - LAGS AND COVARIATES####
@@ -1598,14 +1599,9 @@ colSums(is.na(ts_lm2)) > 0
 
 #use sales_ma7 to account for autoregression, or use an ARIMA component?
 #how to scale and center the train-test data? with a recipe?
+  #don't bother with this for fable. even if you do it for a train-valid split, it won't work for CV
 
-
-
-
-#--------------MODIFY CODE BELOW---------------
-
-
-#create training set
+##LM2 lags & covariates model, total sales####
 
 
 #create validation set
@@ -1613,88 +1609,137 @@ ts_lm2_val = ts_lm2 %>%
   filter(year(date)==2017)
 
 
-#fit LM on 2013-2016
+#fit LM2 on 2013-2016
 lm_model2 = ts_lm2 %>%
   filter(year(date)!=2017) %>%
-  model(TSLM(agg_sales ~ . + 
-               trend(knots=c(date("2015-06-01"))) +
-               fourier(period=28, K=7) +
-               fourier(period=7, K=2) -
+  model(TSLM(agg_sales ~ . - onp_7 - onp_ma7 -
                date - agg_sales
   )
   )
 
 
-
-
 #predict LM on 2017
-lm_preds = lm_model %>%
-  forecast(ts_lm_val) 
+lm_preds2 = lm_model2 %>%
+  forecast(ts_lm2_val) 
+
+
+#add back lm_preds to get the hybrid final predictions
+lm_preds_final = lm_preds2 %>%
+  mutate(agg_sales = agg_sales + lm_preds$agg_sales,
+         .mean = .mean + lm_preds$.mean)
+
 
 
 #plot actual vs predicted, time plot
-lm_preds %>%
+lm_preds_final %>%
   autoplot(ts_lm_val) +
   labs(title="predicted vs actual total sales",
-       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       subtitle="hybrid results of lm1 and lm2",
        y="total sales") +
   theme_bw()
-#looks good overall
-#catches the waveshape every time except for the last wave
-#might indicate some special effect in the last week of the training data,
-#may apply to the testing data
-#the magnitude of the wave is close to actual, 
-#matches the actual values exactly in some weeks,
-#misses them considerably in other weeks
-#the timing is slightly early or late for some waves
-#possibly due to cyclicality
-#matches the new years' drop, and the subsequent recovery very well
+#catches the magnitude of most waves much better, still misses a few
+  #still a few slight timing mistakes
+#accounts for start of year and end of data better, though not perfect
+
 
 
 #plot actual vs predicted, scatterplot
 ts_lm_val %>%
-  ggplot(aes(x=agg_sales, y=lm_preds$.mean)) +
+  ggplot(aes(x=agg_sales, y=lm_preds_final$.mean)) +
   geom_point() +
   geom_abline(slope=1, intercept=0, color="red") +
   labs(title="predicted vs actual total sales",
-       subtitle="model: lm with 2-piece trend, fourier pairs, calendar dummies",
+       subtitle="hybrid results of lm1 and lm2",
        y="total sales, predicted",
        x="total sales, actual") +
   theme_bw()
 
 
 
+
 #score the predictions with rmse, mape and rmsle
 #reverse the log transform for mape
-lm_scores = lm_preds %>% 
+lm_scores_final = lm_preds_final %>% 
   mutate(agg_sales=exp(agg_sales)) %>%
   accuracy(ts_lm_val %>%
              mutate(agg_sales=exp(agg_sales)))
 
 #get the RMSLE as well
-lm_scores$RMSLE = lm_preds %>%
+lm_scores_final$RMSLE = lm_preds_final %>%
   accuracy(ts_lm_val) %>%
   select(RMSE)
 
 #scores
-lm_scores$RMSE
-lm_scores$RMSLE
-lm_scores$MAPE
+lm_scores_final$RMSE
+lm_scores_final$RMSLE
+lm_scores_final$MAPE
+#RMSE 45600
+#RMSLE 0.061
+#MAPE 5.1%
+#bit better than lm1 alone
 
 
 
+#diagnose the lm2 model fit
+
+
+#retrieve LM2 model report
+lm_model2 %>% report()
+#r square 79%
+#large and significant coefs:
+#onpromotion, oil_7, sales_ma7 ***
+#oil_2, oil_ma54 *
+#oil_3 .
+#oil_8 insignificant
+
+
+#innovation residuals analysis
+lm_model2 %>% gg_tsresiduals() +
+  labs(title="innovation residuals diagnostics, lm2 model")
+#much more stationary
+  #generally deals with 2014-2015 cyclicality, still misses some small peaks and drops
+  #misses NY peak at the start of 2013 (because no precedent)
+  #still misses the christmas-NY effects a little
+#significant ACF lags: 1, 7, 27, 28
+  #probably still not capturing the weakly seasonality fully. maybe increase fourier orders?
+
+
+#test stationarity
+
+#kpss test
+augment(lm_model2) %>%
+  features(.innov, unitroot_kpss)
+#null hypothesis: data is stationary around a linear trend
+  #the null is accepted with a p value of 0.1 or higher
+  #the residuals are stationary with a possible trend
+  #test stat 0.084
+
+
+#philips-perron test
+augment(lm_model2) %>%
+  features(.innov, unitroot_pp)
+#null hypothesis: data is non-stationary around a constant trend
+  #the null is rejected with a p value of 0.01 or lower
+  #the residuals are stationary with no trend
+  #test stat -26.1
+
+
+#plot residuals against fitted values
+augment(lm_model2) %>%
+  ggplot(aes(x=.fitted, y=.resid)) +
+  geom_point() +
+  labs(title="fitted vs residuals plot, lm2 model",
+       x="fitted", y="residuals")
+#few huge outliers to the left
+#main mass of residuals distributed much more normally compared to lm1
+  #still some large negative residuals for small sales predictions
 
 
 
-
-
-
-
-
-
-
-
-
+##LM1-LM2 HYBRID RESULT####
+#improves the fit and generally accounts for the 2014-2015 cyclicality
+#predictions are improved, RMSE 45600, RMSLE 0.061, MAPE 5.1%
+#ACF autocorrelations remain for lags 1, 7 and 28. likely a little weekly seasonality left
 
 
 
