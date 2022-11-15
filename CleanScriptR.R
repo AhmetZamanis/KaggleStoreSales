@@ -1558,7 +1558,7 @@ ts_decomped = ts_decomped %>%
 
 #do keep the onpromotion features, but:
   #they likely won't do well in LM. don't use them in LMs
-  #except onpromotion at time T. it may be modeled decently with LM
+    #except onpromotion at time T. it may be modeled decently with LM
   #they probably matter less for total sales and more for specific categories
 ts_decomped = ts_decomped %>% 
   mutate(onp_7 = lag(onpromotion, n=7),
@@ -1748,15 +1748,370 @@ augment(lm_model2) %>%
 
 #RECONCILIATION#### 
 
-#top down, with total sales model only
 
-#bottom up and minT, with separate models for each node?
-  #use a different feature set for each node?
-  #move on to darts for this?
+# #figure out aggregation
+# ts_test = ts_train %>%
+#   aggregate_key(
+#     category * store_no,
+#     sales = sum(sales)
+#   )
+# #the above code results in:
+# #total sales in each day, 1688 rows (category: aggregated, store_no:aggregated)
+# #sales in each category, for each day and store (category: category name, store_no:aggregated)
+# #sales in each store, for each category and each day (category: aggregated, store_no:store name)
+# #sales in each store:category combo, in each day (disaggregated data)
+# #3156560 rows compared to 3008016 original rows = 148544 new rows
+# 
+# 
+# ts_test %>%
+#   filter(is_aggregated(category)) %>%
+#   autoplot(sales)
+# #this filters and plots total sales + category totals for each store
+# 
+# ts_test %>%
+#   filter(is_aggregated(store_no), !is_aggregated(category)) %>%
+#   autoplot(sales)
+# #this filters and plots category totals
+# 
+# ts_test %>%
+#   filter(!is_aggregated(category), is_aggregated(store_no)) %>%
+#   autoplot(sales) +
+#   facet_wrap(vars(category))
+# #this puts each category total on a different plot
+# 
+# ts_test %>%
+#   filter(category=="GROCERY I", is_aggregated(store_no)) %>%
+#   autoplot(sales)
+# #this filters and plots a single category total
+# 
+# ts_test %>%
+#   filter(is_aggregated(store_no),
+#          (category %in% c("GROCERY I", "BREAD/BAKERY", "MEATS", "SEAFOOD"))) %>%
+#   autoplot(sales) +
+#   facet_wrap(vars(category))
+# #this should filter and plot 4 category totals, but it's taking way too long?
+#   #throws error:
+# # Error in `filter()`:
+# #   ! Problem while computing `..2 = category %in% ...`.
+# # ✖ Input `..2` must be of size 3156560 or 1, not size 2.
+# # Run `rlang::last_error()` to see where the error occurred.
+# 
+# ts_test %>%
+#   filter(category %in% c("GROCERY I", "BREAD/BAKERY", "MEATS", "SEAFOOD"))
+# #why doesn't this work???
 
 
 
-#TUNING-OPTIMIZATION####
 
-#order and period of fourier features? tune with AICc?
-#ARIMA order? tune with AICc?
+##Create hierarchy mapped ts####
+rm(ts_test)
+ts_hier = ts_train %>%
+  select(-transactions) %>%
+  aggregate_key(category * store_no,
+    sales = sum(sales),
+    onpromotion = sum(onpromotion),
+    oil = mean(oil),
+    across(local_holiday:sunday, mean)
+  )
+#this is causing R to freeze, taking up 12GB of memory
+#move to darts
+
+
+
+
+
+
+#OUTPUT MODIFIED DATA####
+
+
+#Reload modified version 2 of ts_train
+ts_train = read.csv("./ModifiedData/train_modified2.csv", encoding="UTF-8", header=TRUE)
+ts_train$date = as_date(ts_train$date)
+ts_train = as_tsibble(ts_train, key=c("category", "city", "state", "store_no", "store_type",
+                                      "store_cluster"), index="date")
+
+
+#reload modified version 1 of test data
+ts_test = read.csv("./ModifiedData/test_modified.csv", encoding="UTF-8", header=TRUE)
+ts_test$date = as_date(ts_test$date)
+ts_test = as_tsibble(ts_test, key=c("category", "city", "state", "store_no", "store_type",
+                                      "store_cluster"), index="date")
+
+
+#reorder columns
+ts_train = ts_train %>%
+  relocate(category, .before = sales) %>%
+  relocate(store_no, .before = sales) %>%
+  relocate(store_cluster, .before = sales) %>%
+  relocate(store_type, .before = sales) %>%
+  relocate(city, .before = sales) %>%
+  relocate(state, .before = sales)
+
+
+ts_test = ts_test %>%
+  relocate(category, .before = id) %>%
+  relocate(store_no, .before = id) %>%
+  relocate(store_cluster, .before = id) %>%
+  relocate(store_type, .before = id) %>%
+  relocate(city, .before = id) %>%
+  relocate(state, .before = id)
+
+
+
+
+##Modify test data to match with train data####
+
+
+#drop old versions of calendar features
+ts_test = ts_test %>% select(-c("payday", "new_years_day", "christmas", "earthquake"))
+
+
+#convert holiday features to dummies
+ts_test$local_holiday = ts_test$local_holiday %>%
+  recode("True" = 1, "False" = 0)
+
+ts_test$regional_holiday = ts_test$regional_holiday %>%
+  recode("True" = 1, "False" = 0)
+
+ts_test$national_holiday = ts_test$national_holiday %>%
+  recode("True" = 1, "False" = 0)
+
+
+
+#payday features:
+  #payday_16: day 16
+  #payday_31: day 31
+  #payday_n: day 1-6
+ts_test = ts_test %>%
+  mutate(payday_16 = ifelse(day(date)==16, 1, 0),
+         payday_31 = ifelse(day(date)==31, 1, 0),
+         payday_1 = ifelse(day(date)==1, 1, 0),
+         payday_2 = ifelse(day(date)==2, 1, 0),
+         payday_3 = ifelse(day(date)==3, 1, 0),
+         payday_4 = ifelse(day(date)==4, 1, 0),
+         payday_5 = ifelse(day(date)==5, 1, 0),
+         payday_6 = ifelse(day(date)==6, 1, 0))
+
+
+#christmas features:
+  #christmas_eve: 20-24 december
+  #christmas_day: 25 december
+ts_test = ts_test %>%
+  mutate(
+    christmas_eve = ifelse(
+      day(date) %in% c(20:24) &
+        month(date) == 12,
+      1, 0
+    ),
+    christmas_day = ifelse(
+      day(date) == 25 &
+        month(date) == 12,
+      1, 0
+    )
+  )
+
+
+
+#new year features:
+  #new_year_1: january 1
+  #new_year_2: january 2
+ts_test = ts_test %>%
+  mutate(
+    new_year_1 = ifelse(
+      day(date) == 1 &
+        month(date) == 1,
+      1, 0
+    ),
+    new_year_2 = ifelse(
+      day(date) == 2 &
+        month(date) == 1,
+      1, 0
+    )
+  )
+
+
+
+#earthquake features:
+  #earthquake_1 = apr 16
+  #earthquake_2,3,4,5,6,7 = apr 17, 18, 19, 20, 21
+  #earthquake_16 = may 1
+
+ts_test = ts_test %>%
+  mutate(
+    earthquake_1 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) == 
+                            16,
+                          1, 0
+    ),
+    earthquake_2 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) == 
+                            17,
+                          1, 0
+    ),
+    earthquake_3 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) ==
+                            18,
+                          1, 0
+    ),
+    earthquake_7 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) %in% 
+                            c(19:22),
+                          1, 0
+    ),
+    earthquake_15 = ifelse(year(date) == 2016 & month(date) == 4 & day(date) %in% 
+                             c(23:30),
+                           1, 0
+    ),
+    earthquake_30 = ifelse(year(date) == 2016 & month(date) == 5 & day(date) %in% 
+                             c(1:16),
+                           1, 0
+    )
+  )
+
+
+
+#addition to holiday features:
+  #x_holiday_n: n days before x holiday
+ts_test = ts_test %>%
+  mutate(local_holiday_lead1 = lead(local_holiday, 1),
+         local_holiday_lead2 = lead(local_holiday, 2),
+         local_holiday_lead3 = lead(local_holiday, 3),
+         regional_holiday_lead1 = lead(regional_holiday, 1),
+         regional_holiday_lead2 = lead(regional_holiday, 2),
+         regional_holiday_lead3 = lead(regional_holiday, 3),
+         national_holiday_lead1 = lead(national_holiday, 1),
+         national_holiday_lead2 = lead(national_holiday, 2),
+         national_holiday_lead3 = lead(national_holiday, 3), .after=national_holiday)
+#yes, that should work
+
+
+#events: split into different event types
+  #dia_madre: events = TRUE & date in may 8, 10, 11, 12, 14
+  #futbol: events = TRUE & date in 2014-06-12 / 2014-07-13
+  #black_friday: event = TRUE & (date in 2014-11-28, 2015-11-27, 2016-11-25)
+  #cyber_monday: event = TRUe & (date in 2014-12-01, 2015-11-30, 2016-11-28)
+  #drop event afterwards
+ts_test = ts_test %>%
+  mutate(dia_madre = ifelse(
+    event=="True" & month(date) == 5 & day(date) %in% c(8, 10, 11, 12, 14),
+    1, 0
+  ),
+  futbol = ifelse(
+    event=="True" & date %within% interval("2014-06-12", "2014-07-13"),
+    1, 0
+  ),
+  black_friday = ifelse(
+    event=="True" & as.character(date) %in% c("2014-11-28", "2015-11-27", "2016-11-25"),
+    1, 0
+  ),
+  cyber_monday = ifelse(
+    event=="True" & as.character(date) %in% c("2014-12-01", "2015-11-30", "2016-11-28"),
+    1, 0
+  ),
+  .after=event)
+#yes, that should work
+
+
+ts_test = ts_test %>%
+  select(-event)
+
+
+#days of week dummies: use monday as intercept, because it has the least fluctuation-outliers
+ts_test = ts_test %>%
+  mutate(
+    tuesday = ifelse(
+      wday(date) == 2, 1, 0
+    ),
+    wednesday = ifelse(
+      wday(date) == 3, 1, 0
+    ),
+    thursday = ifelse(
+      wday(date) == 4, 1, 0
+    ),
+    friday = ifelse(
+      wday(date) == 5, 1, 0
+    ),
+    saturday = ifelse(
+      wday(date) == 6, 1, 0
+    ),
+    sunday = ifelse(
+      wday(date) == 7, 1, 0
+    )
+  )
+
+
+#check NAs
+colSums(is.na(ts_test)) 
+#we have a few NAs in the holiday leads columns
+  #2017-08-29, 30, 31
+  #check if there are any holidays in 2017-09-01
+
+df_holidays = read.csv("./OriginalData/holidays_events.csv", encoding="UTF-8", header=TRUE)
+#no holidays in 2017-09-01. replace the na's with 0's
+ts_test[is.na(ts_test)] = 0
+#yes, that should work
+
+
+#drop id from test data
+ts_test = ts_test %>%
+  select(-id)
+
+
+
+##Save modified version 2 of train and test####
+  #actions performed on this data:
+    #merge with stores, holidays-events, oil, transactions data (python iter 1)
+    #missing oil values interpolated (python iter 1)
+    #missing dates in train filled in and interpolated  (R iter 1)
+      #(december 25, sales, oil, transactions, onpromotion)
+    #CPI adjusted (sales and oil, both train and test) (R iter 1)
+    #holidays-events-calendar features readjusted (R iter 1)
+
+#check gaps
+scan_gaps(ts_train)    
+scan_gaps(ts_test) 
+#none
+
+#check NAs
+colSums(is.na(ts_train)) > 0
+colSums(is.na(ts_test)) > 0
+#none
+
+#check column names
+names(ts_train)
+names(ts_test)
+setdiff(names(ts_train), names(ts_test))
+#only difference: sales and transactions
+
+
+#save data
+write.csv(ts_train, "./ModifiedData/train_modified2.csv", row.names = FALSE)
+write.csv(ts_test, "./ModifiedData/test_modified2.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
+# #add lags and covariates:
+#   #THESE ARE SPECIFIC TO THE HIERARCHY NODE. CAN'T DO THIS AT THIS POINT.
+# 
+# 
+# #oil
+# ts_train = ts_train %>%
+#   mutate(oil_2 = lag(oil, 2),
+#        oil_3 = lag(oil, 3),
+#        oil_7 = lag(oil, 7),
+#        oil_8 = lag(oil, 8),
+#        oil_ma54 = movavg(ts_train$oil, n=54, type="e"), .after=oil)
+# ts_train[is.na(ts_train)] = 93.14
+# 
+# 
+# #onpromotion
+# ts_train = ts_train %>%
+#     mutate(onp_7 = lag(onpromotion, n=7),
+#        onp_ma7 = movavg(ts_train$onpromotion, n=7, type="e"), .after=onpromotion)
+# ts_train[is.na(ts_train)] = 0
+# 
+# 
+# #sales
+# ts_train = ts_train %>%
+#   mutate(sales_ma7 = movavg(ts_train$sales, n=7, type="e"), .after=sales)
