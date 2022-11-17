@@ -31,6 +31,17 @@ df_train["category_store_no"] = df_train["category"].astype(str) + "-" + df_trai
 df_test["category_store_no"] = df_test["category"].astype(str) + "-" + df_test["store_no"].astype(str)
 
 
+min(df_train["sales"]) 
+#there is a negative sales number!
+
+df_train.sales[df_train.sales<0]
+#there are 165 negative sales numbers, all for 2013-12-25. interpolated values.
+#replace them with zeroes.
+
+df_train.sales[df_train.sales<0] = 0
+#yes, that should work
+
+
 #difference oil, onpromotion, transactions, with the train and test data combined
 # df = pd.concat([df_train, df_test], axis=0)
 # from sktime.transformations.series.difference import Differencer
@@ -314,59 +325,43 @@ len(time_covariates)
 
 
 
-## PREPROCESSING: TIME MODEL ####
+## MODEL 1: TIME MODEL ####
 
-
-#preprocessing pipeline:
-  #log transform sales
-    #remember to backtransform before reconciliation
-
-  
-#create log transform and backtransform invertible mapper
-from darts.dataprocessing.transformers.mappers import InvertibleMapper
-
-def log_func(x):
-  if x==0:
-    return np.log(x+0.00000001)
-  else:
-    return np.log(x)
-
-
-def exp_func(x):
-  if np.exp(x)==0.00000001:
-    return 0
-  else:
-    return np.exp(x)
-
-trafo_log = InvertibleMapper(log_func, exp_func)
+#preprocessing steps:
+  #log transform sales, at each node of the hierarchy separately
+    #REMEMBER TO BACKTRANSFORM BEFORE SUMMING PREDICTIONS, PERFORMING RECONCILIATION ETC.
+    
 
 #log transform the target series
-y_train1 = trafo_log.transform(ts_train)
-#throws error: ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+def trafo_log(x):
+  return x.map(lambda x: np.log(x+0.0001))
+
+def trafo_exp(x):
+  return x.map(lambda x: np.exp(x)-0.0001)
 
 
-# #log throws warnings. try box-cox instead
-# from darts.dataprocessing.transformers import BoxCox
-# trafo_boxcox = BoxCox()
-# 
-# #boxcox transform the target series
-# y_train1 = trafo_boxcox.fit_transform(ts_train)
-# #throwing errors.
+y_train1 = trafo_log(ts_train)
+#yes, that should work
+
 
 
 #train-valid split pre-post 2017
 y_train1, y_val1 = y_train1[:-227], y_train1[-227:]
 
 
+
+
 #specify model 1: time features, horizon 15
 from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 
 model_lm1 = LinearRegressionModel(
-  lags=1,
+  lags=7,
   lags_future_covariates=[0],
   output_chunk_length=15
 )
-#had to include lag 1 of the target and future covariates because darts requires it
+#had to include lag 7 of the target and future covariates because darts requires it
+
+
 
 
 #fit model 1 on train data, predict on valid data, all components
@@ -374,6 +369,7 @@ model_lm1 = LinearRegressionModel(
 #first fit it on the top node to initialize pred_lm1 series
 model_lm1.fit(y_train1["sales"], future_covariates=time_covariates[0][:-227])
 pred_lm1 = model_lm1.predict(future_covariates=time_covariates[0][-227:], n=227)
+
 
 #then loop over all target components except first, to fit and predict them
 for i in range(1, len(y_train1.components)):
@@ -383,8 +379,6 @@ for i in range(1, len(y_train1.components)):
 
 del pred_comp, i
 
-del test, trafo_boxcox, dp
-
 
 #embed the target hierarchy to the predictions series
 pred_lm1 = pred_lm1.with_hierarchy(hierarchy_target) 
@@ -392,24 +386,226 @@ pred_lm1
 #yes, that should work
 
 
+
+
+## MODEL 1 PERFORMANCE SCORES ####
+from darts.metrics import mape, rmse, rmsle
+from statistics import fmean, stdev
+
+
+#function for total sales performance measures
+def measures_summary_total(val, pred, subset):
+  
+  def measure_rmse_total(val, pred, subset):
+    return rmse([trafo_exp(val[c]) for c in subset], [trafo_exp(pred[c]) for c in subset])
+
+  def measure_rmsle_total(val, pred, subset):
+    return rmsle([trafo_exp(val[c]) for c in subset], [trafo_exp(pred[c]) for c in subset])
+
+  def measure_mape_total(val, pred, subset):
+    return mape([trafo_exp(val[c]) for c in subset], [trafo_exp(pred[c]) for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse_total(val, pred, subset), 
+    "RMSLE": measure_rmsle_total(val, pred, subset), 
+    "MAPE": measure_mape_total(val, pred, subset)
+      }
+  
+  for key in scores_dict:
+    print(
+      key + ": " + 
+      str(round(scores_dict[key], 4))
+       )
+    print("--------")  
+  
+
+
+
+#function for bottom node sales performance measures
+def measures_summary(val, pred, subset):
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([trafo_exp(val[c]) for c in subset], [trafo_exp(pred[c]) for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([trafo_exp(val[c]) for c in subset], [trafo_exp(pred[c]) for c in subset])
+
+  def measure_mape(val, pred, subset):
+    return mape([trafo_exp(val[c]) for c in subset], [trafo_exp(pred[c]) for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse(val, pred, subset), 
+    "RMSLE": measure_rmsle(val, pred, subset), 
+    "MAPE": measure_mape(val, pred, subset)
+      }
+  
+  for key in scores_dict:
+    print(
+      key + ": mean=" + 
+      str(round(fmean(scores_dict[key]), 4)) + 
+      ", sd=" + 
+      str(round(stdev(scores_dict[key]), 4)) + 
+      ", min=" + str(round(min(scores_dict[key]), 4)) + 
+      ", max=" + 
+      str(round(max(scores_dict[key]), 4))
+       )
+    print("--------")
+
+
+#total sales scores
+measures_summary_total(y_val1, pred_lm1, ["sales"])
+# RMSE: 97956.234
+# --------
+# RMSLE: 0.1355
+# --------
+# MAPE: 10.837
+# --------
+
+
+#category totals scores
+measures_summary(y_val1, pred_lm1, categories)
+# RMSE: mean=107315.7153, sd=434552.9557, min=13.5299, max=2496677.8247
+# --------
+# RMSLE: mean=1.4374, sd=1.5728, min=0.1151, max=4.287
+# --------
+# MAPE: mean=1.1580057936634151e+22, sd=6.452679987428214e+22, min=7.7777, max=3.708592795126658e+23
+# --------
+#RMSE is bit lower than total sales, but RMSLE is much higher. 
+  #this means the category totals are severely underpredicted
+#for some categories, RMSLE is very low, lower than total sales' RMSLE. for others, it's very high, up to 4+
+  #this suggests the base model fits some categories' time features well, but not others
+#MAPE is arbitrarily large for some categories, so it impacts the overall stats as well
+
+
+#store totals scores
+measures_summary(y_val1, pred_lm1, stores)
+# RMSE: mean=5430764.0683, sd=23746682.2948, min=1131.7137, max=141569881.17
+# --------
+# RMSLE: mean=1.1077, sd=1.97, min=0.2524, max=7.0679
+# --------
+# MAPE: mean=2.992736706688129e+18, sd=9.698984534115981e+18, min=97.3142, max=4.127484277057098e+19
+# --------
+#RMSE is much larger than category and total sales, but RMSLE is lower than category sales
+  #this means the store totals are less underpredicted compared to category totals
+#minimum RMSLE is twice the RMSLE of total sales, at 0.25.
+  #this suggests the base model doesn't fit the time features of any store well
+#MAPE is still arbitrarily large, but less so than category totals
+
+
+#category-store combo scores
+measures_summary(y_val1, pred_lm1, categories_stores)
+# RMSE: mean=58052.336, sd=789122.8055, min=0.0, max=17837894.0514
+# --------
+# RMSLE: mean=1.3191, sd=1.3321, min=0.0, max=6.6247
+# --------
+# MAPE: mean=5.948201339927377e+20, sd=3.3037459043881923e+21, min=50.9017, max=7.164406673067096e+22
+# --------
+#RMSLE is slightly lower than category totals, higher than store totals
+  #this is expected as we'd expect the category dynamics to be similar in each store
+#RMSE is 0 or very close to 0 for some category-store combos
+  #this is misleading as the scale of sales may be very small for some category-store combos
+#MAPE is still arbitrarily large, less than category totals, more than store totals
+
+
+
+
+## MODEL 1 PLOTS ####
+
+
+#plot 2017 actual vs. preds
+
+#total sales
+y_val1["sales"].plot(label="actual")
+pred_lm1["sales"].plot(label="lm1 preds")
+plt.title("total sales")
+plt.show()
+plt.close()
+
+
+#select categories
+
+#BREAD/BAKERY
+y_val1["BREAD/BAKERY"].plot(label="actual")
+pred_lm1["BREAD/BAKERY"].plot(label="lm1 preds")
+plt.title("BREAD/BAKERY sales")
+plt.show()
+plt.close()
+
+#CELEBRATION
+y_val1["CELEBRATION"].plot(label="actual")
+pred_lm1["CELEBRATION"].plot(label="lm1 preds")
+plt.title("CELEBRATION sales")
+plt.show()
+plt.close()
+
+
+#select stores
+
+#54
+y_val1["54"].plot(label="actual")
+pred_lm1["54"].plot(label="lm1 preds")
+plt.title("store 54 sales")
+plt.show()
+plt.close()
+
+#14
+y_val1["14"].plot(label="actual")
+pred_lm1["14"].plot(label="lm1 preds")
+plt.title("store 14 sales")
+plt.show()
+plt.close()
+
+
+#same category in several stores
+
+#BREAD/BAKERY-54, BREAD/BAKERY-14
+y_val1["BREAD/BAKERY-54"].plot(label="actual")
+pred_lm1["BREAD/BAKERY-54"].plot(label="lm1 preds")
+plt.title("BREAD/BAKERY-54 sales")
+plt.show()
+plt.close()
+
+y_val1["BREAD/BAKERY-14"].plot(label="actual")
+pred_lm1["BREAD/BAKERY-14"].plot(label="lm1 preds")
+plt.title("BREAD/BAKERY-14 sales")
+plt.show()
+plt.close()
+
+
+#CELEBRATION-54, CELEBRATION-14
+y_val1["CELEBRATION-54"].plot(label="actual")
+pred_lm1["CELEBRATION-54"].plot(label="lm1 preds")
+plt.title("CELEBRATION-54 sales")
+plt.show()
+plt.close()
+
+y_val1["CELEBRATION-14"].plot(label="actual")
+pred_lm1["CELEBRATION-14"].plot(label="lm1 preds")
+plt.title("CELEBRATION-14 sales")
+plt.show()
+plt.close()
+
+
+
+
 #see how nodes sum up before reconciliation
 
-#create ca
+
+#create categories_stores object
 categories_stores = []
 for category, store in product(categories, stores):
   categories_stores.append("{}-{}".format(category, store))
 
-
+#function to plot hierarchy sums
 def plot_forecast_sums(pred_series, val_series=None):
-    pred_series = trafo_log.inverse_transform(pred_series)
-    val_series = trafo_log.inverse_transform(val_series)
+    pred_series = trafo_exp(pred_series)
+    val_series = trafo_exp(val_series)
     
     plt.figure(figsize=(10, 5))
     
-    sum([val_series[t] for t in categories_stores]).plot(
-      label="actual categories_stores"
-    )
-    pred_series["sales"].plot(label="total", alpha=0.3, color="grey")
+    val_series["sales"].plot(label="actual total sales", alpha=0.3, color="red")
+    
+    pred_series["sales"].plot(label="predicted total sales", alpha=0.3, color="grey")
     sum([pred_series[r] for r in categories]).plot(label="sum of categories")
     sum([pred_series[r] for r in stores]).plot(label="sum of stores")
     sum([pred_series[t] for t in categories_stores]).plot(
@@ -422,17 +618,62 @@ def plot_forecast_sums(pred_series, val_series=None):
     frame.set_facecolor("white")
 
 
+#plot hierarchy sums for lm1
 plot_forecast_sums(pred_lm1, y_val1)
-plt.title("unreconciled")
+plt.title("lm1 preds for each hierarchy node")
 plt.show()
 plt.close()
-#it's messed up. why tho
-  #because it's on the log scale. lol.
-  #backtransforming the log trafo doesn't work, because:
-  #ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
 
 
-#score predictions at each node of the hierarchy (after reversing log transformation)
+
+
+## LM1 DIAGNOSTICS ####
+
+
+#get and inspect inno residuals of LM1 predictions
+res_lm1 = y_val1 - pred_lm1
+
+
+#time plot, distribution, acf
+from darts.utils.statistics import plot_residuals_analysis
+plot_residuals_analysis(res_lm1["sales"])
+plt.show()
+plt.close()
+#seems fairly stationary, maybe slight downward trend in residuals
+#ACF only fairly significant at lag 1, slightly at 3-7
+  #declining sigmoidal pattern
+#distribution of residuals normal except for few outliers
+
+
+#pacf
+from darts.utils.statistics import plot_pacf
+plot_pacf(res_lm1["sales"], max_lag=48)
+plt.show()
+plt.close()
+#PACF spike in lag 1, slightly significant 3, 5
+
+
+#kpss test for stationarity
+from darts.utils.statistics import stationarity_test_kpss as kpss
+from darts.utils.statistics import stationarity_test_adf as adf
+kpss_res = kpss(res_lm1["sales"])
+kpss_res
+#test stat 1.77, p val 0.01 or lower, data is non-stationary with a linear trend
+adf_res = adf(res_lm1["sales"])
+adf_res
+#test stat -2.94, p value 0.04, data is differenced stationary
+
+
+
+
+#LM1 DOES NOT MAKE THE 2017 PREDICTIONS STATIONARY
+  #backtest and get residuals for 2014-2017, and try again?
+  #or immediately go back to time covariates and change the trend?
+
+
+
+
+
 
 
 
@@ -498,7 +739,7 @@ del total_covar
 
 
 
-## PREPROCESSING: COVARIATES MODEL ####
+## MODEL 2: COVARIATES MODEL ####
 
 
 #preprocessing steps:
