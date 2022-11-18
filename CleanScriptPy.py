@@ -635,16 +635,18 @@ lm1_cv = model_lm1.historical_forecasts(
   series = y_train["sales"],
   future_covariates = time_covariates[0],
   start = 365,
-  forecast_horizon = 15,
-  stride = 15,
+  forecast_horizon = 21,
+  stride = 21,
   last_points_only = False
   )
+#forecast horizon 21 because 1688-365=1323, which is not divisible by 15 but is divisible by 21
 
 
 #join 15-day forecasts into one series
 lm1_cv_join = lm1_cv[0]
 for i in range (1, len(lm1_cv)):
   lm1_cv_join = lm1_cv_join.append(lm1_cv[i])
+#starts from 2014-01-01, ends in 2017-08-15, 1323 dates
 #yes, that should work
 
 
@@ -663,63 +665,47 @@ plt.close()
 ## MODEL 1 DIAGNOSTICS ####
 
 
-#get and inspect inno residuals of LM1 predictions on 2017
-res_lm1_preds = y_val1 - pred_lm1
-
-
-#time plot, distribution, acf
-from darts.utils.statistics import plot_residuals_analysis
-plot_residuals_analysis(res_lm1_preds["sales"])
-plt.show()
-plt.close()
-#seems fairly stationary, maybe slight downward trend in residuals
-#ACF only fairly significant at lag 1, slightly at 3-7
-  #declining sigmoidal pattern
-#distribution of residuals normal except for few outliers
-
-
-#pacf
-from darts.utils.statistics import plot_pacf
-plot_pacf(res_lm1_preds["sales"], max_lag=48)
-plt.show()
-plt.close()
-#PACF spike in lag 1, slightly significant 3, 5
-
-
-#kpss test for stationarity
-from darts.utils.statistics import stationarity_test_kpss as kpss
-from darts.utils.statistics import stationarity_test_adf as adf
-kpss_res = kpss(res_lm1_preds["sales"])
-kpss_res
-#test stat 1.77, p val 0.01 or lower, data is non-stationary with a linear trend
-adf_res = adf(res_lm1_preds["sales"])
-adf_res
-#test stat -2.94, p value 0.04, data is differenced stationary
-
-
-
-
 #get residuals for 2014-2017 and inspect them
 
 
-#first get them for total sales
-model_lm1.fit(y_train["sales"], future_covariates=time_covariates[0])
-res_lm1 = model_lm1.residuals(
-  series = y_train["sales"],
-  future_covariates = time_covariates[0],
-  forecast_horizon = 15,
-  retrain = False
-)
-
-rmse(y_train["sales"][36:], (y_train["sales"][36:] - res_lm1))
-#rmsle 0.25, looks like this is trained on the first 36 days only
-
-y_train["sales"][36:]
+#first get residuals for total series
+res_lm1 = y_train["sales"][365:] - lm1_cv_join
+#yes, that should work
 
 
+#loop that gets historical forecasts for each series except first,
+  #joins them into one series,
+  #gets their residuals and stacks them to res_lm1
+for i in range(1, len(y_train.components)):
+  hist_fore = model_lm1.historical_forecasts(
+    series = y_train[y_train.components[i]],
+    future_covariates = time_covariates[i],
+    start = 365,
+    forecast_horizon = 21,
+    stride = 21,
+    last_points_only = False
+    )
+    
+  hist_fore_joined = hist_fore[0]
+    for k in range (1, len(hist_fore)):
+      hist_fore_joined = hist_fore_joined.append(hist_fore[k])
+
+  res_fore = y_train[y_train.components[i]][365:] - hist_fore_joined
+  res_lm1 = res_lm1.stack(res_fore)
+#THROWS ERRORS:
+# ...     for k in range (1, len(hist_fore)):
+# IndentationError: unexpected indent (<string>, line 1)
+# >>>       hist_fore_joined = hist_fore_joined.append(hist_fore[k])
+# NameError: name 'k' is not defined
+# >>>       
+# >>>   res_fore = y_train[y_train.components[i]][365:] - hist_fore_joined
+# 2022-11-18 17:45:36 darts.timeseries ERROR: ValueError: Attempted to perform operation on two TimeSeries of unequal shapes.
+# ValueError: Attempted to perform operation on two TimeSeries of unequal shapes.
+# >>>   res_lm1 = res_lm1.stack(res_fore)
+# NameError: name 'res_fore' is not defined
 
 
-
+del hist_fore, hist_fore_joined, res_fore, i, k
 
 
 #embed the target hierarchy to the residuals series

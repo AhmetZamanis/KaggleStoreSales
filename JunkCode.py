@@ -3,6 +3,48 @@
 
 
 
+# #get and inspect inno residuals of LM1 predictions on 2017
+# res_lm1_preds = y_val1 - pred_lm1
+# 
+# 
+# #time plot, distribution, acf
+# from darts.utils.statistics import plot_residuals_analysis
+# plot_residuals_analysis(res_lm1_preds["sales"])
+# plt.show()
+# plt.close()
+# #seems fairly stationary, maybe slight downward trend in residuals
+# #ACF only fairly significant at lag 1, slightly at 3-7
+#   #declining sigmoidal pattern
+# #distribution of residuals normal except for few outliers
+# 
+# 
+# #pacf
+# from darts.utils.statistics import plot_pacf
+# plot_pacf(res_lm1_preds["sales"], max_lag=48)
+# plt.show()
+# plt.close()
+# #PACF spike in lag 1, slightly significant 3, 5
+# 
+# 
+# #kpss test for stationarity
+# from darts.utils.statistics import stationarity_test_kpss as kpss
+# from darts.utils.statistics import stationarity_test_adf as adf
+# kpss_res = kpss(res_lm1_preds["sales"])
+# kpss_res
+# #test stat 1.77, p val 0.01 or lower, data is non-stationary with a linear trend
+# adf_res = adf(res_lm1_preds["sales"])
+# adf_res
+# #test stat -2.94, p value 0.04, data is differenced stationary
+# 
+
+
+
+
+
+
+
+
+
 
 # #first get them for total sales
 # res_lm1 = model_lm1.residuals(
