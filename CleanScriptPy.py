@@ -340,13 +340,13 @@ def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-0.0001)
 
 
-y_train1 = trafo_log(ts_train)
+y_train = trafo_log(ts_train)
 #yes, that should work
 
 
 
 #train-valid split pre-post 2017
-y_train1, y_val1 = y_train1[:-227], y_train1[-227:]
+y_train1, y_val1 = y_train[:-227], y_train[-227:]
 
 
 
@@ -627,16 +627,49 @@ plt.close()
 
 
 
-## LM1 DIAGNOSTICS ####
+## MODEL 1 HISTORICAL FORECASTS ####
 
 
-#get and inspect inno residuals of LM1 predictions
-res_lm1 = y_val1 - pred_lm1
+#historical forecasts on total sales, 2014-2017
+lm1_cv = model_lm1.historical_forecasts(
+  series = y_train["sales"],
+  future_covariates = time_covariates[0],
+  start = 365,
+  forecast_horizon = 15,
+  stride = 15,
+  last_points_only = False
+  )
+
+
+#join 15-day forecasts into one series
+lm1_cv_join = lm1_cv[0]
+for i in range (1, len(lm1_cv)):
+  lm1_cv_join = lm1_cv_join.append(lm1_cv[i])
+#yes, that should work
+
+
+#plot total sales vs historical forecasts 2014-2017
+y_train["sales"].plot(label="actual")
+lm1_cv_join.plot(label="lm1 preds")
+plt.title("total sales vs. lm1 15-day historical forecasts")
+plt.show()
+plt.close()
+#piecewise trend seems correct for total sales
+#2014-mid 2015 cyclicality causes issues, otherwise predictions are stable
+
+
+
+
+## MODEL 1 DIAGNOSTICS ####
+
+
+#get and inspect inno residuals of LM1 predictions on 2017
+res_lm1_preds = y_val1 - pred_lm1
 
 
 #time plot, distribution, acf
 from darts.utils.statistics import plot_residuals_analysis
-plot_residuals_analysis(res_lm1["sales"])
+plot_residuals_analysis(res_lm1_preds["sales"])
 plt.show()
 plt.close()
 #seems fairly stationary, maybe slight downward trend in residuals
@@ -647,7 +680,7 @@ plt.close()
 
 #pacf
 from darts.utils.statistics import plot_pacf
-plot_pacf(res_lm1["sales"], max_lag=48)
+plot_pacf(res_lm1_preds["sales"], max_lag=48)
 plt.show()
 plt.close()
 #PACF spike in lag 1, slightly significant 3, 5
@@ -656,19 +689,75 @@ plt.close()
 #kpss test for stationarity
 from darts.utils.statistics import stationarity_test_kpss as kpss
 from darts.utils.statistics import stationarity_test_adf as adf
-kpss_res = kpss(res_lm1["sales"])
+kpss_res = kpss(res_lm1_preds["sales"])
 kpss_res
 #test stat 1.77, p val 0.01 or lower, data is non-stationary with a linear trend
-adf_res = adf(res_lm1["sales"])
+adf_res = adf(res_lm1_preds["sales"])
 adf_res
 #test stat -2.94, p value 0.04, data is differenced stationary
 
 
 
 
-#LM1 DOES NOT MAKE THE 2017 PREDICTIONS STATIONARY
-  #backtest and get residuals for 2014-2017, and try again?
-  #or immediately go back to time covariates and change the trend?
+#get residuals for 2014-2017 and inspect them
+
+
+#first get them for total sales
+model_lm1.fit(y_train["sales"], future_covariates=time_covariates[0])
+res_lm1 = model_lm1.residuals(
+  series = y_train["sales"],
+  future_covariates = time_covariates[0],
+  forecast_horizon = 15,
+  retrain = False
+)
+
+rmse(y_train["sales"][36:], (y_train["sales"][36:] - res_lm1))
+#rmsle 0.25, looks like this is trained on the first 36 days only
+
+y_train["sales"][36:]
+
+
+
+
+
+
+
+#embed the target hierarchy to the residuals series
+res_lm1 = res_lm1.with_hierarchy(hierarchy_target) 
+res_lm1
+#yes, that should work
+
+
+
+
+#inspect 2013-2017 historical residuals
+
+#time plot, distribution, acf
+plot_residuals_analysis(res_lm1["sales"])
+plt.show()
+plt.close()
+
+
+
+#pacf
+plot_pacf(res_lm1["sales"], max_lag=48)
+plt.show()
+plt.close()
+
+
+
+#kpss test for stationarity
+kpss(res_lm1["sales"])
+
+adf(res_lm1["sales"])
+
+
+
+
+
+
+
+
 
 
 
@@ -685,7 +774,7 @@ adf_res
 
 
 #list of 1870 covariates
-    #sales ema7, 
+    #sales ema5, 
     #oil lags 2, 3, 7, 8, oil ema54, 
     #onpromotion
 
@@ -693,17 +782,17 @@ adf_res
 
 #total sales covariates
 
+
 #first aggregate onpromotion by sum
-total_covar = df_train.groupby("date").aggregate(
+lag_covars = df_train.groupby("date").aggregate(
   {"onpromotion":"sum"
   }
 )
 
 
-# #add sales ema7
-# total_covar["sales_ema7"] = df_train.groupby("date").sales.sum().ewm(span=7).mean()
-#   #can't do this at this point. this has to come after the decomposition.
-#   #use lags 1-7 in model specification instead
+#add sales ema5
+lag_covars["sales_ema5"] = df_train.groupby("date").sales.sum().ewm(span=5).mean()
+  #remember to use lag 6 in lm2 model specification
 
 
 #add oil features: lags 2, 3, 7, 8 and EMA54
@@ -713,28 +802,144 @@ oil_7 = df_train.groupby("date").oil.mean().shift(7).fillna(method="bfill", axis
 oil_8 = df_train.groupby("date").oil.mean().shift(8).fillna(method="bfill", axis=0)
 oil_ema54 = df_train.groupby("date").oil.mean().ewm(span=54).mean()
 
-total_covar["oil_2"] = oil_2
-total_covar["oil_3"] = oil_3
-total_covar["oil_7"] = oil_7
-total_covar["oil_8"] = oil_8
-total_covar["oil_ema54"] = oil_ema54
-
-
-#difference the covariates
-from sktime.transformations.series.difference import Differencer
-trafo_diff = Differencer(lags=1)
-total_covar = trafo_diff.fit_transform(total_covar)
-
-
-#minmax scale the covariates? or leave this to after train-test split in darts?
+lag_covars["oil_2"] = oil_2
+lag_covars["oil_3"] = oil_3
+lag_covars["oil_7"] = oil_7
+lag_covars["oil_8"] = oil_8
+lag_covars["oil_ema54"] = oil_ema54
 
 
 #then make it a darts time series and add it to a list
-total_covar = darts.TimeSeries.from_dataframe(
-  total_covar, freq="D", fill_missing_dates=False)
-all_covars = [total_covar]
-del total_covar
+lag_covars = darts.TimeSeries.from_dataframe(
+  lag_covars, freq="D", fill_missing_dates=False)
+lag_covariates = [lag_covars]
+del lag_covars, oil_2, oil_3, oil_7, oil_8, oil_ema54
 #yes, that should work
+
+
+
+
+
+
+#loop for category lag features, for each category:
+for cat in df_train.category.unique():
+  #first aggregate onpromotion by sum
+  lag_covars = df_train.loc[df_train.category==cat].drop(
+    columns=['store_no', 'store_cluster', 'store_type', 'city', 'state','transactions'], axis=1).groupby("date").aggregate(
+    {"onpromotion":"sum"
+      }
+  )
+
+  #add sales ema5
+  lag_covars["sales_ema5"] = df_train.loc[df_train.category==cat].groupby("date").sales.sum().ewm(span=5).mean()
+
+  #add oil features: lags 2, 3, 7, 8 and EMA54
+  oil_2 = df_train.loc[df_train.category==cat].groupby("date").oil.mean().shift(2).fillna(method="bfill", axis=0)
+  oil_3 = df_train.loc[df_train.category==cat].groupby("date").oil.mean().shift(3).fillna(method="bfill", axis=0)
+  oil_7 = df_train.loc[df_train.category==cat].groupby("date").oil.mean().shift(7).fillna(method="bfill", axis=0)
+  oil_8 = df_train.loc[df_train.category==cat].groupby("date").oil.mean().shift(8).fillna(method="bfill", axis=0)
+  oil_ema54 = df_train.loc[df_train.category==cat].groupby("date").oil.mean().ewm(span=54).mean()
+
+  lag_covars["oil_2"] = oil_2
+  lag_covars["oil_3"] = oil_3
+  lag_covars["oil_7"] = oil_7
+  lag_covars["oil_8"] = oil_8
+  lag_covars["oil_ema54"] = oil_ema54
+
+
+  #then make it a darts time series and add it to a list
+  lag_covars = darts.TimeSeries.from_dataframe(
+    lag_covars, freq="D", fill_missing_dates=False)
+  lag_covariates.append(lag_covars)
+  
+del lag_covars, oil_2, oil_3, oil_7, oil_8, oil_ema54
+#yes, that should work
+
+
+
+
+#loop for store lag features, for each store:
+for store in df_train.store_no.unique():
+  #first aggregate onpromotion by sum
+  lag_covars = df_train.loc[df_train.store_no==store].drop(
+    columns=['category', 'store_cluster', 'store_type', 'city', 'state','transactions'], axis=1).groupby("date").aggregate(
+    {"onpromotion":"sum"
+      }
+  )
+
+  #add sales ema5
+  lag_covars["sales_ema5"] = df_train.loc[df_train.store_no==store].groupby("date").sales.sum().ewm(span=5).mean()
+
+  #add oil features: lags 2, 3, 7, 8 and EMA54
+  oil_2 = df_train.loc[df_train.store_no==store].groupby("date").oil.mean().shift(2).fillna(method="bfill", axis=0)
+  oil_3 = df_train.loc[df_train.store_no==store].groupby("date").oil.mean().shift(3).fillna(method="bfill", axis=0)
+  oil_7 = df_train.loc[df_train.store_no==store].groupby("date").oil.mean().shift(7).fillna(method="bfill", axis=0)
+  oil_8 = df_train.loc[df_train.store_no==store].groupby("date").oil.mean().shift(8).fillna(method="bfill", axis=0)
+  oil_ema54 = df_train.loc[df_train.store_no==store].groupby("date").oil.mean().ewm(span=54).mean()
+
+  lag_covars["oil_2"] = oil_2
+  lag_covars["oil_3"] = oil_3
+  lag_covars["oil_7"] = oil_7
+  lag_covars["oil_8"] = oil_8
+  lag_covars["oil_ema54"] = oil_ema54
+
+
+  #then make it a darts time series and add it to a list
+  lag_covars = darts.TimeSeries.from_dataframe(
+    lag_covars, freq="D", fill_missing_dates=False)
+  lag_covariates.append(lag_covars)
+  
+del lag_covars, oil_2, oil_3, oil_7, oil_8, oil_ema54
+#yes, that should work
+
+
+
+
+#loop for category:store lag features, for each category:store combo:
+for cat_store in df_train.category_store_no.unique():
+  #first aggregate onpromotion by sum
+  lag_covars = df_train.loc[df_train.category_store_no==cat_store].drop(
+    columns=['category', "store_no", 'store_cluster', 'store_type', 'city', 'state','transactions'], axis=1).groupby("date").aggregate(
+    {"onpromotion":"sum"
+      }
+  )
+
+  #add sales ema5
+  lag_covars["sales_ema5"] = df_train.loc[df_train.category_store_no==cat_store].groupby("date").sales.sum().ewm(span=5).mean()
+
+  #add oil features: lags 2, 3, 7, 8 and EMA54
+  oil_2 = df_train.loc[df_train.category_store_no==cat_store].groupby("date").oil.mean().shift(2).fillna(method="bfill", axis=0)
+  oil_3 = df_train.loc[df_train.category_store_no==cat_store].groupby("date").oil.mean().shift(3).fillna(method="bfill", axis=0)
+  oil_7 = df_train.loc[df_train.category_store_no==cat_store].groupby("date").oil.mean().shift(7).fillna(method="bfill", axis=0)
+  oil_8 = df_train.loc[df_train.category_store_no==cat_store].groupby("date").oil.mean().shift(8).fillna(method="bfill", axis=0)
+  oil_ema54 = df_train.loc[df_train.category_store_no==cat_store].groupby("date").oil.mean().ewm(span=54).mean()
+
+  lag_covars["oil_2"] = oil_2
+  lag_covars["oil_3"] = oil_3
+  lag_covars["oil_7"] = oil_7
+  lag_covars["oil_8"] = oil_8
+  lag_covars["oil_ema54"] = oil_ema54
+
+
+  #then make it a darts time series and add it to a list
+  lag_covars = darts.TimeSeries.from_dataframe(
+    lag_covars, freq="D", fill_missing_dates=False)
+  lag_covariates.append(lag_covars)
+  
+del lag_covars, oil_2, oil_3, oil_7, oil_8, oil_ema54
+#yes, that should work
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -744,8 +949,249 @@ del total_covar
 
 #preprocessing steps:
   #difference oil, onpromotion, if not done before
+    #fill arising NAs with zeroes
   #minmax scale oil, onpromotion
 
+#differencing
+for i in range(0, len(lag_covariates)):
+  lag_covariates[i] = lag_covariates[i].diff(dropna=True)
+
+#filling missing values from differencing
+from darts.dataprocessing.transformers import MissingValuesFiller
+trafo_na = MissingValuesFiller()
+
+for i in range(0, len(lag_covariates)):
+  lag_covariates[i] = trafo_na.transform(lag_covariates[i])
+
+
+#train-valid split pre-post 2017
+y_train2, y_val2 = res_lm1[:-227], res_lm1[-227:]
+
+
+#scale covariates, separately for train and valid sets
+from darts.dataprocessing.transformers import Scaler
+trafo_scaler = Scaler()
+
+for i in range(0, len(y_train2)):
+  lag_covariates[i] = trafo_scaler.fit_transform(lag_covariates[i])
+  
+for i in range(len(y_train2), len(res_lm1)):
+  lag_covariates[i] = trafo_scaler.transform(lag_covariates[i])
+
+
+
+#specify model 2
+model_lm2 = LinearRegressionModel(
+  lags=6,
+  lags_future_covariates=[0],
+  output_chunk_length=15
+)
+
+
+
+
+#fit lm2 model on lm1 residuals 2013-2016, predict 2017 with lm2
+
+#first for the total series
+model_lm2.fit(y_train2["sales"], future_covariates=lag_covariates[0][:-227])
+pred_lm2 = model_lm2.predict(future_covariates=lag_covariates[0][-227:], n=227)
+
+#then loop over all target components except first, to fit and predict
+for i in range(1, len(y_train2.components)):
+  model_lm2.fit(y_train2[y_train2.components[i]], future_covariates=lag_covariates[i][:-227])
+  pred_comp2 = model_lm2.predict(future_covariates=lag_covariates[i][-227:], n=227)
+  pred_lm2 = pred_lm2.stack(pred_comp2)
+
+del pred_comp2, i
+
+#embed the target hierarchy to the predictions series
+pred_lm2 = pred_lm2.with_hierarchy(hierarchy_target) 
+pred_lm2
+
+
+#sum lm2 preds with lm1 preds
+pred_final = pred_lm1 + pred_lm2
+
+
+
+
+## MODEL 2 PERFORMANCE SCORES ####
+
+
+#total sales scores
+measures_summary_total(y_val2, pred_final, ["sales"])
+# RMSE: 97956.234
+# --------
+# RMSLE: 0.1355
+# --------
+# MAPE: 10.837
+# --------
+
+
+#category totals scores
+measures_summary(y_val2, pred_final, categories)
+# RMSE: mean=107315.7153, sd=434552.9557, min=13.5299, max=2496677.8247
+# --------
+# RMSLE: mean=1.4374, sd=1.5728, min=0.1151, max=4.287
+# --------
+# MAPE: mean=1.1580057936634151e+22, sd=6.452679987428214e+22, min=7.7777, max=3.708592795126658e+23
+# --------
+#RMSE is bit lower than total sales, but RMSLE is much higher. 
+  #this means the category totals are severely underpredicted
+#for some categories, RMSLE is very low, lower than total sales' RMSLE. for others, it's very high, up to 4+
+  #this suggests the base model fits some categories' time features well, but not others
+#MAPE is arbitrarily large for some categories, so it impacts the overall stats as well
+
+
+#store totals scores
+measures_summary(y_val2, pred_final, stores)
+# RMSE: mean=5430764.0683, sd=23746682.2948, min=1131.7137, max=141569881.17
+# --------
+# RMSLE: mean=1.1077, sd=1.97, min=0.2524, max=7.0679
+# --------
+# MAPE: mean=2.992736706688129e+18, sd=9.698984534115981e+18, min=97.3142, max=4.127484277057098e+19
+# --------
+#RMSE is much larger than category and total sales, but RMSLE is lower than category sales
+  #this means the store totals are less underpredicted compared to category totals
+#minimum RMSLE is twice the RMSLE of total sales, at 0.25.
+  #this suggests the base model doesn't fit the time features of any store well
+#MAPE is still arbitrarily large, but less so than category totals
+
+
+#category-store combo scores
+measures_summary(y_val2, pred_final, categories_stores)
+# RMSE: mean=58052.336, sd=789122.8055, min=0.0, max=17837894.0514
+# --------
+# RMSLE: mean=1.3191, sd=1.3321, min=0.0, max=6.6247
+# --------
+# MAPE: mean=5.948201339927377e+20, sd=3.3037459043881923e+21, min=50.9017, max=7.164406673067096e+22
+# --------
+#RMSLE is slightly lower than category totals, higher than store totals
+  #this is expected as we'd expect the category dynamics to be similar in each store
+#RMSE is 0 or very close to 0 for some category-store combos
+  #this is misleading as the scale of sales may be very small for some category-store combos
+#MAPE is still arbitrarily large, less than category totals, more than store totals
+
+
+
+
+
+
+## MODEL 2 PLOTS ####
+
+
+#plot 2017 actual vs. preds
+
+#total sales
+y_val2["sales"].plot(label="actual")
+pred_final["sales"].plot(label="hybrid preds")
+plt.title("total sales")
+plt.show()
+plt.close()
+
+
+#select categories
+
+#BREAD/BAKERY
+y_val2["BREAD/BAKERY"].plot(label="actual")
+pred_final["BREAD/BAKERY"].plot(label="hybrid preds")
+plt.title("BREAD/BAKERY sales")
+plt.show()
+plt.close()
+
+#CELEBRATION
+y_val2["CELEBRATION"].plot(label="actual")
+pred_final["CELEBRATION"].plot(label="hybrid preds")
+plt.title("CELEBRATION sales")
+plt.show()
+plt.close()
+
+
+#select stores
+
+#54
+y_val2["54"].plot(label="actual")
+pred_final["54"].plot(label="hybrid preds")
+plt.title("store 54 sales")
+plt.show()
+plt.close()
+
+#14
+y_val2["14"].plot(label="actual")
+pred_final["14"].plot(label="hybrid preds")
+plt.title("store 14 sales")
+plt.show()
+plt.close()
+
+
+#same category in several stores
+
+#BREAD/BAKERY-54, BREAD/BAKERY-14
+y_val2["BREAD/BAKERY-54"].plot(label="actual")
+pred_final["BREAD/BAKERY-54"].plot(label="hybrid preds")
+plt.title("BREAD/BAKERY-54 sales")
+plt.show()
+plt.close()
+
+y_val2["BREAD/BAKERY-14"].plot(label="actual")
+pred_final["BREAD/BAKERY-14"].plot(label="hybrid preds")
+plt.title("BREAD/BAKERY-14 sales")
+plt.show()
+plt.close()
+
+
+#CELEBRATION-54, CELEBRATION-14
+y_val2["CELEBRATION-54"].plot(label="actual")
+pred_final["CELEBRATION-54"].plot(label="hybrid preds")
+plt.title("CELEBRATION-54 sales")
+plt.show()
+plt.close()
+
+y_val2["CELEBRATION-14"].plot(label="actual")
+pred_final["CELEBRATION-14"].plot(label="hybrid preds")
+plt.title("CELEBRATION-14 sales")
+plt.show()
+plt.close()
+
+
+
+
+#plot hierarchy sums for hybrid preds
+plot_forecast_sums(pred_final, y_val2)
+plt.title("hybrid preds for each hierarchy node")
+plt.show()
+plt.close()
+
+
+
+
+
+
+## LM2 DIAGNOSTICS ####
+
+
+#get and inspect inno residuals of LM1 predictions
+res_lm2 = y_val2 - pred_lm2
+
+
+#time plot, distribution, acf
+plot_residuals_analysis(res_lm2["sales"])
+plt.show()
+plt.close()
+
+
+
+#pacf
+plot_pacf(res_lm2["sales"], max_lag=48)
+plt.show()
+plt.close()
+
+
+
+#kpss test for stationarity
+kpss(res_lm2["sales"])
+
+(res_lm2["sales"])
 
 
 
@@ -755,7 +1201,223 @@ del total_covar
 ## RECONCILIATION ####
 
 
-#remember to reverse log transformation of final predictions before scoring
+#reverse log transformation of final predictions before scoring
+pred_final_exp = trafo_exp(pred_final)
+y_val2_exp = trafo_exp(y_val2)
+res_final_exp = y_val2_exp - pred_final_exp
+
+
+#perform top down and minT reconciliation on 2017 hybrid preds
+from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator
+from darts.dataprocessing.transformers.reconciliation import MinTReconciliator
+
+
+#top down
+recon_top = TopDownReconciliator()
+recon_top.fit(y_val2_exp)
+pred_final_top = recon_top.transform(pred_final_exp)
+
+
+#minT
+recon_mint = MinTReconciliator(method="wls_var")
+#may throw an error for some methods based on the diagonal
+#try, on order of suitability: wls_var, wls_val, mint_cov, wls_struct, ols
+  #wls_var and mint_cov are fit on the residuals
+  #wls_val is fit on the actual values
+  #wls_struct and ols look only at the hierarchy, ignoring values in fit()
+recon_mint.fit(res_final_exp)
+recon_mint = recon_mint.transform(pred_final_exp)
+
+
+
+
+## RECONCILIATION SCORES ####
+ 
+
+
+#function for total sales performance measures, without exp trafo
+def measures_total(val, pred, subset):
+  
+  def measure_rmse_total(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle_total(val, pred, subset):
+    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_mape_total(val, pred, subset):
+    return mape([val[c] for c in subset], [pred[c] for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse_total(val, pred, subset), 
+    "RMSLE": measure_rmsle_total(val, pred, subset), 
+    "MAPE": measure_mape_total(val, pred, subset)
+      }
+  
+  for key in scores_dict:
+    print(
+      key + ": " + 
+      str(round(scores_dict[key], 4))
+       )
+    print("--------")  
+  
+
+
+
+#function for bottom node sales performance measures, without exp trafo
+def measures(val, pred, subset):
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_mape(val, pred, subset):
+    return mape([val[c] for c in subset], [pred[c] for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse(val, pred, subset), 
+    "RMSLE": measure_rmsle(val, pred, subset), 
+    "MAPE": measure_mape(val, pred, subset)
+      }
+  
+  for key in scores_dict:
+    print(
+      key + ": mean=" + 
+      str(round(fmean(scores_dict[key]), 4)) + 
+      ", sd=" + 
+      str(round(stdev(scores_dict[key]), 4)) + 
+      ", min=" + str(round(min(scores_dict[key]), 4)) + 
+      ", max=" + 
+      str(round(max(scores_dict[key]), 4))
+       )
+    print("--------")
+
+
+
+
+
+
+
+### TOP DOWN ####
+
+#total sales scores
+measures_total(y_val2_exp, recon_top, ["sales"])
+# RMSE: 97956.234
+# --------
+# RMSLE: 0.1355
+# --------
+# MAPE: 10.837
+# --------
+
+
+#category totals scores
+measures(y_val2_exp, recon_top, categories)
+# RMSE: mean=107315.7153, sd=434552.9557, min=13.5299, max=2496677.8247
+# --------
+# RMSLE: mean=1.4374, sd=1.5728, min=0.1151, max=4.287
+# --------
+# MAPE: mean=1.1580057936634151e+22, sd=6.452679987428214e+22, min=7.7777, max=3.708592795126658e+23
+# --------
+#RMSE is bit lower than total sales, but RMSLE is much higher. 
+  #this means the category totals are severely underpredicted
+#for some categories, RMSLE is very low, lower than total sales' RMSLE. for others, it's very high, up to 4+
+  #this suggests the base model fits some categories' time features well, but not others
+#MAPE is arbitrarily large for some categories, so it impacts the overall stats as well
+
+
+#store totals scores
+measures(y_val2_exp, recon_top, stores)
+# RMSE: mean=5430764.0683, sd=23746682.2948, min=1131.7137, max=141569881.17
+# --------
+# RMSLE: mean=1.1077, sd=1.97, min=0.2524, max=7.0679
+# --------
+# MAPE: mean=2.992736706688129e+18, sd=9.698984534115981e+18, min=97.3142, max=4.127484277057098e+19
+# --------
+#RMSE is much larger than category and total sales, but RMSLE is lower than category sales
+  #this means the store totals are less underpredicted compared to category totals
+#minimum RMSLE is twice the RMSLE of total sales, at 0.25.
+  #this suggests the base model doesn't fit the time features of any store well
+#MAPE is still arbitrarily large, but less so than category totals
+
+
+#category-store combo scores
+measures(y_val2_exp, recon_top, categories_stores)
+# RMSE: mean=58052.336, sd=789122.8055, min=0.0, max=17837894.0514
+# --------
+# RMSLE: mean=1.3191, sd=1.3321, min=0.0, max=6.6247
+# --------
+# MAPE: mean=5.948201339927377e+20, sd=3.3037459043881923e+21, min=50.9017, max=7.164406673067096e+22
+# --------
+#RMSLE is slightly lower than category totals, higher than store totals
+  #this is expected as we'd expect the category dynamics to be similar in each store
+#RMSE is 0 or very close to 0 for some category-store combos
+  #this is misleading as the scale of sales may be very small for some category-store combos
+#MAPE is still arbitrarily large, less than category totals, more than store totals
+
+
+
+
+
+
+### MINIMUM TRACE ####
+
+#total sales scores
+measures_total(y_val2_exp, recon_mint, ["sales"])
+# RMSE: 97956.234
+# --------
+# RMSLE: 0.1355
+# --------
+# MAPE: 10.837
+# --------
+
+
+#category totals scores
+measures(y_val2_exp, recon_mint, categories)
+# RMSE: mean=107315.7153, sd=434552.9557, min=13.5299, max=2496677.8247
+# --------
+# RMSLE: mean=1.4374, sd=1.5728, min=0.1151, max=4.287
+# --------
+# MAPE: mean=1.1580057936634151e+22, sd=6.452679987428214e+22, min=7.7777, max=3.708592795126658e+23
+# --------
+#RMSE is bit lower than total sales, but RMSLE is much higher. 
+  #this means the category totals are severely underpredicted
+#for some categories, RMSLE is very low, lower than total sales' RMSLE. for others, it's very high, up to 4+
+  #this suggests the base model fits some categories' time features well, but not others
+#MAPE is arbitrarily large for some categories, so it impacts the overall stats as well
+
+
+#store totals scores
+measures(y_val2_exp, recon_mint, stores)
+# RMSE: mean=5430764.0683, sd=23746682.2948, min=1131.7137, max=141569881.17
+# --------
+# RMSLE: mean=1.1077, sd=1.97, min=0.2524, max=7.0679
+# --------
+# MAPE: mean=2.992736706688129e+18, sd=9.698984534115981e+18, min=97.3142, max=4.127484277057098e+19
+# --------
+#RMSE is much larger than category and total sales, but RMSLE is lower than category sales
+  #this means the store totals are less underpredicted compared to category totals
+#minimum RMSLE is twice the RMSLE of total sales, at 0.25.
+  #this suggests the base model doesn't fit the time features of any store well
+#MAPE is still arbitrarily large, but less so than category totals
+
+
+#category-store combo scores
+measures(y_val2_exp, recon_mint, categories_stores)
+# RMSE: mean=58052.336, sd=789122.8055, min=0.0, max=17837894.0514
+# --------
+# RMSLE: mean=1.3191, sd=1.3321, min=0.0, max=6.6247
+# --------
+# MAPE: mean=5.948201339927377e+20, sd=3.3037459043881923e+21, min=50.9017, max=7.164406673067096e+22
+# --------
+#RMSLE is slightly lower than category totals, higher than store totals
+  #this is expected as we'd expect the category dynamics to be similar in each store
+#RMSE is 0 or very close to 0 for some category-store combos
+  #this is misleading as the scale of sales may be very small for some category-store combos
+#MAPE is still arbitrarily large, less than category totals, more than store totals
+
+
+
 
 
 
@@ -771,6 +1433,13 @@ del total_covar
   #difference oil and onpromotion
   #minmax scale with scaler fitted on training data
   #apply the 2 models on the log scale, reverse transformations before reconciliation
-  
 
+#modeling:
+  #fit lm1 on entire 2013-2017 data, predict test data
+  #fit lm2 on lm1's 2014-2017 residuals, predict test data
+  #sum lm1 and lm2 preds
+  
 #reconciliation
+  #use the best method from validation
+  #reverse log transformation before reconciliation
+
