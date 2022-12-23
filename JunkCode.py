@@ -1,3 +1,9 @@
+library(reticulate)
+use_virtualenv("./venv")
+
+
+
+
 #UNUSED CODE
 
 
