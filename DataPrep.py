@@ -125,24 +125,59 @@ df = df.merge(events_merge, how="left", on="date")
 df["event"] = df["event"].fillna(0).astype(int)
 
 
-# CPI adjust sales and oil, where CPI 2010 = 100
-cpis = [112.8,
-        116.8,
-        121.5,
-        123.6,
-        123.6]
+# Set datetime index
+df = df.set_index(pd.to_datetime(df.date))
+df = df.drop("date", axis=1)
 
 
-# Split train and test, check missing values
-pd.isnull(df).sum()
+# CPI adjust sales and oil, with CPI 2010 = 100, and CPI 2017 = CPI 2016
+cpis = {
+  "2010":100, "2013":112.8, "2014":116.8, "2015":121.5, "2016":123.6, 
+  "2017":123.6
+  }
+for year in [2013, 2014, 2015, 2016, 2017]:
+  df["sales"].loc[df.index.year==year] = df["sales"].loc[
+    df.index.year==year] / cpis[str(year)] * cpis["2010"]
+  df["oil"].loc[df.index.year==year] = df["oil"].loc[
+    df.index.year==year] / cpis[str(year)] * cpis["2010"]
 
-# Drop sales and transactions from test
 
-# Time interpolate missing values in oil, transactions (train-test separately)
+# Split train and test, drop sales and transactions from test
+df_train = df.iloc[range(0, len(df_train)), :]
+df_test = df.iloc[range(len(df_train), len(df)), :]
+df_test = df_test.drop(["sales", "transactions"], axis = 1)
+
+
+# Check missing values in train and test. For train, NAs in oil and transactions.
+# For test, NAs in oil.
+pd.isnull(df_train).sum()
+pd.isnull(df_test).sum()
+
+
+# Time interpolate missing values in oil (train-test separately). Some are left
+# in train, these are all from the first day in the data. Backfill them with the
+# next day's oil price.
+df_train["oil"] = df_train["oil"].interpolate("time")
+df_test["oil"] = df_test["oil"].interpolate("time")
+df_train["oil"] = df_train["oil"].fillna(method="bfill")
+
+
+# Time interpolate missing values in transactions (train only). Some are left,
+# all from the first day in the data, 01-01-2013. Fill them in with transactions
+# from 01-01-2014.
+df_train["transactions"] = df_train["transactions"].interpolate("time")
+df_train["transactions"] = df_train["transactions"].fillna(
+  df_train["transactions"].loc[
+    (df_train.index.day == 1) & (df_train.index.month == 1) & 
+    (df_train.index.year == 2014)].median()
+    )
+
 
 # Export modified train and test data
-
-
+df_train.to_csv(
+  "./ModifiedData/Final/train_modified.csv", index=True, encoding="utf-8")
+df_test.to_csv(
+  "./ModifiedData/Final/test_modified.csv", index=True, encoding="utf-8")
 
 
 
