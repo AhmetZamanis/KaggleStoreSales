@@ -41,83 +41,83 @@ ts_total = TimeSeries.from_series(total_sales, freq="D")
 
 # Plot entire time series
 total_sales.plot()
+plt.ylabel("daily sales, millions")
 plt.show()
 plt.close("all")
 
 
-# Monthly sales in each year
+# Average sales per quarter of year
 sns.lineplot(
-  x = total_sales.index.month, 
-  y=total_sales, 
-  hue=total_sales.index.year, data=total_sales, legend="brief")
+  x = total_sales.index.quarter.astype(str), 
+  y = total_sales, 
+  hue = total_sales.index.year.astype(str), data=total_sales, legend = "brief")
+plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='upper left')
+plt.xlabel("quarter")
+plt.show()
+plt.close("all")
+
+
+# Average sales per month of year
+sns.lineplot(
+  x = total_sales.index.month.astype(str), 
+  y = total_sales, 
+  hue = total_sales.index.year.astype(str), data=total_sales, legend = "brief")
+plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='upper left')
 plt.xlabel("month")
 plt.show()
-plt.close()
+plt.close("all")
 
 
-# Weekly sales in each year
+# Average sales per week of year
 sns.lineplot(
   x = total_sales.index.week, 
   y=total_sales, 
-  hue=total_sales.index.year, data=total_sales, legend="brief")
+  hue=total_sales.index.year.astype(str), data=total_sales, legend = "brief")
+plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='upper left')
 plt.xlabel("week")
 plt.show()
-plt.close()
+plt.close("all")
 
 
-# Daily sales in each year
+# Average sales per day of year
 sns.lineplot(
   x = total_sales.index.dayofyear, 
   y=total_sales, 
-  hue=total_sales.index.year, data=total_sales, legend="brief")
+  hue=total_sales.index.year.astype(str), data=total_sales, legend="brief")
+plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='upper left')
 plt.xlabel("day of year")
 plt.show()
-plt.close()
+plt.close("all")
 
 
-# Plot annual seasonality, months aggregated
-sales_monthly = total_sales.groupby(total_sales.index.month).sum()
-sales_monthly.index = pd.RangeIndex(1, 13)
-ts_monthly = TimeSeries.from_series(sales_monthly)
-ts_monthly.plot()
+# Average sales per day of month
+sns.lineplot(
+  x = total_sales.index.day, 
+  y = total_sales, 
+  hue = total_sales.index.year.astype(str), data=total_sales, legend="brief")
+plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='upper left')
+plt.xlabel("day of month")
 plt.show()
 plt.close("all")
 
 
-# Plot annual seasonality, weeks aggregated
-sales_weekly = total_sales.groupby(total_sales.index.week).sum()
-sales_weekly.index = pd.RangeIndex(1, 54)
-ts_weekly = TimeSeries.from_series(sales_weekly)
-ts_weekly.plot()
+# Average sales per day of week
+sns.lineplot(
+  x = total_sales.index.dayofweek, 
+  y = total_sales, 
+  hue = total_sales.index.year.astype(str), data=total_sales, legend="brief")
+plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='upper left')
+plt.xlabel("day of week")
 plt.show()
 plt.close("all")
 
 
-# Plot annual seasonality, day of year aggregated
-sales_daily = total_sales.groupby(total_sales.index.dayofyear).sum()
-sales_daily.index = pd.RangeIndex(1, 367)
-ts_daily = TimeSeries.from_series(sales_daily)
-ts_daily.plot()
-plt.show()
-plt.close("all")
 
 
-# Plot monthly seasonality, days of month aggregated
-sales_dayofmonth = total_sales.groupby(total_sales.index.day).sum()
-sales_dayofmonth.index = pd.RangeIndex(1, 32)
-ts_dayofmonth = TimeSeries.from_series(sales_dayofmonth)
-ts_dayofmonth.plot()
-plt.show()
-plt.close("all")
 
 
-# Plot weekly seasonality, days of week aggregated
-sales_dayofweek = total_sales.groupby(total_sales.index.dayofweek).sum()
-sales_dayofweek.index = pd.RangeIndex(1, 8)
-ts_dayofweek = TimeSeries.from_series(sales_dayofweek)
-ts_dayofweek.plot()
-plt.show()
-plt.close("all")
 
-
-# EXCLUDE 2017 FROM SEASONALITY PLOTS!!!
+# MAKE FIGURES: FIG1 - ANNUAL SEASONALITY, FIG 2 - MONTHLY AND WEEKLY SEASONALITY
+# LAG, ACF, PACF PLOTS
+# STL DECOMPOSITION, PLOT
+# ADD CALENDAR FEATURES (TO FULL DATA), EXPORT (TRAIN AND TEST SEPARATE)
