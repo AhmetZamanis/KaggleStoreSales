@@ -139,3 +139,61 @@ plt.show()
 plt.close("all")
 
 
+
+from sktime.utils.plotting import plot_correlations
+plot_correlations(total_sales)
+
+
+# Lag plots
+from sktime.utils.plotting import plot_lags
+fig3, ax3 = plot_lags(total_sales, lags=[1,2,3,4,5,6,7])
+plt.show()
+plt.close("all")
+
+
+
+from darts.utils.statistics import plot_acf
+from darts.utils.statistics import plot_pacf
+from darts.utils.statistics import plot_residuals_analysis
+fig3, axes3 = plt.subplots(2)
+fig3.suptitle("ACF and PACF plots, daily sales")
+
+# ACF plot
+plot_acf(ts_total, axis=axes3[0], max_lag=54, bartlett_confint=False)
+
+# Show fig3
+plt.show()
+fig3.savefig("./", dpi=300)
+plt.close("all")
+
+plot_acf(ts_total["sales"], max_lag=54)
+plot_pacf(ts_total["sales"], max_lag=54)
+plot_residuals_analysis(ts_total["sales"])
+
+
+# STL decomposition
+from statsmodels.tsa.seasonal import STL
+stl_monthly = STL(np.log(total_sales), period=28, robust=True).fit()
+stl_monthly.plot()
+stl_monthly.trend
+
+
+
+
+df["xmas_before"] = 0
+df.loc[(df.index.day == 23) & (df.index.month == 12), "xmas_before"] = 11
+df.loc[(df.index.day.isin([21,22])) & (df.index.month == 12), "xmas_before"] = 10
+df.loc[(df.index.day == 20) & (df.index.month == 12), "xmas_before"] = 9
+df.loc[(df.index.day.isin([18,19])) & (df.index.month == 12), "xmas_before"] = 8
+df.loc[(df.index.day == 17) & (df.index.month == 12), "xmas_before"] = 7
+df.loc[(df.index.day == 16) & (df.index.month == 12), "xmas_before"] = 6
+df.loc[(df.index.day == 15) & (df.index.month == 12), "xmas_before"] = 5
+df.loc[(df.index.day == 14) & (df.index.month == 12), "xmas_before"] = 4
+df.loc[(df.index.day == 13) & (df.index.month == 12), "xmas_before"] = 3
+
+df["xmas_after"] = 0
+df.loc[(df.index.day == 23) & (df.index.month == 12), "xmas_before"] = 5
+df.loc[(df.index.day == 24) & (df.index.month == 12), "xmas_before"] = 4
+df.loc[(df.index.day == 25) & (df.index.month == 12), "xmas_before"] = 3
+df.loc[(df.index.day == 26) & (df.index.month == 12), "xmas_before"] = 2
+df.loc[(df.index.day == 27) & (df.index.month == 12), "xmas_before"] = 1
