@@ -79,6 +79,13 @@ def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
 
 
+# Fill missing values (December 25)
+from darts.dataprocessing.transformers import MissingValuesFiller
+na_filler = MissingValuesFiller()
+ts = na_filler.transform(ts)
+ts_timefeats = na_filler.transform(ts_timefeats)
+
+
 # Train-test split
 y_train, y_val = trafo_log(ts[:-227]), trafo_log(ts[-227:])
 x_train, x_val = ts_timefeats[:-227], ts_timefeats[-227:]
@@ -118,7 +125,7 @@ pred_linear = model_linear.predict(n = 227, future_covariates = x_val)
 
 
 # Define model scoring function
-from darts.metrics import mape, rmse
+from darts.metrics import mape, rmse, rmsle
 def perf_scores(val, pred, model="drift"):
   
   scores_dict = {
@@ -165,9 +172,65 @@ plt.close("all")
 
 
 # Backtest linear regression
+# array([120080.4214,         nan,     31.611 ])
+model_linear.backtest(
+  ts, future_covariates = ts_timefeats, start = 365,
+  forecast_horizon = 15, stride = 1, metric = [rmse, rmsle, mape],
+  verbose = True)
 
 
-# Retrieve residuals for 2014-2017 and diagnose them
+# Retrieve historical forecasts for linear regression
+pred_linear_hist = model_linear.historical_forecasts(
+  ts, future_covariates = ts_timefeats, start = 365,
+  forecast_horizon = 15, stride = 1,
+  verbose = True)
+
+
+# Plot historical forecasts for linear regression
+ts.plot(label="Actual")
+pred_linear_hist.plot(label="Predicted")
+plt.title("Time decomposition linear model,\n historical forecasts")
+plt.ylabel("sales")
+plt.show()
+plt.savefig("./Plots/TimeModel/LinearHistorical.png", dpi=300)
+plt.close("all")
+
+
+# Retrieve residuals for 2014-2017
+res_linear = model_linear.residuals(
+  trafo_log(ts), future_covariates = ts_timefeats, forecast_horizon = 1,
+  verbose = True)
+sales_decomped = res_linear[350:]
+
+
+# Diagnose decomped sales innovation residuals
+from darts.utils.statistics import plot_residuals_analysis, plot_pacf
+plot_residuals_analysis(sales_decomped)
+plt.show()
+plt.savefig("./Plots/TimeModel/InnoResidsDiag.png", dpi=300)
+plt.close("all")
+
+
+# PACF plot of decomped sales residuals
+plot_pacf(sales_decomped, max_lag=56)
+plt.title("Partial autocorrelation plot,\n time decomposed sales")
+plt.xlabel("Lags")
+plt.ylabel("PACF")
+plt.xticks(np.arange(0, 56, 10))
+plt.xticks(np.arange(0, 56, 1), minor=True)
+plt.grid(which='minor', alpha=0.5)
+plt.grid(which='major', alpha=1)
+plt.show()
+plt.savefig("./Plots/TimeModel/PACFInnoResids.png", dpi=300)
+plt.close("all")
+
+
+# KPSS and ADF stationarity test on decomped sales residuals
+from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
+stationarity_test_kpss(sales_decomped) # Null rejected, data is non-stationary
+stationarity_test_adf(sales_decomped) # Null rejected, data is stationary around a constant
 
 
 # Save decomposed sales for lags & covariates EDA
+sales_decomped.pd_dataframe().to_csv(
+  "./ModifiedData/Final/sales_decomped.csv", index=True, encoding="utf-8")
