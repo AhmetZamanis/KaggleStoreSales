@@ -197,3 +197,18 @@ df.loc[(df.index.day == 24) & (df.index.month == 12), "xmas_before"] = 4
 df.loc[(df.index.day == 25) & (df.index.month == 12), "xmas_before"] = 3
 df.loc[(df.index.day == 26) & (df.index.month == 12), "xmas_before"] = 2
 df.loc[(df.index.day == 27) & (df.index.month == 12), "xmas_before"] = 1
+
+
+from darts.models.forecasting.exponential_smoothing import ExponentialSmoothing
+from darts.utils.utils import ModelMode
+from darts.utils.utils import SeasonalityMode
+
+
+model_exp = ExponentialSmoothing(
+  trend = ModelMode.ADDITIVE,
+  seasonal = SeasonalityMode.ADDITIVE,
+  seasonal_periods = 7)
+  
+
+model_exp.fit(y_train)
+pred_exp = model_exp.predict(n = 227)

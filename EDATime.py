@@ -369,19 +369,43 @@ plt.close("all")
 # FIG6: Zoom in on earthquake: 16 April 2016
 april_sales = total_sales.loc[total_sales.index.month == 4]
 may_sales = total_sales.loc[total_sales.index.month == 5]
+
+fig6, axes6 = plt.subplots(2, sharex=True)
+fig6.suptitle("Effect of 16 April 2016 earthquake on sales")
+
+# April
 sns.lineplot(
+  ax = axes6[0],
   x = april_sales.index.day,
   y = april_sales,
   hue = april_sales.index.year.astype(str),
   data = april_sales
 )
-plt.title("Effect of 16-04-16 earthquake on April sales")
-plt.legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
-plt.xlabel("days of month")
-plt.xticks(np.arange(1, 32, 6))
-plt.xticks(np.arange(1, 32, 1), minor=True)
-plt.grid(which='minor', alpha=0.5)
-plt.grid(which='major', alpha=1)
+axes6[0].set_title("April")
+axes6[0].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+axes6[0].set_xlabel("days of month")
+axes6[0].set_xticks(np.arange(1, 32, 6))
+axes6[0].set_xticks(np.arange(1, 32, 1), minor=True)
+axes6[0].grid(which='minor', alpha=0.5)
+axes6[0].grid(which='major', alpha=1)
+axes6[0].axvline(x = 16, color = "black", linestyle = "dashed")
+
+# May
+sns.lineplot(
+  ax = axes6[1],
+  x = may_sales.index.day,
+  y = may_sales,
+  hue = may_sales.index.year.astype(str),
+  data = may_sales, legend=False
+)
+axes6[1].set_title("May")
+axes6[1].set_xlabel("days of month")
+axes6[1].set_xticks(np.arange(1, 32, 6))
+axes6[1].set_xticks(np.arange(1, 32, 1), minor=True)
+axes6[1].grid(which='minor', alpha=0.5)
+axes6[1].grid(which='major', alpha=1)
+
+# Show FIG6
 plt.show()
-plt.savefig("./Plots/TimeEDA/QuakeApril.png", dpi=300)
+plt.savefig("./Plots/TimeEDA/Quake.png", dpi=300)
 plt.close("all")
