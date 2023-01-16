@@ -212,3 +212,63 @@ model_exp = ExponentialSmoothing(
 
 model_exp.fit(y_train)
 pred_exp = model_exp.predict(n = 227)
+
+
+from statsmodels.tsa.stattools import ccf
+ccfs = pd.DataFrame(
+  {
+    "oil": ccf(sales_covariates["oil"], sales_covariates["sales"]),
+    "onpromotion": ccf(sales_covariates["onpromotion"], sales_covariates["sales"]),
+    "transactions": ccf(sales_covariates["transactions"], sales_covariates["sales"]),
+  }
+)
+
+
+# Calculate cross-correlations of sales and covariates
+ccfs = pd.DataFrame.from_dict(
+    {x: [sales_covariates["sales"].corr(sales_covariates[x].shift(t)) for t in range(0,181)] for x in sales_covariates.columns})
+
+
+# FIG10: Oil vs sales timeplots
+fig10, axes10 = plt.subplots(2, sharex=True)
+fig10.suptitle("Oil and sales")
+
+# Sales
+sns.lineplot(
+  ax = axes10[0],
+  x = sales_covariates.index,
+  y = "sales",
+  data = sales_covariates
+)
+axes10[0].set_ylabel("sales, decomposed")
+
+# Oil
+sns.lineplot(
+  ax = axes10[1],
+  x = sales_covariates.index,
+  y = "oil",
+  data = sales_covariates
+)
+axes10[1].set_ylabel("oil, differenced")
+
+# Show fig10
+plt.show()
+fig10.savefig("./Plots/LagsEDA/OilTime.png", dpi=300)
+plt.close("all")
+
+
+# Cross correlation
+sns.barplot(
+  x = -ccfs.index,
+  y = ccfs.oil
+)
+plt.title("Correlation of sales & oil lags")
+plt.xlabel("lags")
+plt.ylabel("correlation")
+
+plt.show()
+plt.close("all")
+
+
+from statsmodels.tsa.stattools import grangercausalitytests as granger
+granger_oil = granger(sales_covariates[["sales", "oil"]], maxlag=180)
