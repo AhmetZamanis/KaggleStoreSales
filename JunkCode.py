@@ -272,3 +272,55 @@ plt.close("all")
 
 from statsmodels.tsa.stattools import grangercausalitytests as granger
 granger_oil = granger(sales_covariates[["sales", "oil"]], maxlag=180)
+
+
+
+# FIG10: Regplots of oil moving averages & sales
+fig10, axes10 = plt.subplots(2,2, sharey=True)
+fig10.suptitle("Oil price change moving averages\n & decomposed sales")
+
+# MA7
+sns.regplot(
+  ax = axes10[0,0],
+  data = sales_covariates,
+  x = "oil_ma7",
+  y = "sales"
+)
+axes10[0,0].set_xlabel("weekly MA")
+
+# MA14
+sns.regplot(
+  ax = axes10[0,1],
+  data = sales_covariates,
+  x = "oil_ma14",
+  y = "sales"
+)
+axes10[0,1].set_xlabel("biweekly MA")
+
+# MA28
+sns.regplot(
+  ax = axes10[1,0],
+  data = sales_covariates,
+  x = "oil_ma28",
+  y = "sales"
+)
+axes10[1,0].set_xlabel("monthly MA")
+
+# MA84
+sns.regplot(
+  ax = axes10[1,1],
+  data = sales_covariates,
+  x = "oil_ma84",
+  y = "sales"
+)
+axes10[1,1].set_xlabel("quarterly MA")
+
+
+rng = np.random.default_rng(1923)
+for column in extreme_oil.columns:
+  column_mean = extreme_oil[column].mean()
+  column_sd = extreme_oil[column].std()
+  na_filler = pd.Series(rng.normal(loc=column_mean, scale=column_sd, size=len(extreme_oil[column])))
+  extreme_oil[column] = extreme_oil[column].fillna(na_filler)
+
+

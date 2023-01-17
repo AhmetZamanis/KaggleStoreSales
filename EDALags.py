@@ -124,11 +124,227 @@ sales_covariates = sales_covariates.drop("sales_ema9", axis=1)
 
 
 # Add oil moving averages
-sales_covariates.assign(
-  oil_ema7
+sales_covariates = sales_covariates.assign(
+  oil_ma7 = lambda x: x["oil"].rolling(window = 7, min_periods = 1, center = False).mean(),
+  oil_ma14 = lambda x: x["oil"].rolling(window = 14, min_periods = 1, center = False).mean(),
+  oil_ma28 = lambda x: x["oil"].rolling(window = 28, min_periods = 1, center = False).mean(),
+  oil_ma84 = lambda x: x["oil"].rolling(window = 84, min_periods = 1, center = False).mean(),
+  oil_ma168 = lambda x: x["oil"].rolling(window = 168, min_periods = 1, center = False).mean(),
+  oil_ma336 = lambda x: x["oil"].rolling(window = 336, min_periods = 1, center = False).mean(),
 )
 
-= sales_covariates["sales"].rolling(
-  window = 9, min_periods = 1, center = False, win_type = "exponential").mean()
+
+# FIG10: Regplots of oil moving averages & sales
+fig10, axes10 = plt.subplots(3,2, sharey=True)
+fig10.suptitle("Oil price change moving averages\n & decomposed sales")
+
+# MA7
+sns.regplot(
+  ax = axes10[0,0],
+  data = sales_covariates,
+  x = "oil_ma7",
+  y = "sales"
+)
+axes10[0,0].set_xlabel("weekly MA")
+axes10[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma7"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA14
+sns.regplot(
+  ax = axes10[0,1],
+  data = sales_covariates,
+  x = "oil_ma14",
+  y = "sales"
+)
+axes10[0,1].set_xlabel("biweekly MA")
+axes10[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma14"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA28
+sns.regplot(
+  ax = axes10[1,0],
+  data = sales_covariates,
+  x = "oil_ma28",
+  y = "sales"
+)
+axes10[1,0].set_xlabel("monthly MA")
+axes10[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma28"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA84
+sns.regplot(
+  ax = axes10[1,1],
+  data = sales_covariates,
+  x = "oil_ma84",
+  y = "sales"
+)
+axes10[1,1].set_xlabel("quarterly MA")
+axes10[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma84"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA168
+sns.regplot(
+  ax = axes10[2,0],
+  data = sales_covariates,
+  x = "oil_ma168",
+  y = "sales"
+)
+axes10[2,0].set_xlabel("semi-annual MA")
+axes10[2,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma168"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA336
+sns.regplot(
+  ax = axes10[2,1],
+  data = sales_covariates,
+  x = "oil_ma336",
+  y = "sales"
+)
+axes10[2,1].set_xlabel("annual MA")
+axes10[2,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma336"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# Show FIG10
+plt.show()
+fig10.savefig("./Plots/LagsEDA/OilMAs.png", dpi=300)
+plt.close("all")
+
+# The extreme values are in the first rows, so they are only 1-day, 2-day, 3-day etc.
+# averages, with very low values (-2.5, -1.5 etc.). Values of this magnitude are
+# never repeated in MAs, so they misleadingly affect the correlation.
 
 
+# FIG11: Regplots of oil moving averages & sales, without extreme MA values
+fig11, axes11 = plt.subplots(3,2, sharey=True)
+fig11.suptitle("Oil price change moving averages\n (without extreme values) & decomposed sales")
+
+# Calculate MAs without min_periods = 1, replacing NAs with random dist
+extreme_oil = sales_covariates.assign(
+  oil_ma7 = lambda x: x["oil"].rolling(window = 7, center = False).mean(),
+  oil_ma14 = lambda x: x["oil"].rolling(window = 14, center = False).mean(),
+  oil_ma28 = lambda x: x["oil"].rolling(window = 28, center = False).mean(),
+  oil_ma84 = lambda x: x["oil"].rolling(window = 84, center = False).mean(),
+  oil_ma168 = lambda x: x["oil"].rolling(window = 168, center = False).mean(),
+  oil_ma336 = lambda x: x["oil"].rolling(window = 336, center = False).mean(),
+)
+
+# MA7
+sns.regplot(
+  ax = axes11[0,0],
+  data = extreme_oil,
+  x = "oil_ma7",
+  y = "sales"
+)
+axes11[0,0].set_xlabel("weekly MA")
+axes11[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(extreme_oil["oil_ma7"], extreme_oil["sales"], nan_policy='omit')[0]), 
+      xy=(.6, .9), xycoords="axes fraction",bbox=dict(alpha=0.5))
+
+# MA14
+sns.regplot(
+  ax = axes11[0,1],
+  data = extreme_oil,
+  x = "oil_ma14",
+  y = "sales"
+)
+axes11[0,1].set_xlabel("biweekly MA")
+axes11[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(extreme_oil["oil_ma14"], extreme_oil["sales"], nan_policy='omit')[0]), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5))
+
+# MA28
+sns.regplot(
+  ax = axes11[1,0],
+  data = extreme_oil,
+  x = "oil_ma28",
+  y = "sales"
+)
+axes11[1,0].set_xlabel("monthly MA")
+axes11[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(extreme_oil["oil_ma28"], extreme_oil["sales"], nan_policy='omit')[0]),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5))
+
+# MA84
+sns.regplot(
+  ax = axes11[1,1],
+  data = extreme_oil,
+  x = "oil_ma84",
+  y = "sales"
+)
+axes11[1,1].set_xlabel("quarterly MA")
+axes11[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(extreme_oil["oil_ma84"], extreme_oil["sales"], nan_policy='omit')[0]),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5))
+
+# MA168
+sns.regplot(
+  ax = axes11[2,0],
+  data = extreme_oil,
+  x = "oil_ma168",
+  y = "sales"
+)
+axes11[2,0].set_xlabel("semi-annual MA")
+axes11[2,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(extreme_oil["oil_ma168"], extreme_oil["sales"], nan_policy='omit')[0]),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5))
+
+# MA336
+sns.regplot(
+  ax = axes11[2,1],
+  data = extreme_oil,
+  x = "oil_ma336",
+  y = "sales"
+)
+axes11[2,1].set_xlabel("annual MA")
+axes11[2,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(extreme_oil["oil_ma336"], extreme_oil["sales"], nan_policy='omit')[0]),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5))
+
+# Show FIG11
+plt.show()
+fig11.savefig("./Plots/LagsEDA/OilMAsExtreme.png", dpi=300)
+plt.close("all")
+
+
+
+
+
+
+# Keep monthly oil MA, filling in NAs with random distribution
+sales_covariates = sales_covariates.drop([
+  "oil_ma7", "oil_ma14", "oil_ma84", "oil_ma168", "oil_ma336"], axis = 1)
+sales_covariates["oil_ma28"] = sales_covariates["oil"].rolling(window = 28, center = False).mean()
+rng = np.random.default_rng(1923)
+mu = sales_covariates["oil_ma28"].mean()
+sd = sales_covariates["oil_ma28"].std()
+na_filler = pd.Series(rng.normal(loc=mu, scale=sd, size=len(sales_covariates["oil_ma28"])))
+sales_covariates["oil_ma28"] = sales_covariates["oil_ma28"].fillna(na_filler)
+
+
+
+
+# ONPROMOTION: A few lag plots, likely from 1-6 days before.
