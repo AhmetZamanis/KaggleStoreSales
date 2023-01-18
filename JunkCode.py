@@ -324,3 +324,150 @@ for column in extreme_oil.columns:
   extreme_oil[column] = extreme_oil[column].fillna(na_filler)
 
 
+# Random distribution interpolation
+rng = np.random.default_rng(1923)
+mu = sales_covariates["oil_ma28"].mean()
+sd = sales_covariates["oil_ma28"].std()
+na_filler = pd.Series(rng.normal(loc=mu, scale=sd, size=len(sales_covariates["oil_ma28"])))
+sales_covariates["oil_ma28"] = sales_covariates["oil_ma28"].fillna(na_filler)
+
+
+
+# Add oil moving averages
+sales_covariates = sales_covariates.assign(
+  oil_ma7 = lambda x: x["oil"].rolling(window = 7, min_periods = 1, center = False).mean(),
+  oil_ma14 = lambda x: x["oil"].rolling(window = 14, min_periods = 1, center = False).mean(),
+  oil_ma28 = lambda x: x["oil"].rolling(window = 28, min_periods = 1, center = False).mean(),
+  oil_ma84 = lambda x: x["oil"].rolling(window = 84, min_periods = 1, center = False).mean(),
+  oil_ma168 = lambda x: x["oil"].rolling(window = 168, min_periods = 1, center = False).mean(),
+  oil_ma336 = lambda x: x["oil"].rolling(window = 336, min_periods = 1, center = False).mean(),
+)
+
+
+# FIG10: Regplots of oil moving averages & sales
+fig10, axes10 = plt.subplots(3,2, sharey=True)
+fig10.suptitle("Oil price change moving averages\n & decomposed sales")
+
+# MA7
+sns.regplot(
+  ax = axes10[0,0],
+  data = sales_covariates,
+  x = "oil_ma7",
+  y = "sales"
+)
+axes10[0,0].set_xlabel("weekly MA")
+axes10[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma7"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA14
+sns.regplot(
+  ax = axes10[0,1],
+  data = sales_covariates,
+  x = "oil_ma14",
+  y = "sales"
+)
+axes10[0,1].set_xlabel("biweekly MA")
+axes10[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma14"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA28
+sns.regplot(
+  ax = axes10[1,0],
+  data = sales_covariates,
+  x = "oil_ma28",
+  y = "sales"
+)
+axes10[1,0].set_xlabel("monthly MA")
+axes10[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma28"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA84
+sns.regplot(
+  ax = axes10[1,1],
+  data = sales_covariates,
+  x = "oil_ma84",
+  y = "sales"
+)
+axes10[1,1].set_xlabel("quarterly MA")
+axes10[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma84"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA168
+sns.regplot(
+  ax = axes10[2,0],
+  data = sales_covariates,
+  x = "oil_ma168",
+  y = "sales"
+)
+axes10[2,0].set_xlabel("semi-annual MA")
+axes10[2,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma168"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# MA336
+sns.regplot(
+  ax = axes10[2,1],
+  data = sales_covariates,
+  x = "oil_ma336",
+  y = "sales"
+)
+axes10[2,1].set_xlabel("annual MA")
+axes10[2,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["oil_ma336"], sales_covariates["sales"])[0]
+      ), xy=(.6, .9), xycoords="axes fraction",
+    bbox=dict(alpha=0.5))
+
+# Show FIG10
+plt.show()
+fig10.savefig("./Plots/LagsEDA/OilMAs.png", dpi=300)
+plt.close("all")
+
+# The extreme values are in the first rows, so they are only 1-day, 2-day, 3-day etc.
+# averages, with very low values (-2.5, -1.5 etc.). Values of this magnitude are
+# never repeated in MAs, so they misleadingly affect the correlation.
+
+sales_covariates = sales_covariates.drop([
+  "oil_ma7", "oil_ma14", "oil_ma28", "oil_ma84", "oil_ma168", "oil_ma336"], axis = 1)
+  
+  
+ccfs = pd.DataFrame.from_dict(
+    {x: [sales_covariates["sales"].corr(sales_covariates[x].shift(t)) for t in range(-14,15)] for x in sales_covariates.columns})
+
+
+sns.barplot(
+  x = ccfs.index,
+  y = ccfs.onpromotion
+)
+plt.title("Correlation of sales & onpromotion lags")
+plt.xlabel("lags")
+plt.ylabel("correlation")
+
+plt.show()
+plt.close("all")
+
+
+
+# Cross-correlation of oil and sales
+plt.xcorr(sales_covariates["sales"], sales_covariates["oil"], usevlines=True, maxlags=336, normed=True, lw=2)
+plt.grid(True)
+plt.ylim([-0.3, 0.3])
+plt.xlabel("oil lags / leads")
+plt.title("Cross-correlation, decomposed sales & oil price change")
+plt.show()
+plt.close("all")
+

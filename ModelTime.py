@@ -196,11 +196,12 @@ plt.savefig("./Plots/TimeModel/LinearHistorical.png", dpi=300)
 plt.close("all")
 
 
-# Retrieve residuals for 2014-2017
+# Retrieve predictions and residuals for 2014-2017
 res_linear = model_linear.residuals(
   trafo_log(ts), future_covariates = ts_timefeats, forecast_horizon = 1,
   verbose = True)
 sales_decomped = res_linear[350:]
+preds_time = trafo_log(ts[365:]) - res_linear[350:]
 
 
 # Diagnose decomped sales innovation residuals
@@ -234,3 +235,8 @@ stationarity_test_adf(sales_decomped) # Null rejected, data is stationary around
 # Save decomposed sales for lags & covariates EDA
 sales_decomped.pd_dataframe().to_csv(
   "./ModifiedData/Final/sales_decomped.csv", index=True, encoding="utf-8")
+
+
+# Save predictions of model 1 to be added later to model 2 predictions
+preds_time.pd_dataframe().to_csv(
+  "./ModifiedData/Final/preds_model1.csv", index=True, encoding="utf-8")
