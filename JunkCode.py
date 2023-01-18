@@ -471,3 +471,21 @@ plt.title("Cross-correlation, decomposed sales & oil price change")
 plt.show()
 plt.close("all")
 
+
+# Retrieve predictions and residuals for 2014-2017
+res_linear = model_linear.residuals(
+  trafo_log(ts), future_covariates = ts_timefeats, forecast_horizon = 1,
+  verbose = True)
+sales_decomped = res_linear[350:]
+preds_time = trafo_log(ts[365:]) - res_linear[350:]
+
+
+# Save 17 predictions of model 1 to be added later to model 2 17 predictions
+pred_linear.pd_dataframe().to_csv(
+  "./ModifiedData/Final/preds_model1_17.csv", index=True, encoding="utf-8")
+  
+  
+# Load 17 time preds
+preds_time17 = TimeSeries.from_csv(
+  "./ModifiedData/Final/preds_model1_17.csv", time_col = "date", freq = "D")
+

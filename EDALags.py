@@ -86,7 +86,7 @@ plt.close("all")
 
 # FIG9: Sales lag scatterplots
 fig9, axes9 = plot_lags(
-  sales_covariates["sales"], lags = [1,2,3,4,5,6,7,8,9],
+  sales_covariates["sales"], lags = [1,2,3,4,5,6,7,8, 9],
   suptitle = "Sales lags")
   
 # Show fig9
@@ -95,32 +95,28 @@ fig9.savefig("./Plots/LagsEDA/SalesLags.png", dpi=300)
 plt.close("all")
 
 
-# Calculate 9-day exponential moving average of sales lags
-sales_covariates["sales_ema9"] = sales_covariates["sales"].rolling(
-  window = 9, min_periods = 1, center = False, win_type = "exponential").mean()
+# Calculate 8-day exponential moving average of sales lags
+sales_covariates["sales_ema8"] = sales_covariates["sales"].rolling(
+  window = 8, min_periods = 1, center = False, win_type = "exponential").mean()
 
 
-# Plot sales_ema9 vs sales  
+# Plot sales_ema8 vs sales  
 sns.regplot(
   data = sales_covariates,
-  x = "sales_ema9",
+  x = "sales_ema8",
   y = "sales"
 )
-plt.title("Relationship of sales and 9-day\n exponential moving average of sales")
+plt.title("Relationship of sales and 8-day\n exponential moving average of sales")
 plt.show()
-plt.savefig("./Plots/LagsEDA/SalesEma9.png", dpi=300)
+plt.savefig("./Plots/LagsEDA/SalesEma8.png", dpi=300)
 plt.close("all")
 
 
-# Compare correlations of sales with lag 1 and sales_ema9
-pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.85
-spearmanr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.86
-pearsonr(sales_covariates["sales"], sales_covariates["sales_ema9"]) #0.7
-spearmanr(sales_covariates["sales"], sales_covariates["sales_ema9"]) #0.72
-
-
-# Drop sales_ema9
-sales_covariates = sales_covariates.drop("sales_ema9", axis=1)
+# Compare correlations of sales with lag 1 and sales_ema8
+pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.8
+spearmanr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.81
+pearsonr(sales_covariates["sales"], sales_covariates["sales_ema8"]) #0.7
+spearmanr(sales_covariates["sales"], sales_covariates["sales_ema8"]) #0.7
 
 
 # FIG10: Regplots of oil moving averages & sales
@@ -413,7 +409,7 @@ plt.savefig("./Plots/LagsEDA/TrnsCCF.png", dpi=300)
 plt.close("all")
 
 
-# FIG13: Onpromotion MAs
+# FIG13: Transactions MAs
 fig13, axes13 = plt.subplots(2,2)
 fig13.suptitle("Transactions change moving averages\n & decomposed sales")
 

@@ -106,8 +106,7 @@ model_fft = FFT(
 )
 
 model_linear = LinearRegressionModel(
-  lags_future_covariates = [0],
-  output_chunk_length = 15)
+  lags_future_covariates = [0])
 
 
 # Fit models on train data (pre-2017), predict validation data (2017)
@@ -172,23 +171,26 @@ plt.close("all")
 
 
 # Backtest linear regression
-# array([120080.4214,         nan,     31.611 ])
+# array([78298.2808,     0.1552,    20.0684])
 model_linear.backtest(
-  ts, future_covariates = ts_timefeats, start = 365,
-  forecast_horizon = 15, stride = 1, metric = [rmse, rmsle, mape],
+  ts, 
+  future_covariates = ts_timefeats, 
+  start = 365, stride = 1, 
+  metric = [rmse, rmsle, mape],
   verbose = True)
 
 
-# Retrieve historical forecasts for linear regression
+# Retrieve historical forecasts and 14-17 decomposed residuals for linear regression
 pred_linear_hist = model_linear.historical_forecasts(
-  ts, future_covariates = ts_timefeats, start = 365,
-  forecast_horizon = 15, stride = 1,
+  trafo_log(ts), 
+  future_covariates = ts_timefeats, start = 365, stride = 1,
   verbose = True)
+res_linear = trafo_log(ts[365:]) - pred_linear_hist
 
 
 # Plot historical forecasts for linear regression
 ts.plot(label="Actual")
-pred_linear_hist.plot(label="Predicted")
+trafo_exp(pred_linear_hist).plot(label="Predicted")
 plt.title("Time decomposition linear model,\n historical forecasts")
 plt.ylabel("sales")
 plt.show()
@@ -196,24 +198,16 @@ plt.savefig("./Plots/TimeModel/LinearHistorical.png", dpi=300)
 plt.close("all")
 
 
-# Retrieve predictions and residuals for 2014-2017
-res_linear = model_linear.residuals(
-  trafo_log(ts), future_covariates = ts_timefeats, forecast_horizon = 1,
-  verbose = True)
-sales_decomped = res_linear[350:]
-preds_time = trafo_log(ts[365:]) - res_linear[350:]
-
-
 # Diagnose decomped sales innovation residuals
 from darts.utils.statistics import plot_residuals_analysis, plot_pacf
-plot_residuals_analysis(sales_decomped)
+plot_residuals_analysis(res_linear)
 plt.show()
 plt.savefig("./Plots/TimeModel/InnoResidsDiag.png", dpi=300)
 plt.close("all")
 
 
 # PACF plot of decomped sales residuals
-plot_pacf(sales_decomped, max_lag=56)
+plot_pacf(res_linear, max_lag=56)
 plt.title("Partial autocorrelation plot,\n time decomposed sales")
 plt.xlabel("Lags")
 plt.ylabel("PACF")
@@ -228,15 +222,17 @@ plt.close("all")
 
 # KPSS and ADF stationarity test on decomped sales residuals
 from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
-stationarity_test_kpss(sales_decomped) # Null rejected, data is non-stationary
-stationarity_test_adf(sales_decomped) # Null rejected, data is stationary around a constant
+stationarity_test_kpss(res_linear) # Null rejected, data is non-stationary
+stationarity_test_adf(res_linear) # Null rejected, data is stationary around a constant
 
 
-# Save decomposed sales for lags & covariates EDA
-sales_decomped.pd_dataframe().to_csv(
+# Save 14-17 decomposed sales for lags & covariates model
+res_linear.pd_dataframe().to_csv(
   "./ModifiedData/Final/sales_decomped.csv", index=True, encoding="utf-8")
 
 
-# Save predictions of model 1 to be added later to model 2 predictions
-preds_time.pd_dataframe().to_csv(
+# Save 14-17 predictions of model 1
+pred_linear_hist.pd_dataframe().to_csv(
   "./ModifiedData/Final/preds_model1.csv", index=True, encoding="utf-8")
+
+
