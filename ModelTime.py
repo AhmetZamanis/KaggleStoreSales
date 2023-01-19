@@ -61,7 +61,8 @@ dp = DeterministicProcess(
   order = 0,
   seasonal = False,
   period = 28,
-  fourier = 5 
+  fourier = 5,
+  drop = True
 )
 time_feats = time_feats.merge(dp.in_sample(), how="left", on="date")
 
@@ -171,7 +172,7 @@ plt.close("all")
 
 
 # Backtest linear regression
-# array([78298.2808,     0.1552,    20.0684])
+# array([78469.0625,     0.1561,    20.5266])
 model_linear.backtest(
   ts, 
   future_covariates = ts_timefeats, 
@@ -226,13 +227,42 @@ stationarity_test_kpss(res_linear) # Null rejected, data is non-stationary
 stationarity_test_adf(res_linear) # Null rejected, data is stationary around a constant
 
 
-# Save 14-17 decomposed sales for lags & covariates model
-res_linear.pd_dataframe().to_csv(
-  "./ModifiedData/Final/sales_decomped.csv", index=True, encoding="utf-8")
+# Perform full decomposition in Sklearn: Train on 13-16, retrieve fitted & resid,
+# predict 17, retrieve predicted & resid, add them all
+
+# Retrieve Darts target and features with filled gaps
+total_sales = ts.pd_series()
+time_feats = ts_timefeats.pd_dataframe()
+
+# Train-test split
+y_train, y_val = trafo_log(total_sales[:-227]), trafo_log(total_sales[-227:])
+x_train, x_val = time_feats.iloc[:-227,], time_feats.iloc[-227:,]
+
+# Fit & predict on 13-16
+from sklearn.linear_model import LinearRegression
+model_linear = LinearRegression()
+model_linear.fit(x_train, y_train)
+pred1 = model_linear.predict(x_train)
+res1 = y_train - pred1
+
+# Predict on 17
+pred2 = model_linear.predict(x_val)
+res2 = y_val - pred2
+
+# Concat residuals to get decomposed sales
+sales_decomp = pd.concat([res1, res2])
+
+# Concat preds to get model 1 predictions
+preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.index)
 
 
-# Save 14-17 predictions of model 1
-pred_linear_hist.pd_dataframe().to_csv(
-  "./ModifiedData/Final/preds_model1.csv", index=True, encoding="utf-8")
+# Save 13-17 decomposed sales for lags & covariates model
+sales_decomp.to_csv(
+  "./ModifiedData/Final/sales_decomped.csv", index=True, header=["sales"], encoding="utf-8")
+
+
+# Save 13-17 predictions of model 1
+preds_model1.to_csv(
+  "./ModifiedData/Final/preds_model1.csv", index=True, header=["sales"], encoding="utf-8")
 
 

@@ -489,3 +489,5 @@ pred_linear.pd_dataframe().to_csv(
 preds_time17 = TimeSeries.from_csv(
   "./ModifiedData/Final/preds_model1_17.csv", time_col = "date", freq = "D")
 
+
+sales_covariates["oil_ma336"] = sales_covariates["oil_ma336"].interpolate("spline", order = 3, limit_direction = "backward")

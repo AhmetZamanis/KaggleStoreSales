@@ -25,37 +25,49 @@ sns.set_theme(context="paper")
 from darts import TimeSeries
 df_train = pd.read_csv(
   "./ModifiedData/Final/train_modified_timefeats.csv", encoding="utf-8")
+  
+# Set index
 df_train = df_train.set_index(pd.to_datetime(df_train.date))
 df_train = df_train.drop("date", axis=1)
+
+# Retrieve daily sales
 total_sales = df_train.groupby("date").sales.sum()
+
+# Make darts time series
 ts_orig = TimeSeries.from_series(total_sales, freq="D")
+
+# Fill gaps
 from darts.dataprocessing.transformers import MissingValuesFiller
 na_filler = MissingValuesFiller()
 ts_orig = na_filler.transform(ts_orig)
 
 
-# Load 14-17 decomposed sales and covariates
+# Load 13-17 decomposed sales and covariates
 sales_covars = pd.read_csv(
   "./ModifiedData/Final/sales_decomped_feats.csv", encoding="utf-8")
-
 
 # Set datetime index
 sales_covars = sales_covars.set_index(pd.to_datetime(sales_covars.date, dayfirst=True))
 sales_covars = sales_covars.drop("date", axis=1)
 
-
 # Create darts time series from decomposed sales sales series
 ts = TimeSeries.from_series(sales_covars["sales"], freq="D")
 
-
 # Make Darts time series with lags & covariates
 ts_covars = TimeSeries.from_dataframe(
-  sales_covars[["oil_ma336", "trns_ma7"]], freq="D", fill_missing_dates=False)
+  sales_covars[["sales_ema7", "oil_ma28", "trns_ma7"]], freq="D", fill_missing_dates=False)
 
 
-# Load 14-17 time preds, make darts series
-preds_time = TimeSeries.from_csv(
-  "./ModifiedData/Final/preds_model1.csv", time_col = "time", freq = "D")
+# Load 13-17 time preds, make darts series
+preds_time = pd.read_csv(
+  "./ModifiedData/Final/preds_model1.csv", encoding="utf-8")
+  
+# Set datetime index
+preds_time = preds_time.set_index(pd.to_datetime(preds_time.date, dayfirst=True))
+preds_time = preds_time.drop("date", axis=1)
+
+# Create darts time series from time model predictions series
+preds_time = TimeSeries.from_series(preds_time["sales"], freq="D")
 
 
 # Define functions to perform log transformation and reverse it
@@ -172,18 +184,63 @@ fig14.savefig("./Plots/LagsModel/2017test.png", dpi=300)
 plt.close("all")
 
 
-# Go back to ModelTime's end
+# Retrieve historical forecasts & residuals for linear + random forest
 
-# Perform decomposition in Sklearn:
-  # Fit, predict and retrieve residuals for 2013-2016 (train)
-  # Predict and retrieve residuals for 2017 (valid)
-  # Add them together and export them, use the preds as model 1 preds, and residuals as model 2 train
+# Fit scaler on 2013
+scaler.fit(ts_covars[:365])
 
-# Redo Lags EDA with Sklearn decomposed residuals
+# Predict historical forecasts for 2014-2017
+pred_forest_hist = model_forest.historical_forecasts(
+  ts, 
+  future_covariates = scaler.transform(ts_covars), start = 365, stride = 1,
+  verbose = True) + preds_time[365:]
 
-# Redo ModelLags with new features, Sklearn time preds and decomposed residuals
+# Retrieve residuals for 2014-2017
+res_forest_hist = trafo_log(ts_orig[365:]) - pred_forest_hist
+
+# Score historical forecasts for linear + random_forest
+# Model: Linear + random forest
+# RMSE: 64016.6324
+# RMSLE: 0.0971
+# MAPE: 7.0301
+perf_scores(trafo_log(ts_orig[365:]), pred_forest_hist, model="Linear + random forest")
 
 
+# Plot historical forecasts for random forest
+ts_orig.plot(label="Actual")
+trafo_exp(pred_forest_hist).plot(label="Predicted")
+plt.title("Linear regression + random forest hybrid model,\n historical forecasts")
+plt.ylabel("sales")
+plt.show()
+plt.savefig("./Plots/LagsModel/RFHistorical.png", dpi=300)
+plt.close("all")
 
+
+# Diagnose decomped sales innovation residuals
+from darts.utils.statistics import plot_residuals_analysis, plot_pacf
+plot_residuals_analysis(res_forest_hist)
+plt.show()
+plt.savefig("./Plots/LagsModel/InnoResidsDiag.png", dpi=300)
+plt.close("all")
+
+
+# PACF plot of decomped sales residuals
+plot_pacf(res_forest_hist, max_lag=56)
+plt.title("Partial autocorrelation plot,\n final hybrid model")
+plt.xlabel("Lags")
+plt.ylabel("PACF")
+plt.xticks(np.arange(0, 56, 10))
+plt.xticks(np.arange(0, 56, 1), minor=True)
+plt.grid(which='minor', alpha=0.5)
+plt.grid(which='major', alpha=1)
+plt.show()
+plt.savefig("./Plots/LagsModel/PACFInnoResids.png", dpi=300)
+plt.close("all")
+
+
+# KPSS and ADF stationarity test on decomped sales residuals
+from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
+stationarity_test_kpss(res_forest_hist) # Null accepted, data is stationary
+stationarity_test_adf(res_forest_hist) # Null rejected, data is stationary around a constant
 
 

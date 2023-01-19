@@ -25,9 +25,11 @@ df = df.set_index(pd.to_datetime(df.date))
 df = df.drop("date", axis=1)
 
 
-# New year's day feature
+# New year's day features
 df["ny1"] = ((df.index.day == 1) & (df.index.month == 1)).astype(int)
 df.loc[df["ny1"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+df["ny2"] = ((df.index.day == 2) & (df.index.month == 1)).astype(int)
+df.loc[df["ny2"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 
 
 # Christmas-December features 

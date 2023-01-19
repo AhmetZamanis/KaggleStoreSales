@@ -34,7 +34,7 @@ df_train = df_train.drop("date", axis=1)
 # Load decomposed total sales
 sales_decomposed = pd.read_csv(
   "./ModifiedData/Final/sales_decomped.csv", encoding = "utf-8")
-sales_decomposed = sales_decomposed.set_index(pd.to_datetime(sales_decomposed.date))
+sales_decomposed = sales_decomposed.set_index(pd.to_datetime(sales_decomposed.date, dayfirst=True))
 sales_decomposed = sales_decomposed.drop("date", axis=1)
   
 # Aggregate covariates from df_train: oil, onpromotion, transactions
@@ -86,7 +86,7 @@ plt.close("all")
 
 # FIG9: Sales lag scatterplots
 fig9, axes9 = plot_lags(
-  sales_covariates["sales"], lags = [1,2,3,4,5,6,7,8, 9],
+  sales_covariates["sales"], lags = [1,2,3,4,5,6,7,8,9],
   suptitle = "Sales lags")
   
 # Show fig9
@@ -95,28 +95,28 @@ fig9.savefig("./Plots/LagsEDA/SalesLags.png", dpi=300)
 plt.close("all")
 
 
-# Calculate 8-day exponential moving average of sales lags
-sales_covariates["sales_ema8"] = sales_covariates["sales"].rolling(
-  window = 8, min_periods = 1, center = False, win_type = "exponential").mean()
+# Calculate 7-day exponential moving average of sales lags
+sales_covariates["sales_ema7"] = sales_covariates["sales"].rolling(
+  window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
 
 
-# Plot sales_ema8 vs sales  
+# Plot sales_ema7 vs sales  
 sns.regplot(
   data = sales_covariates,
-  x = "sales_ema8",
+  x = "sales_ema7",
   y = "sales"
 )
-plt.title("Relationship of sales and 8-day\n exponential moving average of sales")
+plt.title("Relationship of sales and 7-day\n exponential moving average of sales")
 plt.show()
-plt.savefig("./Plots/LagsEDA/SalesEma8.png", dpi=300)
+plt.savefig("./Plots/LagsEDA/SalesEma7.png", dpi=300)
 plt.close("all")
 
 
 # Compare correlations of sales with lag 1 and sales_ema8
-pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.8
-spearmanr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.81
-pearsonr(sales_covariates["sales"], sales_covariates["sales_ema8"]) #0.7
-spearmanr(sales_covariates["sales"], sales_covariates["sales_ema8"]) #0.7
+pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.79
+spearmanr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) # 0.80
+pearsonr(sales_covariates["sales"], sales_covariates["sales_ema7"]) #0.68
+spearmanr(sales_covariates["sales"], sales_covariates["sales_ema7"]) #0.68
 
 
 # FIG10: Regplots of oil moving averages & sales
@@ -229,15 +229,15 @@ fig10.savefig("./Plots/LagsEDA/OilMAs.png", dpi=300)
 plt.close("all")
 
 
-# Keep annual oil MA, filling in NAs
-sales_covariates["oil_ma336"] = sales_covariates["oil"].rolling(window = 336, center = False).mean()
+# Keep monthly oil MA, filling in NAs
+sales_covariates["oil_ma28"] = sales_covariates["oil"].rolling(window = 28, center = False).mean()
 
-# Backwards spline interpolation
-sales_covariates["oil_ma336"] = sales_covariates["oil_ma336"].interpolate("spline", order = 3, limit_direction = "backward")
+# Backwards linear interpolation
+sales_covariates["oil_ma28"] = sales_covariates["oil_ma28"].interpolate("linear", limit_direction = "backward")
 
 # Check quality of interpolation
 sales_covariates["oil"].plot()
-sales_covariates["oil_ma336"].plot()
+sales_covariates["oil_ma28"].plot()
 plt.show()
 plt.close("all")
 
@@ -400,7 +400,7 @@ plt.close("all")
 # Cross-correlation of sales & transactions
 plt.xcorr(sales_covariates["sales"], sales_covariates["transactions"], usevlines=True, maxlags=56, normed=True)
 plt.grid(True)
-plt.ylim([-0.1, 0.1])
+plt.ylim([-0.15, 0.15])
 plt.axvline(x = -14, color = "red", linestyle = "dashed")
 plt.xlabel("transactions lags / leads")
 plt.title("Cross-correlation, decomposed sales\n & differenced transactions")
