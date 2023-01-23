@@ -1,3 +1,7 @@
+Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
+
+
+
 # df_agg = df_train.groupby("date").agg(
 #   {
 #     "sales": "mean",

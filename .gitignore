@@ -172,3 +172,5 @@ vignettes/*.pdf
 .csv
 OriginalData/
 ModifiedData/
+
+/.quarto/
