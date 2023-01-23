@@ -29,7 +29,6 @@ pd.options.display.float_format = '{:.4f}'.format
 pd.set_option('display.max_columns', None)
 
 # Set plotting options
-'exec(%matplotlib inline)'
 plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams["figure.autolayout"] = True
@@ -298,7 +297,7 @@ ts_sales
 
 -   Static covariates are time-invariant covariates that may be used in predictions. In our case, the city or cluster of a store may be static covariates, but for part 1 of our analysis, we won't use these.
 
-## Overview of hybrid modeling approach 
+## Overview of hybrid modeling approach
 
 A time series can be written as the sum of several components:
 
@@ -310,7 +309,7 @@ A time series can be written as the sum of several components:
 
 -   **Remainder / Error:** The unpredictable component of the time series, at least with the available data.
 
-When analyzing a time series with plots, it can be difficult to determine the sources of changes and fluctuations. It can be especially tricky to tell apart the effects of covariates (cyclicality) from calendar effects (seasonality). Because of this, we will split our analysis and modeling into two steps:
+When analyzing a time series with plots, it can be difficult to determine the sources of changes and fluctuations. It can be especially tricky to tell apart the cyclical effects from seasonality. Because of this, we will split our analysis and modeling into two steps:
 
 -   In step 1, we will analyze the effects of trend, seasonality and calendar effects (such as holidays & events), build a model that predicts these effects and removes them from the series. This is called **time decomposition.**
 
@@ -318,13 +317,301 @@ When analyzing a time series with plots, it can be difficult to determine the so
 
 ## Exploratory analysis 1 - Time & calendar effects
 
-Let's start by analyzing the overall trend in sales. Darts TimeSeries can be plotted quickly.
+### Trend
+
+Let's start by analyzing the overall trend in sales. Darts offers the ability to plot time series quickly.
 
 ```{python TrendPlot}
 
-ts_sales.plot()
-plt.ylabel("Daily sales, millions")
+_ =  ts_sales.plot()
+_ =  plt.ylabel("Daily sales, millions")
+plt.show()
+plt.close()
 ```
+
+The series plot shows us several things:
+
+-   Supermarket sales show an increasing trend over the years. The trend is close to linear overall, but the rate of increase declines roughly from the start of 2015.
+
+-   Sales mostly fluctuate around a certain range, which suggests strong seasonality. However, there are also sharp deviations in certain periods, mainly across 2014 and at the start of 2015. This is likely cyclical in nature.
+
+-   Sales decline very sharply in the first day of every year.
+
+### Seasonality
+
+#### Annual
+
+Let's look at annual seasonality: How sales fluctuate over a year based on quarters, months, weeks of a year and days of a year. In the plots below, we have the daily sales averaged by each respective calendar period, colored by each year in the data. The confidence bands indicate the minimum and maximum daily sales in each respective period (in the last plot, we just have the daily sales without any averaging).
+
+```{python AnnualSeasonality}
+#| echo: false
+
+# FIG1: Annual seasonality, period averages
+fig1, axes1 = plt.subplots(2,2, sharey=True)
+_ =  fig1.suptitle('Annual seasonality: Average daily sales in given time periods, millions')
+
+# Average sales per quarter of year
+_ =  sns.lineplot(
+  ax = axes1[0,0],
+  x = sales.index.quarter.astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ =  axes1[0,0].set_xlabel("quarter", fontsize=8)
+_ =  axes1[0,0].set_ylabel("sales", fontsize=8)
+_ =  axes1[0,0].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per month of year
+_ =  sns.lineplot(
+  ax = axes1[0,1],
+  x = sales.index.month.astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales)
+_ =  axes1[0,1].set_xlabel("month", fontsize=8)
+_ =  axes1[0,1].set_ylabel("sales",fontsize=8)
+_ =  axes1[0,1].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+_ =  axes1[0,1].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per week of year
+_ =  sns.lineplot(
+  ax = axes1[1,0],
+  x = sales.index.week, 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ =  axes1[1,0].set_xlabel("week of year", fontsize=8)
+_ =  axes1[1,0].set_ylabel("sales",fontsize=8)
+_ =  axes1[1,0].tick_params(axis='both', which='major', labelsize=6)
+_ =  axes1[1,0].xaxis.set_ticks(np.arange(0, 52, 10))
+
+# Average sales per day of year
+_ =  sns.lineplot(
+  ax = axes1[1,1],
+  x = sales.index.dayofyear, 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ =  axes1[1,1].set_xlabel("day of year", fontsize=8)
+_ =  axes1[1,1].set_ylabel("sales",fontsize=8)
+_ =  axes1[1,1].tick_params(axis='both', which='major', labelsize=6)
+_ =  axes1[1,1].xaxis.set_ticks(np.arange(0, 365, 100))
+
+# Show fig1
+plt.show()
+plt.close("all")
+```
+
+-   **Quarterly:** Sales do not seem to have a considerable quarterly seasonality pattern. However, the plot still shows us a few things:
+
+    -   Sales generally slightly increase over a year.
+
+    -   In Q2 2014, there was a considerable drop. Sales declined almost to the level of Q2 2013. This was likely a cyclical effect.
+
+-    **Monthly:** Sales do seem to fluctuate slightly over months, but there's no clear seasonal pattern that holds across all years. However, sales seem to sharply increase in December every year, likely due to Christmas.
+
+    -   The cyclicality in 2014 is seen in more detail: Sales dropped almost to their 2013 levels in certain months, and recovered sharply in others.
+
+    -   We also see a considerable drop in the first half of 2015, where sales dropped roughly to 2014 levels, followed by a recovery.
+
+    -   There is a very sharp increase in April 2016, where sales were even higher than 2017 levels. This is due to a large earthquake that happened in April 16, 2016, and the related relief efforts.
+
+-   **Weekly:** The seasonal patterns are more visible in the weekly plot, as we see the "waves" line up across years. It's very likely the data has strong weekly seasonality, which is what we'd expect from supermarket sales.
+
+    -   The data for 2017 ends after August 15, so the sharp decline afterwards is misleading.
+
+    -   The decline at the end of 2016 is also misleading, as 2016 was a 366-day year.
+
+-   **Daily:** This plot is a bit noisy, but the very similar fluctuations across all years indicate the data is strongly seasonal. It also highlights some cyclical effects such as the April 2016 earthquake and the 2014 drops.
+
+Another way to look at annual seasonality is to average sales in a certain calendar period across all years, without grouping by year. This shows us the "overall" seasonality pattern across one year: We likely have strong weekly seasonality that persists over years, and some monthly seasonality especially towards December.
+
+```{python AnnualSeasonalityAgg}
+#| echo: false
+
+# FIG1.1: Annual seasonality, averaged over years
+fig11, axes11 = plt.subplots(2,2, sharey=True)
+_ = fig11.suptitle('Annual seasonality: Average daily sales in given time periods,\n across all years, millions');
+
+# Average sales per quarter of year
+_ = sns.lineplot(
+  ax = axes11[0,0],
+  x = sales.index.quarter.astype(str), 
+  y = (sales / 1000000), 
+  data=sales, legend=False)
+_ = axes11[0,0].set_xlabel("quarter", fontsize=8)
+_ = axes11[0,0].set_ylabel("sales", fontsize=8)
+_ = axes11[0,0].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per month of year
+_ = sns.lineplot(
+  ax = axes11[0,1],
+  x = sales.index.month.astype(str), 
+  y = (sales / 1000000), 
+  data=sales)
+_ = axes11[0,1].set_xlabel("month", fontsize=8)
+_ = axes11[0,1].set_ylabel("sales",fontsize=8)
+_ = axes11[0,1].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per week of year
+_ = sns.lineplot(
+  ax = axes11[1,0],
+  x = sales.index.week, 
+  y = (sales / 1000000), 
+  data=sales, legend=False)
+_ = axes11[1,0].set_xlabel("week of year", fontsize=8)
+_ = axes11[1,0].set_ylabel("sales",fontsize=8)
+_ = axes11[1,0].tick_params(axis='both', which='major', labelsize=6)
+_ = axes11[1,0].xaxis.set_ticks(np.arange(0, 52, 10))
+
+# Average sales per day of year
+_ = sns.lineplot(
+  ax = axes11[1,1],
+  x = sales.index.dayofyear, 
+  y = (sales / 1000000), 
+  data=sales, legend=False)
+_ = axes11[1,1].set_xlabel("day of year", fontsize=8)
+_ = axes11[1,1].set_ylabel("sales",fontsize=8)
+_ = axes11[1,1].tick_params(axis='both', which='major', labelsize=6)
+_ = axes11[1,1].xaxis.set_ticks(np.arange(0, 365, 100))
+
+# Show fig1.1
+plt.show()
+plt.close("all")
+```
+
+#### Monthly & weekly
+
+Now let's look at seasonality across days of a month and days of a week. These will likely be the most important seasonality patterns in the sales. There are three ways to look at these plots: First we will group them by year.
+
+```{python MonthlyWeeklyByYear}
+#| echo: false
+
+# FIG2: Monthly and weekly seasonality
+fig2, axes2 = plt.subplots(2)
+_ = fig2.suptitle('Monthly and weekly seasonality, average daily sales in millions')
+
+# Average sales per day of month
+_ = sns.lineplot(
+  ax = axes2[0],
+  x = sales.index.day, 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales)
+_ = axes2[0].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+_ = axes2[0].set_xlabel("day of month", fontsize=8)
+_ = axes2[0].set_ylabel("sales", fontsize=8)
+_ = axes2[0].xaxis.set_ticks(np.arange(1, 32, 6))
+_ = axes2[0].xaxis.set_ticks(np.arange(1, 32, 1), minor=True)
+_ = axes2[0].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+_ = axes2[0].grid(which='minor', alpha=0.5)
+_ = axes2[0].grid(which='major', alpha=1)
+
+# Average sales per day of week
+_ = sns.lineplot(
+  ax = axes2[1],
+  x = (sales.index.dayofweek+1).astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ = axes2[1].set_xlabel("day of week", fontsize=8)
+_ = axes2[1].set_ylabel("sales", fontsize=8)
+_ = axes2[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+
+# Show fig2
+plt.show()
+plt.close("all")
+```
+
+We can look at the same plots grouped by month.
+
+```{python MonthlyYearlyByMonth}
+#| echo: false
+
+# FIG2.1: Monthly and weekly seasonality, colored by month
+fig21, axes21 = plt.subplots(2)
+_ = fig21.suptitle('Monthly and weekly seasonality, average daily sales in millions')
+
+# Average sales per day of month, colored by month
+_ = sns.lineplot(
+  ax = axes21[0],
+  x = sales.index.day, 
+  y = (sales / 1000000), 
+  hue = sales.index.month.astype(str), data=sales, errorbar=None)
+_ = axes21[0].legend(title = "month", bbox_to_anchor=(1.05, 1.0), fontsize="x-small", loc='best')
+_ = axes21[0].set_xlabel("day of month", fontsize=8)
+_ = axes21[0].set_ylabel("sales", fontsize=8)
+_ = axes21[0].xaxis.set_ticks(np.arange(1, 32, 6))
+_ = axes21[0].xaxis.set_ticks(np.arange(1, 32, 1), minor=True)
+_ = axes21[0].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+_ = axes21[0].grid(which='minor', alpha=0.5)
+_ = axes21[0].grid(which='major', alpha=1)
+
+# Average sales per day of week, colored by month
+_ = sns.lineplot(
+  ax = axes21[1],
+  x = (sales.index.dayofweek+1).astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.month.astype(str), data=sales, errorbar=None, legend=None)
+_ = axes21[1].set_xlabel("day of week", fontsize=8)
+_ = axes21[1].set_ylabel("sales", fontsize=8)
+_ = axes21[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+
+# Show fig2.1
+plt.show()
+plt.close("all")
+```
+
+And finally, without any grouping: The averages across all years.
+
+```{python MonthlyYearly}
+#| echo: false
+
+# FIG2.2: Monthly and weekly seasonality, average across years
+fig22, axes22 = plt.subplots(2)
+_ =  fig22.suptitle('Monthly and weekly seasonality, averaged across years, in millions')
+
+# Average sales per day of month
+_ =  sns.lineplot(
+  ax = axes22[0],
+  x = sales.index.day, 
+  y = (sales / 1000000), 
+  data=sales)
+_ =  axes22[0].set_xlabel("day of month", fontsize=8)
+_ =  axes22[0].set_ylabel("sales", fontsize=8)
+_ =  axes22[0].xaxis.set_ticks(np.arange(1, 32, 6))
+_ =  axes22[0].xaxis.set_ticks(np.arange(1, 32, 1), minor=True)
+_ =  axes22[0].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+_ =  axes22[0].grid(which='minor', alpha=0.5)
+_ =  axes22[0].grid(which='major', alpha=1)
+
+# Average sales per day of week
+_ =  sns.lineplot(
+  ax = axes22[1],
+  x = (sales.index.dayofweek+1).astype(str), 
+  y = (sales / 1000000), 
+  data=sales)
+_ =  axes22[1].set_xlabel("day of week", fontsize=8)
+_ =  axes22[1].set_ylabel("sales", fontsize=8)
+_ =  axes22[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+
+# Show fig22
+plt.show()
+plt.close("all")
+```
+
+### Autocorrelation & partial autocorrelation
+
+```{python AcfPacfTime}
+#| echo: false
+
+# FIG3: ACF and PACF plots
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+fig3, axes3 = plt.subplots(2)
+_ = fig3.suptitle('Autocorrelation and partial autocorrelation, daily sales, up to 54 days')
+_ = plot_acf(sales, lags=range(0,55), ax=axes3[0])
+_ = plot_pacf(sales, lags=range(0,55), ax=axes3[1], method="ywm")
+
+# Show fig3
+plt.show()
+plt.close("all")
+```
+
+### 
 
 ## Feature engineering 1 - Time & calendar features
 
