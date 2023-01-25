@@ -943,7 +943,7 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 
 # FIG7: Plot models' predictions against actual values
 fig7, axes7 = plt.subplots(3, sharex=True, sharey=True)
-_ = fig7.suptitle("Actual vs. predicted sales, time decomposition models")
+_ = fig7.suptitle("Actual vs. predicted sales, time decomposition models, orange=Predicted")
 
 # FFT
 _ = trafo_exp(y_val1).plot(ax = axes7[0], label="Actual")
@@ -960,6 +960,7 @@ _ = axes7[1].set_label(fontsize="small")
 # Linear regression
 _ = trafo_exp(y_val1).plot(ax = axes7[2], label="Actual")
 _ = trafo_exp(pred_linear1).plot(ax = axes7[2], label="Predicted")
+_ = axes7[2].legend("", frameon = False)
 _ = axes7[2].set_title("Linear regression")
 _ = axes7[2].set_label(fontsize="small")
 
@@ -1060,8 +1061,805 @@ preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.in
 
 ## Exploratory analysis 2 - Lags & covariates
 
-## Feature engineering 2 - Lags & covariates
+```{python AggCovars}
+
+# Aggregate daily covariates from df_train: oil, onpromotion, transactions
+covars = df_train.groupby("date").agg(
+ { "oil": "mean",
+  "onpromotion": "sum",
+  "transactions": "mean"})
+
+# Merge decomposed sales and covariates
+sales_covariates = covars.merge(sales_decomp.rename("sales"), on = "date", how = "left")
+```
+
+### Differencing
+
+```{python TestStatCovars}
+
+# Test stationarity of covariates
+from statsmodels.tsa.stattools import kpss, adfuller
+kpss(sales_covariates["oil"])
+adfuller(sales_covariates["oil"])
+```
+
+```{python DiffCovars}
+
+# Difference the covariates
+from sktime.transformations.series.difference import Differencer
+diff = Differencer(lags = 1)
+sales_covariates[
+  ['oil', 'onpromotion', 'transactions']] = diff.fit_transform(
+    sales_covariates[['oil', 'onpromotion', 'transactions']])
+sales_covariates
+```
+
+### Sales features
+
+```{python LoadLagPlots}
+
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.graphics.tsaplots import plot_pacf as pacf_tsa
+from sktime.utils.plotting import plot_lags
+from scipy.stats import pearsonr, spearmanr
+```
+
+```{python SalesAcfPacf}
+#| echo: false
+
+# FIG8: Sales ACF - PACF plot
+fig8, axes8 = plt.subplots(2, sharex=True)
+_ = fig8.suptitle('Autocorrelation and partial autocorrelation, decomposed sales, up to 14 days')
+
+_ = plot_acf(
+  sales_covariates["sales"], lags=np.arange(0, 15, 1, dtype=int), ax=axes8[0], marker=".")
+_ = pacf_tsa(
+  sales_covariates["sales"], lags=np.arange(0, 15, 1, dtype=int), ax=axes8[1], method="ywm", marker=".")
+
+_ = axes8[0].xaxis.set_ticks(np.arange(0, 15, 1, dtype=int), minor=True)
+_ = axes8[0].xaxis.set_ticks(np.arange(0, 15, 7, dtype=int))
+_ = axes8[0].grid(which='minor', alpha=0.5)
+_ = axes8[1].xaxis.set_ticks(np.arange(0, 15, 1, dtype=int), minor=True)
+_ = axes8[1].xaxis.set_ticks(np.arange(0, 15, 7, dtype=int))
+_ = axes8[1].grid(which='minor', alpha=0.5)
+
+# Show fig8
+plt.show()
+plt.close("all")
+```
+
+```{python SalesLagsScatter}
+#| echo: false
+
+# FIG9: Sales lag scatterplots
+fig9, axes9 = plot_lags(
+  sales_covariates["sales"], lags = [1,2,3,4,5,6,7,8,9],
+  suptitle = "Sales lags")
+  
+# Show fig9
+plt.show()
+plt.close("all")
+```
+
+```{python SalesEma7}
+
+# Calculate 7-day exponential moving average of sales lags
+sales_covariates["sales_ema7"] = sales_covariates["sales"].rolling(
+  window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
+```
+
+```{python SalesEma7Plot}
+#| echo: false
+
+# Plot sales_ema7 vs sales  
+_ = sns.regplot(
+  data = sales_covariates,
+  x = "sales_ema7",
+  y = "sales"
+)
+_ = plt.title("Relationship of sales and 7-day exponential moving average of sales")
+plt.show()
+plt.close("all")
+```
+
+```{python SalesCorrs}
+
+# Correlation of sales and lag 1
+pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) 
+
+# Correlation of sales and ema7
+pearsonr(sales_covariates["sales"], sales_covariates["sales_ema7"]) 
+```
+
+### Oil features
+
+```{python OilMAs}
+
+# Calculate oil MAs
+oil_ma = sales_covariates.assign(
+  oil_ma7 = lambda x: x["oil"].rolling(window = 7, center = False).mean(),
+  oil_ma14 = lambda x: x["oil"].rolling(window = 14, center = False).mean(),
+  oil_ma28 = lambda x: x["oil"].rolling(window = 28, center = False).mean(),
+  oil_ma84 = lambda x: x["oil"].rolling(window = 84, center = False).mean(),
+  oil_ma168 = lambda x: x["oil"].rolling(window = 168, center = False).mean(),
+  oil_ma336 = lambda x: x["oil"].rolling(window = 336, center = False).mean(),
+)
+```
+
+```{python OilMAPlots}
+#| echo: false
+
+# FIG10: Regplots of oil moving averages & sales
+fig10, axes10 = plt.subplots(3,2, sharey=True)
+_ = fig10.suptitle("Oil price change moving averages & decomposed sales")
+
+# MA7
+_ = sns.regplot(
+  ax = axes10[0,0],
+  data = oil_ma,
+  x = "oil_ma7",
+  y = "sales"
+)
+_ = axes10[0,0].set_xlabel("weekly MA")
+_ = axes10[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma7"], oil_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA14
+_ = sns.regplot(
+  ax = axes10[0,1],
+  data = oil_ma,
+  x = "oil_ma14",
+  y = "sales"
+)
+_ = axes10[0,1].set_xlabel("biweekly MA")
+_ = axes10[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma14"], oil_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA28
+_ = sns.regplot(
+  ax = axes10[1,0],
+  data = oil_ma,
+  x = "oil_ma28",
+  y = "sales"
+)
+_ = axes10[1,0].set_xlabel("monthly MA")
+_ = axes10[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma28"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA84
+_ = sns.regplot(
+  ax = axes10[1,1],
+  data = oil_ma,
+  x = "oil_ma84",
+  y = "sales"
+)
+_ = axes10[1,1].set_xlabel("quarterly MA")
+_ = axes10[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma84"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA168
+_ = sns.regplot(
+  ax = axes10[2,0],
+  data = oil_ma,
+  x = "oil_ma168",
+  y = "sales"
+)
+_ = axes10[2,0].set_xlabel("semi-annual MA")
+_ = axes10[2,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma168"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA336
+_ = sns.regplot(
+  ax = axes10[2,1],
+  data = oil_ma,
+  x = "oil_ma336",
+  y = "sales"
+)
+_ = axes10[2,1].set_xlabel("annual MA")
+_ = axes10[2,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma336"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig10
+plt.show()
+plt.close("all")
+```
+
+```{python OilMaInterpolate}
+
+# Keep monthly oil MAs as a feature
+sales_covariates["oil_ma28"] = sales_covariates["oil"].rolling(window = 28, center = False).mean()
+
+# Spline interpolation for missing values
+sales_covariates["oil_ma28"] = sales_covariates["oil_ma28"].interpolate(
+  method = "spline", order = 2, limit_direction = "both")
+
+# Check quality of interpolation
+_ = sales_covariates["oil"].plot()
+_ = sales_covariates["oil_ma28"].plot()
+_ = plt.title("Oil price change and its 28-day moving average, first 28 MAs interpolated")
+plt.show()
+plt.close("all")
+```
+
+### Onpromotion features
+
+```{python OnpCCF}
+#| echo: false
+
+# Cross-correlation of sales & onpromotion
+_ = plt.xcorr(
+  sales_covariates["sales"], sales_covariates["onpromotion"], usevlines=True, maxlags=56, normed=True)
+_ = plt.grid(True)
+_ = plt.ylim([-0.1, 0.1])
+_ = plt.xlabel("onpromotion lags / leads")
+_ = plt.title("Cross-correlation, decomposed sales & onpromotion change")
+plt.show()
+plt.close("all")
+```
+
+```{python OnpLags}
+#| echo: false
+
+# FIG12: Onpromotion lags 0 1 6 7
+fig12, axes12 = plt.subplots(2,2, sharey=True)
+_ = fig12.suptitle("Onpromotion change lags & decomposed sales")
+
+# Lag 0
+_ = sns.regplot(
+  ax = axes12[0,0],
+  x = sales_covariates["onpromotion"],
+  y = sales_covariates["sales"]
+)
+_ = axes12[0,0].set_xlabel("lag 0")
+_ = axes12[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"], sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+      
+# Lag 1
+_ = sns.regplot(
+  ax = axes12[0,1],
+  x = sales_covariates["onpromotion"].shift(1),
+  y = sales_covariates["sales"]
+)
+_ = axes12[0,1].set_xlabel("lag 1")
+_ = axes12[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(1), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 6
+_ = sns.regplot(
+  ax = axes12[1,0],
+  x = sales_covariates["onpromotion"].shift(6),
+  y = sales_covariates["sales"]
+)
+_ = axes12[1,0].set_xlabel("lag 6")
+_ = axes12[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(6), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 7
+_ = sns.regplot(
+  ax = axes12[1,1],
+  x = sales_covariates["onpromotion"].shift(7),
+  y = sales_covariates["sales"]
+)
+_ = axes12[1,1].set_xlabel("lag 7")
+_ = axes12[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(7), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig12
+plt.show()
+plt.close("all")
+```
+
+```{python OnpMAs}
+#| echo: false
+
+# FIG11: Onpromotion MAs
+fig11, axes11 = plt.subplots(2,2)
+_ = fig11.suptitle("Onpromotion change moving averages & decomposed sales")
+
+# Calculate MAs without min_periods = 1
+onp_ma = sales_covariates.assign(
+  onp_ma7 = lambda x: x["onpromotion"].rolling(window = 7, center = False).mean(),
+  onp_ma14 = lambda x: x["onpromotion"].rolling(window = 14, center = False).mean(),
+  onp_ma28 = lambda x: x["onpromotion"].rolling(window = 28, center = False).mean(),
+  onp_ma84 = lambda x: x["onpromotion"].rolling(window = 84, center = False).mean()
+)
+
+# MA7
+_ = sns.regplot(
+  ax = axes11[0,0],
+  data = onp_ma,
+  x = "onp_ma7",
+  y = "sales"
+)
+_ = axes11[0,0].set_xlabel("weekly MA")
+_ = axes11[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma7"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA14
+_ = sns.regplot(
+  ax = axes11[0,1],
+  data = onp_ma,
+  x = "onp_ma14",
+  y = "sales"
+)
+_ = axes11[0,1].set_xlabel("biweekly MA")
+_ = axes11[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma14"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA28
+_ = sns.regplot(
+  ax = axes11[1,0],
+  data = onp_ma,
+  x = "onp_ma28",
+  y = "sales"
+)
+_ = axes11[1,0].set_xlabel("monthly MA")
+_ = axes11[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma28"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA84
+_ = sns.regplot(
+  ax = axes11[1,1],
+  data = onp_ma,
+  x = "onp_ma84",
+  y = "sales"
+)
+_ = axes11[1,1].set_xlabel("quarterly MA")
+_ = axes11[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma84"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig11
+plt.show()
+plt.close("all")
+```
+
+```{python OnpMaInterpolate}
+
+# Keep monthly onpromotion MAs as a feature
+sales_covariates["onp_ma28"] = sales_covariates["onpromotion"].rolling(window = 28, center = False).mean()
+
+# Spline interpolation for missing values
+sales_covariates["onp_ma28"] = sales_covariates["onp_ma28"].interpolate(
+  method = "spline", order = 2, limit_direction = "both")
+
+# Check quality of interpolation
+_ = sales_covariates["onpromotion"].plot()
+_ = sales_covariates["onp_ma28"].plot()
+_ = plt.title("Onpromotion change and its 28-day moving average, first 28 MAs interpolated")
+plt.show()
+plt.close("all")
+```
+
+### Transactions features
+
+```{python TransCCF}
+#| echo: false
+
+# Cross-correlation of sales & transactions change
+_ = plt.xcorr(
+  sales_covariates["sales"], sales_covariates["transactions"], usevlines=True, maxlags=56, normed=True)
+_ = plt.grid(True)
+_ = plt.ylim([-0.15, 0.15])
+_ = plt.axvline(x = -14, color = "red", linestyle = "dashed")
+_ = plt.xlabel("transactions lags / leads")
+_ = plt.title("Cross-correlation, decomposed sales & transactions change")
+plt.show()
+plt.close("all")
+```
+
+```{python TransLags}
+#| echo: false
+
+# FIG14: Transactions lags 0-3
+fig14, axes14 = plt.subplots(2,2, sharey=True)
+_ = fig14.suptitle("Transactions change lags & decomposed sales")
+
+# Lag 0
+_ = sns.regplot(
+  ax = axes14[0,0],
+  x = sales_covariates["transactions"],
+  y = sales_covariates["sales"]
+)
+_ = axes14[0,0].set_xlabel("lag 0")
+_ = axes14[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["transactions"], sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+      
+# Lag 1
+_ = sns.regplot(
+  ax = axes14[0,1],
+  x = sales_covariates["transactions"].shift(1),
+  y = sales_covariates["sales"]
+)
+_ = axes14[0,1].set_xlabel("lag 1")
+_ = axes14[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["transactions"].shift(1), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 2
+_ = sns.regplot(
+  ax = axes14[1,0],
+  x = sales_covariates["transactions"].shift(2),
+  y = sales_covariates["sales"]
+)
+_ = axes14[1,0].set_xlabel("lag 2")
+_ = axes14[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["transactions"].shift(2), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 3
+_ = sns.regplot(
+  ax = axes14[1,1],
+  x = sales_covariates["transactions"].shift(3),
+  y = sales_covariates["sales"]
+)
+_ = axes14[1,1].set_xlabel("lag 3")
+_ = axes14[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(3), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig14
+plt.show()
+plt.close("all")
+
+```
+
+```{python TransMAs}
+#| echo: true
+
+# FIG13: Transactions MAs
+fig13, axes13 = plt.subplots(2,2)
+_ = fig13.suptitle("Transactions change moving averages & decomposed sales")
+
+# Calculate MAs without min_periods = 1
+trns_ma = sales_covariates.assign(
+  trns_ma7 = lambda x: x["transactions"].rolling(window = 7, center = False).mean(),
+  trns_ma14 = lambda x: x["transactions"].rolling(window = 14, center = False).mean(),
+  trns_ma28 = lambda x: x["transactions"].rolling(window = 28, center = False).mean(),
+  trns_ma84 = lambda x: x["transactions"].rolling(window = 84, center = False).mean()
+)
+
+# MA7
+_ = sns.regplot(
+  ax = axes13[0,0],
+  data = trns_ma,
+  x = "trns_ma7",
+  y = "sales"
+)
+_ = axes13[0,0].set_xlabel("weekly MA")
+_ = axes13[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma7"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA14
+_ = sns.regplot(
+  ax = axes13[0,1],
+  data = trns_ma,
+  x = "trns_ma14",
+  y = "sales"
+)
+_ = axes13[0,1].set_xlabel("biweekly MA")
+_ = axes13[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma14"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA28
+_ = sns.regplot(
+  ax = axes13[1,0],
+  data = trns_ma,
+  x = "trns_ma28",
+  y = "sales"
+)
+_ = axes13[1,0].set_xlabel("monthly MA")
+_ = axes13[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma28"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA84
+_ = sns.regplot(
+  ax = axes13[1,1],
+  data = trns_ma,
+  x = "trns_ma84",
+  y = "sales"
+)
+_ = axes13[1,1].set_xlabel("quarterly MA")
+_ = axes13[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma84"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig13
+plt.show()
+plt.close("all")
+```
+
+```{python TransMAInterpolate}
+
+# Keep weekly transactions MA
+sales_covariates["trns_ma7"] = sales_covariates["transactions"].rolling(window = 7, center = False).mean()
+
+# Backwards linear interpolation
+sales_covariates["trns_ma7"] = sales_covariates["trns_ma7"].interpolate("linear", limit_direction = "backward")
+
+# Check quality of interpolation
+_ = sales_covariates["transactions"].plot()
+_ = sales_covariates["trns_ma7"].plot()
+_ = plt.title("Transactions change and its 7-day moving average, first 7 MAs interpolated")
+plt.show()
+plt.close("all")
+```
 
 ## Model 2 - Lags & covariates
+
+### Preprocessing
+
+```{python Model2Covars}
+
+# Drop original covariates & target
+lags_covars = sales_covariates.drop(
+  ['oil', 'onpromotion', 'transactions', 'sales'], axis = 1)
+
+# Make Darts TS with covariates
+ts_lagscovars = TimeSeries.from_dataframe(
+  lags_covars, freq="D")
+
+# Make Darts TS with decomposed sales
+ts_decomp = TimeSeries.from_series(sales_decomp.rename("sales"), freq="D")
+
+# Make Darts TS with model 1 predictions
+ts_preds1 = TimeSeries.from_series(preds_model1.rename("sales"), freq="D")
+
+# Fill gaps in TS
+ts_decomp = na_filler.transform(ts_decomp)
+ts_lagscovars = na_filler.transform(ts_lagscovars)
+
+# Train-test split (pre-post 2017)
+y_train2, y_val2 = ts_decomp[:-227], trafo_log(ts_sales[-227:])
+x_train2, x_val2 = ts_lagscovars[:-227], ts_lagscovars[-227:]
+```
+
+```{python ScaleCovars}
+
+# Scale covariates
+from sklearn.preprocessing import StandardScaler
+from darts.dataprocessing.transformers import Scaler
+scaler = Scaler(StandardScaler())
+x_train2 = scaler.fit_transform(x_train2)
+x_val2 = scaler.transform(x_val2)
+```
+
+### Model specification
+
+```{python ModelSpec2}
+
+# Import models
+from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
+from darts.models.forecasting.arima import ARIMA
+from darts.models.forecasting.linear_regression_model import LinearRegressionModel
+from darts.models.forecasting.random_forest import RandomForest
+
+# Specify baseline models
+model_drift = NaiveDrift()
+model_seasonal = NaiveSeasonal()
+
+# Specify ARIMA model
+model_arima = ARIMA(p = 1, d = 0, q = 0, trend = "n", random_state = 1923)
+
+# Specify second linear regression model
+model_linear2 = LinearRegressionModel(
+  lags = 1,
+  lags_future_covariates = [0])
+
+# Specify random forest model  
+model_forest = RandomForest(
+  lags = 1,
+  lags_future_covariates = [0], 
+  random_state = 1923,
+  n_jobs = 3)
+```
+
+### Model validation: Predicting 2017 sales
+
+```{python 2017Pred2}
+#| include: false
+
+# Fit models on train data (pre-2017), predict validation data (2017)
+model_drift.fit(y_train2)
+pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
+
+model_seasonal.fit(y_train2)
+pred_seasonal2 = model_seasonal.predict(n = 227) + ts_preds1[-227:]
+
+model_arima.fit(y_train2)
+pred_arima = model_arima.predict(n = 227) + ts_preds1[-227:]
+
+model_linear2.fit(y_train2, future_covariates = x_train2)
+pred_linear2 = model_linear2.predict(
+  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
+
+model_forest.fit(y_train2, future_covariates = x_train2)
+pred_forest = model_forest.predict(
+  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
+```
+
+```{python 2017Score2}
+
+# Score models' performance
+perf_scores(y_val2, pred_drift2, model="Naive drift")
+perf_scores(y_val2, pred_seasonal2, model="Naive seasonal")
+perf_scores(y_val2, pred_arima, model="ARIMA")
+perf_scores(y_val2, pred_linear2, model="Linear")
+perf_scores(y_val2, pred_forest, model="Random forest")
+```
+
+```{python 2017Plot2}
+#| echo: false
+
+# FIG15: Plot models' predictions against actual values
+fig15, axes15 = plt.subplots(3, sharex=True, sharey=True)
+_ = fig15.suptitle("Actual vs. predicted sales, hybrid models, orange = Actual")
+
+# ARIMA
+_ = trafo_exp(y_val2).plot(ax = axes15[0], label="Actual")
+_ = trafo_exp(pred_arima).plot(ax = axes15[0], label="Predicted")
+_ = axes15[0].set_title("Linear regression + ARIMA")
+
+# Linear regression
+_ = trafo_exp(y_val2).plot(ax = axes15[1], label="Actual")
+_ = trafo_exp(pred_linear2).plot(ax = axes15[1], label="Predicted")
+_ = axes15[1].set_title("Linear regression + Linear regression")
+
+# Random forest
+_ = trafo_exp(y_val2).plot(ax = axes15[2], label="Actual")
+_ = trafo_exp(pred_forest).plot(ax = axes15[2], label="Predicted")
+_ = axes15[2].legend("", frameon = False)
+_ = axes15[2].set_title("Linear regression + Random forest")
+
+# Show fig15
+plt.show()
+plt.close("all")
+```
+
+### Backtesting / Historical forecasts
+
+```{python HistFore2}
+
+# Retrieve historical forecasts & residuals for linear + random forest
+
+# Fit scaler on 2013
+scaler.fit(ts_lagscovars[:365])
+
+# Predict historical forecasts for 2014-2017
+pred_hist2 = model_forest.historical_forecasts(
+  trafo_log(ts_decomp), 
+  future_covariates = scaler.transform(ts_lagscovars), start = 365, stride = 1,
+  verbose = True) + ts_preds1[365:]
+
+# Retrieve residuals for 2014-2017
+res_hist2 = trafo_log(ts_sales[365:]) - pred_hist2
+
+# Score historical forecasts for linear + random_forest
+perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + random forest")
+```
+
+```{python HistForePlot2}
+#| echo: false
+
+# Plot historical forecasts for random forest
+_ = ts_sales.plot(label="Actual")
+_ = trafo_exp(pred_hist2).plot(label="Predicted")
+_ = plt.title("Linear regression + random forest hybrid model, historical forecasts")
+_ = plt.ylabel("sales")
+plt.show()
+plt.close("all")
+```
+
+### Residuals diagnosis
+
+```{python DiagModel2}
+
+# Residuals diagnosis
+_ = plot_residuals_analysis(res_hist2)
+plt.show()
+plt.close("all")
+
+# PACF plot
+_ = plot_pacf(res_hist2, max_lag=56)
+_ = plt.title("Partial autocorrelation plot, hybrid model innovation residuals")
+_ = plt.xlabel("Lags")
+_ = plt.ylabel("PACF")
+_ = plt.xticks(np.arange(0, 56, 10))
+_ = plt.xticks(np.arange(0, 56, 1), minor=True)
+_ = plt.grid(which='minor', alpha=0.5)
+_ = plt.grid(which='major', alpha=1)
+plt.show()
+plt.close("all")
+```
+
+```{python StatTestModel2}
+
+# Stationarity tests on hybrid model residuals
+stationarity_test_kpss(res_hist2)
+stationarity_test_adf(res_hist2)
+```
 
 ## Conclusion
