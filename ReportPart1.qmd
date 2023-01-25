@@ -2,11 +2,12 @@
 title: "Time series regression - Store sales forecasting, Part 1"
 author: "Ahmet Zamanis"
 format: ipynb
+  toc: true
 editor: visual
 jupyter: python3
-toc: true
 execute:
   warning: false
+  message: false
 ---
 
 ## Introduction
@@ -16,6 +17,7 @@ This is a report on time series analysis & regression modeling, performed in Pyt
 The main information source used extensively for this analysis is the textbook [Forecasting: Principles and Practice](https://otexts.com/fpp3/), written by Rob Hyndman and George Athanasopoulos. The book is the most complete source on time series analysis & forecasting I could find. It uses R and the [tidyverts](https://tidyverts.org/) libraries in its example code.
 
 ```{python Settings}
+#| echo: false
 
 # Import libraries
 import pandas as pd 
@@ -33,6 +35,10 @@ plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams["figure.autolayout"] = True
 sns.set_theme(context="paper")
+
+# Suppress warnings
+import warnings
+warnings.filterwarnings('ignore')
 ```
 
 ## Data preparation
@@ -52,7 +58,7 @@ df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
 
 **.csv** and **test.csv** are the main datasets, consisting of daily sales data. The ing data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the next 15 days, in August 2017. We won't do a competition submission in Part 1, so we won't load the testing data.
 
-```{python df_}
+```{python df}
 
 # View the daily sales data
 df_train.head(5)
@@ -311,9 +317,9 @@ A time series can be written as the sum of several components:
 
 When analyzing a time series with plots, it can be difficult to determine the sources of changes and fluctuations. It can be especially tricky to tell apart the cyclical effects from seasonality. Because of this, we will split our analysis and modeling into two steps:
 
--   In step 1, we will analyze the effects of trend, seasonality and calendar effects (such as holidays & events), build a model that predicts these effects and removes them from the series. This is called **time decomposition.**
+-   In step 1, we will analyze the effects of trend, seasonality and calendar effects (such as holidays & events), build a model that predicts these effects and remove them from the series. This is called **time decomposition.**
 
--   In step 2, we will re-analyze the decomposed time series, this time considering the effects of covariates and lagged values of sales itself as predictors. We'll build a model that uses these predictors, train it on the decomposed sales, and add up the predictions of both models to arrive at our final predictions. This approach is called a **hybrid model.**
+-   In step 2, we will re-analyze the decomposed time series, this time considering the effects of covariates and lagged values of sales itself as predictors, to try and account for the cyclicality. We'll build a model that uses these predictors, train it on the decomposed sales, and add up the predictions of both models to arrive at our final predictions. This approach is called a **hybrid model.**
 
 ## Exploratory analysis 1 - Time & calendar effects
 
@@ -335,11 +341,13 @@ The series plot shows us several things:
 
 -   Sales mostly fluctuate around a certain range, which suggests strong seasonality. However, there are also sharp deviations in certain periods, mainly across 2014 and at the start of 2015. This is likely cyclical in nature.
 
--   Sales decline very sharply in the first day of every year.
+-   The seasonal fluctuations seem to be getting stronger over time. This suggests we should use a multiplicative time decomposition instead of additive.
+
+-   Sales decline very sharply in the first day of every year, likely because it's a holiday.
 
 ### Seasonality
 
-#### Annual
+#### Annual seasonality
 
 Let's look at annual seasonality: How sales fluctuate over a year based on quarters, months, weeks of a year and days of a year. In the plots below, we have the daily sales averaged by each respective calendar period, colored by each year in the data. The confidence bands indicate the minimum and maximum daily sales in each respective period (in the last plot, we just have the daily sales without any averaging).
 
@@ -404,7 +412,7 @@ plt.close("all")
 
     -   In Q2 2014, there was a considerable drop. Sales declined almost to the level of Q2 2013. This was likely a cyclical effect.
 
--    **Monthly:** Sales do seem to fluctuate slightly over months, but there's no clear seasonal pattern that holds across all years. However, sales seem to sharply increase in December every year, likely due to Christmas.
+-   **Monthly:** Sales do seem to fluctuate slightly over months, but there's no clear seasonal pattern that holds across all years. However, sales seem to sharply increase in December every year, likely due to Christmas.
 
     -   The cyclicality in 2014 is seen in more detail: Sales dropped almost to their 2013 levels in certain months, and recovered sharply in others.
 
@@ -476,7 +484,7 @@ plt.show()
 plt.close("all")
 ```
 
-#### Monthly & weekly
+#### Monthly & weekly seasonality
 
 Now let's look at seasonality across days of a month and days of a week. These will likely be the most important seasonality patterns in the sales. There are three ways to look at these plots: First we will group them by year.
 
@@ -611,11 +619,444 @@ plt.show()
 plt.close("all")
 ```
 
-### 
+### April 2016 Earthquake
+
+```{python EarthquakePlot}
+#| echo: false
+
+# FIG6: Zoom in on earthquake: 16 April 2016
+april_sales = sales.loc[sales.index.month == 4]
+may_sales = sales.loc[sales.index.month == 5]
+
+fig6, axes6 = plt.subplots(2, sharex=True)
+_ = fig6.suptitle("Effect of 16 April 2016 earthquake on sales")
+
+# April
+_ = sns.lineplot(
+  ax = axes6[0],
+  x = april_sales.index.day,
+  y = april_sales,
+  hue = april_sales.index.year.astype(str),
+  data = april_sales
+)
+_ = axes6[0].set_title("April")
+_ = axes6[0].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+_ = axes6[0].set_xlabel("days of month")
+_ = axes6[0].set_xticks(np.arange(1, 32, 6))
+_ = axes6[0].set_xticks(np.arange(1, 32, 1), minor=True)
+_ = axes6[0].grid(which='minor', alpha=0.5)
+_ = axes6[0].grid(which='major', alpha=1)
+_ = axes6[0].axvline(x = 16, color = "black", linestyle = "dashed")
+
+# May
+_ = sns.lineplot(
+  ax = axes6[1],
+  x = may_sales.index.day,
+  y = may_sales,
+  hue = may_sales.index.year.astype(str),
+  data = may_sales, legend=False
+)
+_ = axes6[1].set_title("May")
+_ = axes6[1].set_xlabel("days of month")
+_ = axes6[1].set_xticks(np.arange(1, 32, 6))
+_ = axes6[1].set_xticks(np.arange(1, 32, 1), minor=True)
+_ = axes6[1].grid(which='minor', alpha=0.5)
+_ = axes6[1].grid(which='major', alpha=1)
+
+# Show FIG6
+plt.show()
+plt.close("all")
+```
 
 ## Feature engineering 1 - Time & calendar features
 
+### Calendar effects features
+
+```{python FeatEngNY}
+
+# New year's day features
+df_train["ny1"] = ((df_train.index.day == 1) & (df_train.index.month == 1)).astype(int)
+
+
+# Set holiday dummies to 0 if NY dummies are 1
+df_train.loc[df_train["ny1"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+
+df_train["ny2"] = ((df_train.index.day == 2) & (df_train.index.month == 1)).astype(int)
+
+df_train.loc[df_train["ny2"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+```
+
+```{python FeatEngDecember}
+
+# NY's eve features
+df_train["ny_eve31"] = ((df_train.index.day == 31) & (df_train.index.month == 12)).astype(int)
+
+df_train["ny_eve30"] = ((df_train.index.day == 30) & (df_train.index.month == 12)).astype(int)
+
+df_train.loc[(df_train["ny_eve31"] == 1) | (df_train["ny_eve30"] == 1), ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+
+
+# Proximity to Christmas sales peak
+df_train["xmas_before"] = 0
+
+df_train.loc[
+  (df_train.index.day.isin(range(13,24))) & (df_train.index.month == 12), "xmas_before"] = df_train.loc[
+  (df_train.index.day.isin(range(13,24))) & (df_train.index.month == 12)].index.day - 12
+
+df_train["xmas_after"] = 0
+df_train.loc[
+  (df_train.index.day.isin(range(24,28))) & (df_train.index.month == 12), "xmas_after"] = abs(df_train.loc[
+  (df_train.index.day.isin(range(24,28))) & (df_train.index.month == 12)].index.day - 27)
+
+df_train.loc[(df_train["xmas_before"] != 0) | (df_train["xmas_after"] != 0), ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+```
+
+```{python FeatEngQuake}
+
+# Strength of earthquake effect on sales
+# April 18 > 17 > 19 > 20 > 21 > 22
+df_train["quake_after"] = 0
+df_train.loc[df_train.index == "2016-04-18", "quake_after"] = 6
+df_train.loc[df_train.index == "2016-04-17", "quake_after"] = 5
+df_train.loc[df_train.index == "2016-04-19", "quake_after"] = 4
+df_train.loc[df_train.index == "2016-04-20", "quake_after"] = 3
+df_train.loc[df_train.index == "2016-04-21", "quake_after"] = 2
+df_train.loc[df_train.index == "2016-04-22", "quake_after"] = 1
+```
+
+```{python FeatEngEvents}
+
+# Split events, delete events column
+df_train["dia_madre"] = ((df_train["event"] == 1) & (df_train.index.month == 5) & (df_train.index.day.isin([8,10,11,12,14]))).astype(int)
+
+df_train["futbol"] = ((df_train["event"] == 1) & (df_train.index.isin(pd.date_range(start = "2014-06-12", end = "2014-07-13")))).astype(int)
+
+df_train["black_friday"] = ((df_train["event"] == 1) & (df_train.index.isin(["2014-11-28", "2015-11-27", "2016-11-25"]))).astype(int)
+
+df_train["cyber_monday"] = ((df_train["event"] == 1) & (df_train.index.isin(["2014-12-01", "2015-11-30", "2016-11-28"]))).astype(int)
+
+df_train = df_train.drop("event", axis=1)
+```
+
+```{python FeatEngDaysWeek}
+
+# Days of week dummies (monday intercept)
+df_train["tuesday"] = (df_train.index.dayofweek == 1).astype(int)
+df_train["wednesday"] = (df_train.index.dayofweek == 2).astype(int)
+df_train["thursday"] = (df_train.index.dayofweek == 3).astype(int)
+df_train["friday"] = (df_train.index.dayofweek == 4).astype(int)
+df_train["saturday"] = (df_train.index.dayofweek == 5).astype(int)
+df_train["sunday"] = (df_train.index.dayofweek == 6).astype(int)
+```
+
+```{python FeatEngLeads}
+
+# Holiday-event leads
+df_train["local_lead1"] = df_train["local_holiday"].shift(-1).fillna(0)
+df_train["regional_lead1"] = df_train["regional_holiday"].shift(-1).fillna(0)
+df_train["national_lead1"] = df_train["national_holiday"].shift(-1).fillna(0)
+df_train["diamadre_lead1"] = df_train["dia_madre"].shift(-1).fillna(0)
+
+# Check missing values
+pd.isnull(df_train).sum()
+
+```
+
+```{python FeatEngTimeAgg}
+
+# Aggregate time features by mean
+time_covars = df_train.drop(columns=['id', 'store_nbr', 'family', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
+```
+
+### Trend & seasonality features
+
+```{python FeatEngTrend}
+
+# Add piecewise linear trend dummies
+time_covars["trend"] = range(1, 1685) # Linear dummy 1
+
+# Knot to be put at period 729
+time_covars.loc[time_covars.index=="2015-01-01"]["trend"] 
+
+# Add second linear trend dummy
+time_covars["trend_knot"] = 0
+time_covars.iloc[728:,-1] = range(0, 956)
+
+# Check start and end of knot
+time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]] 
+```
+
+```{python FeatEngFourier}
+
+from statsmodels.tsa.deterministic import DeterministicProcess
+
+# Add Fourier features for monthly seasonality
+dp = DeterministicProcess(
+  index = time_covars.index,
+  constant = False,
+  order = 0, # No trend feature
+  seasonal = False, # No seasonal dummy features
+  period = 28, # 28-period seasonality (28 days, 1 month)
+  fourier = 5, # 5 Fourier pairs
+  drop = True # Drop perfectly collinear terms
+)
+time_covars = time_covars.merge(dp.in_sample(), how="left", on="date")
+
+# View Fourier features
+time_covars.iloc[0:5, -10:]
+```
+
 ## Model 1 - Time effects decomposition
+
+### Preprocessing
+
+```{python TSTimeCovars}
+
+# Make Darts time series with time feats
+ts_timecovars = TimeSeries.from_dataframe(
+  time_covars, freq="D", fill_missing_dates=False)
+
+ts_timecovars
+```
+
+```{python TSGaps}
+
+# Scan for gaps
+ts_timecovars.gaps()
+```
+
+```{python FillGaps}
+
+# Fill gaps by interpolating missing values
+from darts.dataprocessing.transformers import MissingValuesFiller
+na_filler = MissingValuesFiller()
+ts_sales = na_filler.transform(ts_sales)
+ts_timecovars = na_filler.transform(ts_timecovars)
+
+# Scan for gaps again
+ts_timecovars.gaps()
+```
+
+```{python LogExpTrafos}
+
+# Define functions to perform log transformation and reverse it
+def trafo_log(x):
+  return x.map(lambda x: np.log(x+1))
+
+def trafo_exp(x):
+  return x.map(lambda x: np.exp(x)-1)
+```
+
+```{python TrainValSplit1}
+
+# Train-validation split: Pre 2017 vs 2017
+y_train1, y_val1 = trafo_log(ts_sales[:-227]), trafo_log(ts_sales[-227:])
+x_train1, x_val1 = ts_timecovars[:-227], ts_timecovars[-227:]
+```
+
+### Model specification
+
+```{python ModelSpec1}
+
+# Import models
+from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
+from darts.models.forecasting.fft import FFT
+from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
+from darts.models.forecasting.linear_regression_model import LinearRegressionModel
+
+# Specify baseline models
+model_drift = NaiveDrift()
+model_seasonal = NaiveSeasonal()
+
+# Specify FFT model
+model_fft = FFT(
+  nr_freqs_to_keep = 10,
+  trend = "poly",
+  trend_poly_degree = 1
+)
+
+# Specify ETS model
+model_ets = ETS(
+  season_length = 7,
+  model = "AAA"
+)
+
+# Specify linear regression model
+model_linear1 = LinearRegressionModel(
+  lags_future_covariates = [0])
+```
+
+### Model validation: Predicting 2017 sales
+
+```{python 2017Pred1}
+#| include: false
+
+# Fit models on train data (pre-2017), predict validation data (2017)
+model_drift.fit(y_train1)
+pred_drift = model_drift.predict(n = 227)
+
+model_seasonal.fit(y_train1)
+pred_seasonal = model_seasonal.predict(n = 227)
+
+model_fft.fit(y_train1)
+pred_fft = model_fft.predict(n = 227)
+
+model_ets.fit(y_train1)
+pred_ets = model_ets.predict(n = 227)
+
+model_linear1.fit(y_train1, future_covariates = x_train1)
+pred_linear1 = model_linear1.predict(n = 227, future_covariates = x_val1)
+```
+
+```{python 2017Score1}
+
+# Define model scoring function
+from darts.metrics import mape, rmse, rmsle
+def perf_scores(val, pred, model="drift"):
+  
+  scores_dict = {
+    "RMSE": rmse(trafo_exp(val), trafo_exp(pred)), 
+    "RMSLE": rmse(val, pred), 
+    "MAPE": mape(trafo_exp(val), trafo_exp(pred))
+      }
+      
+  print("Model: " + model)
+  
+  for key in scores_dict:
+    print(
+      key + ": " + 
+      str(round(scores_dict[key], 4))
+       )
+  print("--------")  
+
+# Score models' performance
+perf_scores(y_val1, pred_drift, model="Naive drift")
+perf_scores(y_val1, pred_seasonal, model="Naive seasonal")
+perf_scores(y_val1, pred_fft, model="FFT")
+perf_scores(y_val1, pred_ets, model="Exponential smoothing")
+perf_scores(y_val1, pred_linear1, model="Linear regression")
+```
+
+```{python 2017Plot1}
+#| echo: false
+#| message: false
+
+# FIG7: Plot models' predictions against actual values
+fig7, axes7 = plt.subplots(3, sharex=True, sharey=True)
+_ = fig7.suptitle("Actual vs. predicted sales, time decomposition models")
+
+# FFT
+_ = trafo_exp(y_val1).plot(ax = axes7[0], label="Actual")
+_ = trafo_exp(pred_fft).plot(ax = axes7[0], label="Predicted")
+_ = axes7[0].set_title("FFT")
+_ = axes7[0].set_label(fontsize="small")
+
+# ETS
+_ = trafo_exp(y_val1).plot(ax = axes7[1], label="Actual")
+_ = trafo_exp(pred_ets).plot(ax = axes7[1], label="Predicted")
+_ = axes7[1].set_title("ETS")
+_ = axes7[1].set_label(fontsize="small")
+
+# Linear regression
+_ = trafo_exp(y_val1).plot(ax = axes7[2], label="Actual")
+_ = trafo_exp(pred_linear1).plot(ax = axes7[2], label="Predicted")
+_ = axes7[2].set_title("Linear regression")
+_ = axes7[2].set_label(fontsize="small")
+
+# Show FIG7
+plt.show()
+plt.close("all")
+```
+
+### Backtesting / Historical forecasts
+
+```{python HistFore1}
+
+# Retrieve historical forecasts and 14-17 decomposed residuals
+pred_hist1 = model_linear1.historical_forecasts(
+  trafo_log(ts_sales), 
+  future_covariates = ts_timecovars, start = 365, stride = 1,
+  verbose = True)
+res_linear1 = trafo_log(ts_sales[365:]) - pred_hist1
+
+# Score historical forecasts
+perf_scores(trafo_log(ts_sales[365:]), pred_hist1, model="Linear regression, historical")
+```
+
+```{python HistForePlot1}
+#| echo: false
+
+# Plot historical forecasts for linear regression
+_ = ts_sales.plot(label="Actual")
+_ = trafo_exp(pred_hist1).plot(label="Predicted")
+_ = plt.title("Time decomposition linear model, historical forecasts")
+_ = plt.ylabel("sales")
+plt.show()
+plt.close("all")
+```
+
+### Residuals diagnosis
+
+```{python ResDiag1}
+
+# Diagnose linear model 1's innovation residuals
+from darts.utils.statistics import plot_residuals_analysis, plot_pacf
+_ = plot_residuals_analysis(res_linear1)
+plt.show()
+plt.close("all")
+
+# PACF plot of decomped sales residuals
+_ =  plot_pacf(res_linear1, max_lag=56)
+_ = plt.title("Partial autocorrelation plot, residuals of linear model 1")
+_ = plt.xlabel("Lags")
+_ = plt.ylabel("PACF")
+_ = plt.xticks(np.arange(0, 56, 10))
+_ = plt.xticks(np.arange(0, 56, 1), minor=True)
+_ = plt.grid(which='minor', alpha=0.5)
+_ = plt.grid(which='major', alpha=1)
+plt.show()
+plt.close("all")
+```
+
+```{python StatTest1}
+
+# KPSS and ADF stationarity test on model 1 residuals
+from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
+stationarity_test_kpss(res_linear1) # Null rejected = data is non-stationary
+stationarity_test_adf(res_linear1) # Null rejected = data is stationary around a constant
+```
+
+### Time decomposition
+
+```{python TimeDecompFinal}
+
+# Perform full time decomposition in Sklearn
+
+# Retrieve Darts target and features with filled gaps
+sales = ts_sales.pd_series()
+time_covars = ts_timecovars.pd_dataframe()
+
+# Train-test split
+y_train, y_val = trafo_log(sales[:-227]), trafo_log(sales[-227:])
+x_train, x_val = time_covars.iloc[:-227,], time_covars.iloc[-227:,]
+
+# Fit & predict on 13-16
+from sklearn.linear_model import LinearRegression
+model_decomp = LinearRegression()
+model_decomp.fit(x_train, y_train)
+pred1 = model_decomp.predict(x_train)
+res1 = y_train - pred1
+
+# Predict on 17
+pred2 = model_decomp.predict(x_val)
+res2 = y_val - pred2
+
+# Concatenate residuals to get decomposed sales
+sales_decomp = pd.concat([res1, res2])
+
+# Concatenate predictions to get model 1 predictions
+preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.index)
+```
 
 ## Exploratory analysis 2 - Lags & covariates
 
