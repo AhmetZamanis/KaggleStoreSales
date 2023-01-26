@@ -8,13 +8,14 @@ jupyter: python3
 execute:
   warning: false
   message: false
+  error: false
 ---
 
 ## Introduction
 
-This is a report on time series analysis & regression modeling, performed in Python, mainly with the [Darts](https://unit8co.github.io/darts/) library. The dataset is from the [Kaggle Store Sales - Time Series Forecasting](https://www.kaggle.com/competitions/store-sales-time-series-forecasting) competition. The data consists of daily sales data for an Ecuadorian supermarket chain between 2013 and 2017. This is Part 1 of the analysis, which will focus only on forecasting the daily national sales of the chain, across all stores and categories. In Part 2, I will forecast the sales in each category - store combination as required by the competition, and attempt various hierarchical reconciliation techniques.
+This is a report on time series analysis & regression modeling, performed in Python, mainly with the [Darts](https://unit8co.github.io/darts/) library. The dataset is from the [Kaggle Store Sales - Time Series Forecasting](https://www.kaggle.com/competitions/store-sales-time-series-forecasting) competition. The data consists of daily sales data for an Ecuadorian supermarket chain between 2013 and 2017. This is Part 1 of the analysis, which will focus only on forecasting the daily national sales of the chain, across all stores and categories. In Part 2, we will forecast the sales in each category - store combination as required by the competition, and attempt various hierarchical reconciliation techniques.
 
-The main information source used extensively for this analysis is the textbook [Forecasting: Principles and Practice](https://otexts.com/fpp3/), written by Rob Hyndman and George Athanasopoulos. The book is the most complete source on time series analysis & forecasting I could find. It uses R and the [tidyverts](https://tidyverts.org/) libraries in its example code.
+The main information source used extensively for this analysis is the textbook [Forecasting: Principles and Practice](https://otexts.com/fpp3/), written by Rob J. Hyndman and George Athanasopoulos. The book is the most complete source on time series analysis & forecasting I could find. It uses R and the [tidyverts](https://tidyverts.org/) libraries in its example code.
 
 ```{python Settings}
 #| echo: false
@@ -35,15 +36,9 @@ plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams["figure.autolayout"] = True
 sns.set_theme(context="paper")
-
-# Suppress warnings
-import warnings
-warnings.filterwarnings('ignore')
 ```
 
 ## Data preparation
-
-The data is split into several .csv files.
 
 ```{python Load data}
 #| include: false
@@ -56,10 +51,9 @@ df_holidays = pd.read_csv("./OriginalData/holidays_events.csv", encoding="utf-8"
 df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
 ```
 
-**.csv** and **test.csv** are the main datasets, consisting of daily sales data. The ing data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the next 15 days, in August 2017. We won't do a competition submission in Part 1, so we won't load the testing data.
+The data is split into several .csv files. **train.csv** and **test.csv** are the main datasets, consisting of daily sales data. The training data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the following 15 days, in August 2017. We won't do a competition submission in Part 1, so we won't load the testing data.
 
 ```{python df}
-
 # View the daily sales data
 df_train.head(5)
 ```
@@ -71,35 +65,28 @@ df_train.head(5)
 **stores.csv** contains more information about each store: The city, state, store type and store cluster.
 
 ```{python df_stores}
-
-# View the stores data
 df_stores.head(5)
 ```
 
-**holidays.csv** contains information about local (city-wide), regional (state-wide) and national holidays, as well as some special nation-wide events in the time period. We will use these along with the stores' location data to create calendar features.
+**holidays.csv** contains information about local (city-wide), regional (state-wide) and national holidays, and some special nation-wide events in the time period. We will use these along with the stores' location data to create calendar features.
 
 ```{python df_holidays}
-
-# View the holidays data
 df_holidays.head(5)
 ```
 
-**oil.csv** consists of the daily oil prices in the time period. Ecuador has an oil-dependent economy, so this may be a useful predictor of the cyclicality in supermarket sales.
+**oil.csv** consists of the daily oil prices in the time period. Ecuador has an oil-dependent economy, so this may be a useful predictor of the cyclicality in supermarket sales. We don't have the oil price for the first day of the time series.
 
 ```{python df_oil}
-
-# View the oil data
 df_oil.head(5)
 ```
 
-**transactions.csv** consists of the daily number of transactions in a store. Another potentially useful feature.
+**transactions.csv** consists of the daily number of transactions at a store. Another potentially useful feature. Each row is the number of transactions in all categories, one day, at one store.
 
 ```{python df_trans}
-
 df_trans.head(5)
 ```
 
-We will rename some columns from the datasets and merge the supplementary information into the ing data. We'll aggregate daily transactions across all stores beforehand, as we are only interested in predicting daily national sales.
+We will rename some columns from the datasets and merge the supplementary information into the sales dataset. We'll aggregate daily transactions across all stores beforehand, as we are only interested in predicting daily national sales.
 
 ```{python MergeData}
 #| output: false
@@ -117,12 +104,12 @@ df_trans = df_trans.groupby("date").transactions.sum()
 df_train = df_train.merge(df_trans, on = ["date"], how = "left")
 df_train = df_train.merge(df_oil, on = "date", how = "left")
 df_train = df_train.merge(df_stores, on = "store_nbr", how = "left")
-
 ```
 
 Incorporating the holidays information into the sales dataset will require more work.
 
 ```{python SplitHolidays}
+#| output: false
 
 # Split holidays data into local, regional, national and events
 events = df_holidays[df_holidays["holiday_type"] == "Event"]
@@ -133,13 +120,13 @@ national = df_holidays.loc[df_holidays["locale"] == "National"]
 
 ```
 
-There are cases of multiple holidays or events sharing the same date and locale. We'll inspect the duplicates and drop them, so we don't have issues in feature engineering.
+There are cases of multiple holidays or events sharing the same date and locale. We'll inspect the duplicates and drop them so we don't have issues in feature engineering.
 
--   Rows with **transferred = True** are dates that are normally holidays, but the holiday was transferred to another day. In other words, these are not holidays in effect.
+-   Rows with **transferred = True** are dates that are normally holidays, but the holiday was transferred to another date. In other words, these are not holidays in effect.
 
--   Rows with **holiday_type = Transfer** are dates that are not normally holidays, but had another holiday transferred. In other words, these are holidays in effect.
+-   Rows with **holiday_type = Transfer** are dates that are not normally holidays, but had another holiday transferred to this date. In other words, these are holidays in effect.
 
--   Rows with **holiday_type = Bridge** are dates that are not normally holidays, but were added to preceding / following holidays.
+-   Rows with **holiday_type = Bridge** are dates that are not normally holidays, but were added to extend preceding / following holidays.
 
 ```{python Duplicates1}
 
@@ -171,26 +158,26 @@ events = events.drop(244, axis = 0)
 After getting rid of duplicates, we can create binary columns that signify whether a date was a local / regional / national holiday / event. We'll merge these back into the sales data.
 
 ```{python HolidayEventDummies}
-#| include: false
+#| output: false
 
 # Add local_holiday binary column to local holidays data, to be merged into main 
 # data.
 local["local_holiday"] = (
   local.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
   ((local.holiday_type == "Holiday") & (local.transferred == False))
-).astype(int)
+  ).astype(int)
 
 # Add regional_holiday binary column to regional holidays data
 regional["regional_holiday"] = (
   regional.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
   ((regional.holiday_type == "Holiday") & (regional.transferred == False))
-).astype(int)
+  ).astype(int)
 
 # Add national_holiday binary column to national holidays data
 national["national_holiday"] = (
   national.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
   ((national.holiday_type == "Holiday") & (national.transferred == False))
-).astype(int)
+  ).astype(int)
 
 # Add event column to events
 events["event"] = 1
@@ -244,10 +231,10 @@ With financial data, it's a good idea to normalize for inflation. We'll CPI adju
 
 -   We'll use the yearly CPI values for simplicity's sake, but it's possible to use monthly CPI for more accuracy.
 
--   Since 2017 is not complete in the data, and we'll use it as the validation-testing period, we'll use 2016's CPI for 2017 to avoid leaking information from the future into our predictions.
+-   Since 2017 is not complete in the data, and we'll use it as the validation period, we'll use 2016's CPI for 2017 to avoid leaking information from the future into our predictions.
 
 ```{python CPIAdjust}
-#| include: false
+#| output: false
 
 # CPI adjust sales and oil, with CPI 2010 = 100
 cpis = {
@@ -274,34 +261,34 @@ pd.isnull(df_train).sum()
 We will interpolate the missing values in the oil and transactions columns using time interpolation. This performs linear interpolation, but also takes the date-time index of observations into account.
 
 ```{python NAInterpolate}
-
 df_train["oil"] = df_train["oil"].interpolate("time", limit_direction = "both")
-df_train["transactions"] = df_train["transactions"].interpolate("time", limit_direction = "both")
+df_train["transactions"] = df_train["transactions"].interpolate(
+  "time", limit_direction = "both")
 ```
 
-We will now aggregate daily sales across all categories and stores, to retrieve our target variable.
+We will now aggregate daily sales across all categories and stores, to retrieve our target variable. We have 1684 days of national sales data.
 
 ```{python AggSales}
-
 sales = df_train.groupby("date").sales.sum()
 sales
 ```
 
-We will create a Darts TimeSeries with our target variable.
+We will create a Darts [TimeSeries](https://unit8co.github.io/darts/generated_api/darts.timeseries.html) with our target variable.
 
 ```{python TSTarget}
-
 from darts import TimeSeries
-ts_sales = TimeSeries.from_series(sales, freq="D")
+ts_sales = TimeSeries.from_series(
+  sales, 
+  freq="D" # Time series frequency is daily
+  )
 ts_sales
-
 ```
 
--   Each Pandas series / dataframe column passed is stored as a component in the Darts TS. The date-time index is stored in **time_index.**
+-   Each Pandas series / dataframe column passed is stored as a component in the Darts TS. The date-time index is stored in **time_index.** We had 1684 rows in our Pandas series, but the Darts TS has 1688 dates. This means our series had some missing dates, which Darts completed automatically. We'll fill in the values for these dates later.
 
--   To create a multivariate time series from a Pandas dataframe, we create a dataframe with each time series as a column, and a common date-time index. If the time series have a **hierarchy**, i.e. if they sum up together in a certain way, we can map that hierarchy as a dictionary. We will explore this further in part 2 of the analysis.
+-   To create a multivariate time series, we create a Pandas dataframe with each time series as a column, and a common date-time index. When we pass this dataframe to TimeSeries, we'll have each time series as a component. If the time series have a **hierarchy**, i.e. if they sum up together in a certain way, we can map that hierarchy as a dictionary to later perform hierarchical reconciliation. We will explore this further in Part 2 of the analysis.
 
--   Static covariates are time-invariant covariates that may be used in predictions. In our case, the city or cluster of a store may be static covariates, but for part 1 of our analysis, we won't use these.
+-   Static covariates are time-invariant covariates that may be used in predictions. In our case, the city or cluster of a store may be static covariates, but for part 1 of our analysis we are looking at national sales, so we won't use these.
 
 ## Overview of hybrid modeling approach
 
@@ -309,15 +296,15 @@ A time series can be written as the sum of several components:
 
 -   **Trend:** The long-term change.
 
--   **Seasonality:** A fluctuation that repeats based on a fixed, known time period. For example, the effect of month / season on ice cream sales.
+-   **Seasonality:** A fluctuation (or several) that repeats based on a fixed, known time period. For example, the fluctuation of retail store sales across days of a week, or hours of a day.
 
--   **Cyclicality:** A fluctuation that does not repeat on a fixed, known time period. For example, the effect of oil prices on car sales.
+-   **Cyclicality:** A fluctuation that does not repeat on a fixed, known time period. For example, the effect of a sharp increase / decrese in oil prices on car sales.
 
--   **Remainder / Error:** The unpredictable component of the time series, at least with the available data.
+-   **Remainder / Error:** The unpredictable component of the time series, at least with the available data and methods.
 
-When analyzing a time series with plots, it can be difficult to determine the sources of changes and fluctuations. It can be especially tricky to tell apart the cyclical effects from seasonality. Because of this, we will split our analysis and modeling into two steps:
+When analyzing a time series with plots, it can be difficult to determine the nature and causes of fluctuations. It can be especially tricky to tell apart the cyclical effects from repeating seasonality. Because of this, we will split our analysis and modeling into two steps:
 
--   In step 1, we will analyze the effects of trend, seasonality and calendar effects (such as holidays & events), build a model that predicts these effects and remove them from the series. This is called **time decomposition.**
+-   In step 1, we will analyze the time effects: The trend, seasonality and calendar effects (such as holidays & events). We'll build a model that predicts these effects and remove the predictions from the time series, leaving the effects of cyclicality and the unpredictable component. This is called **time decomposition.**
 
 -   In step 2, we will re-analyze the decomposed time series, this time considering the effects of covariates and lagged values of sales itself as predictors, to try and account for the cyclicality. We'll build a model that uses these predictors, train it on the decomposed sales, and add up the predictions of both models to arrive at our final predictions. This approach is called a **hybrid model.**
 
@@ -328,20 +315,19 @@ When analyzing a time series with plots, it can be difficult to determine the so
 Let's start by analyzing the overall trend in sales. Darts offers the ability to plot time series quickly.
 
 ```{python TrendPlot}
-
 _ =  ts_sales.plot()
 _ =  plt.ylabel("Daily sales, millions")
 plt.show()
 plt.close()
 ```
 
-The series plot shows us several things:
+The time series plot shows us several things:
 
 -   Supermarket sales show an increasing trend over the years. The trend is close to linear overall, but the rate of increase declines roughly from the start of 2015.
 
 -   Sales mostly fluctuate around a certain range, which suggests strong seasonality. However, there are also sharp deviations in certain periods, mainly across 2014 and at the start of 2015. This is likely cyclical in nature.
 
--   The seasonal fluctuations seem to be getting stronger over time. This suggests we should use a multiplicative time decomposition instead of additive.
+-   The "waves" of seasonal fluctuations seem to be getting bigger over time. This suggests we should use a multiplicative time decomposition instead of additive.
 
 -   Sales decline very sharply in the first day of every year, likely because it's a holiday.
 
@@ -412,7 +398,7 @@ plt.close("all")
 
     -   In Q2 2014, there was a considerable drop. Sales declined almost to the level of Q2 2013. This was likely a cyclical effect.
 
--   **Monthly:** Sales do seem to fluctuate slightly over months, but there's no clear seasonal pattern that holds across all years. However, sales seem to sharply increase in December every year, likely due to Christmas.
+-   **Monthly:** Sales do seem to fluctuate slightly over months, but there's no clear seasonal pattern that's apparent across all years. However, sales seem to sharply increase in November and December every year, likely due to Christmas.
 
     -   The cyclicality in 2014 is seen in more detail: Sales dropped almost to their 2013 levels in certain months, and recovered sharply in others.
 
@@ -420,11 +406,11 @@ plt.close("all")
 
     -   There is a very sharp increase in April 2016, where sales were even higher than 2017 levels. This is due to a large earthquake that happened in April 16, 2016, and the related relief efforts.
 
--   **Weekly:** The seasonal patterns are more visible in the weekly plot, as we see the "waves" line up across years. It's very likely the data has strong weekly seasonality, which is what we'd expect from supermarket sales.
+-   **Weekly:** The seasonal patterns are more visible in the weekly plot, as we see the "waves" of fluctuation line up across years. It's very likely the data has strong weekly seasonality, which is what we'd expect from supermarket sales.
 
     -   The data for 2017 ends after August 15, so the sharp decline afterwards is misleading.
 
-    -   The decline at the end of 2016 is also misleading, as 2016 was a 366-day year.
+    -   The sharp decline at the end of 2016 is also misleading, as 2016 was a 366-day year.
 
 -   **Daily:** This plot is a bit noisy, but the very similar fluctuations across all years indicate the data is strongly seasonal. It also highlights some cyclical effects such as the April 2016 earthquake and the 2014 drops.
 
@@ -486,7 +472,7 @@ plt.close("all")
 
 #### Monthly & weekly seasonality
 
-Now let's look at seasonality across days of a month and days of a week. These will likely be the most important seasonality patterns in the sales. There are three ways to look at these plots: First we will group them by year.
+Now let's look at seasonality across days of a month and days of a week. These will likely be the most important seasonality patterns in supermarket sales. There are three ways to look at these plots: First we will group them by year.
 
 ```{python MonthlyWeeklyByYear}
 #| echo: false
@@ -524,6 +510,10 @@ _ = axes2[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
 plt.show()
 plt.close("all")
 ```
+
+-   The weekly seasonality across days of a week is strong and clear. Sales are lowest in Tuesdays, then increase and peak at Sundays, afterwards dropping on Mondays. The pattern holds in all years.
+
+-   The monthly seasonality across days of a month aren't as strong, but look considerable. Sales are generally highest at the start of a month, likely because most salaries are paid at the end of a month, though the competition information also says salaries are paid biweekly in the middle and end of each month.
 
 We can look at the same plots grouped by month.
 
@@ -564,6 +554,12 @@ plt.show()
 plt.close("all")
 ```
 
+This plot shows us the monthly and weekly seasonality pattern generally holds across all months, but December is a notable exception:
+
+-   Sales in December are considerably higher roughly after the 13th, due to Christmas. The Christmas peak seems to happen in the 23th, followed by a decline, and another sharp increase in the 30th. The sales by day of week are also higher in December for every day, but the pattern of the weekly seasonality is the same.
+
+-   We can also see that sales decline very sharply, almost to zero in January 1st, and make a considerably sharp recovery in the 2nd.
+
 And finally, without any grouping: The averages across all years.
 
 ```{python MonthlyYearly}
@@ -602,7 +598,11 @@ plt.show()
 plt.close("all")
 ```
 
+This plot allows us to see the monthly seasonality pattern more clearly: Sales are higher at the start of a month, slightly decline until the mid-month payday, slightly increase afterwards, and start peaking again after the end-of-month payday.
+
 ### Autocorrelation & partial autocorrelation
+
+Autocorrelation is the correlation of a variable with its own lagged values.
 
 ```{python AcfPacfTime}
 #| echo: false
