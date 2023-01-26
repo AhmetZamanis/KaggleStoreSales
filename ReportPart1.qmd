@@ -602,10 +602,9 @@ This plot allows us to see the monthly seasonality pattern more clearly: Sales a
 
 ### Autocorrelation & partial autocorrelation
 
-Autocorrelation is the correlation of a variable with its own lagged values.
+Autocorrelation is the correlation of a variable at time T, with its own lagged values at time T-1, T-2 and so on. Partial autocorrelation can be thought of as the marginal contribution of each lagged value to autocorrelation, since the lags are likely to hold common information. The patterns in the autocorrelation and partial autocorrelation plots can give us insight into the seasonal patterns.
 
 ```{python AcfPacfTime}
-#| echo: false
 
 # FIG3: ACF and PACF plots
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
@@ -619,7 +618,19 @@ plt.show()
 plt.close("all")
 ```
 
+The sinusoidal pattern in the ACF plot is typical for strong weekly seasonality:
+
+-   Sales at T=0 are highly correlated with the sales of the previous day at T=1.
+
+-   The correlation declines until T=6, which is the previous value of the next weekday from T=0, and peaks at T=7, which is the previous value of the same weekday.
+
+-   The pattern repeats after T=7, with declining strength.
+
+The PACF plot shows the marginal contribution of each lag to the relationship with the present day value. The partial autocorrelation is highest for lag 1, and significant correlations die out roughly after 14 days. In step 2 of this analysis, we will revisit this plot to derive features from sales lags, after removing the effects of time.
+
 ### April 2016 Earthquake
+
+One more time effect we will look at is the April 2016 earthquake, which is a one-off occurence we need to adjust for in our model. The plots below show the seasonality of sales in April and May, in every year. The black dashed vertical line marks April 16.
 
 ```{python EarthquakePlot}
 #| echo: false
@@ -667,6 +678,8 @@ _ = axes6[1].grid(which='major', alpha=1)
 plt.show()
 plt.close("all")
 ```
+
+With the earthquake, the sales sharply increased from the expected seasonal pattern and trend, peaked in April 18, then declined and returned to the seasonal expectations around April 22. It doesn't seem like sales were higher than normal for the rest of April 2016, or in May 2016. We'll engineer our earthquake feature accordingly.
 
 ## Feature engineering 1 - Time & calendar features
 
@@ -1097,8 +1110,6 @@ sales_covariates
 ### Sales features
 
 ```{python LoadLagPlots}
-
-from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.graphics.tsaplots import plot_pacf as pacf_tsa
 from sktime.utils.plotting import plot_lags
 from scipy.stats import pearsonr, spearmanr
