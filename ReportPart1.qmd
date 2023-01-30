@@ -687,11 +687,13 @@ With the earthquake, the sales sharply increased from the expected seasonal patt
 
 ## Feature engineering 1 - Time & calendar features
 
-Our main candidate for the time decomposition model is a simple linear regression, but with numerous time features. We'll flag the dates that influence sales considerably with dummy or ordinal features.
+Our main candidate for the time decomposition model is a simple linear regression, so we will focus our feature engineering towards that.
 
-### Calendar effects features
+### Calendar effects & weekly seasonality features
 
-Sales decline very sharply, almost to zero in January 1st every year. The sales in January 2nd recover sharply, which is a relatively huge increase from the 1st, so we will flag both dates.
+We'll flag the dates that influence sales considerably with dummy or ordinal features. These columns will take non-zero values if a certain calendar effect is present in a date, and zeroes otherwise.
+
+Sales decline very sharply, almost to zero in January 1st every year. The sales in January 2nd then recover sharply, which is a huge relative increase for one day, so we will flag both dates with dummy features.
 
 ```{python FeatEngNY}
 
@@ -711,7 +713,7 @@ We have considerably higher sales in December due to Christmas and the New Years
 
 -   For NY's eve effects, we can simply flag December 30 and 31st with dummy features.
 
--   For Christmas effects, we will create two integer columns that reflect the strength of the Christmas sales increase, based on day of month. For dates outside December 13-27, these features will take a value of zero. This may not be the most sophisticated way to reflect the Christmas effects on our model, but it should be simple and effective.
+-   For Christmas effects, we will create two integer columns that reflect the 'strength' of the Christmas effect on sales, based on day of month. The column will reach its maximum value in December 23rd, and decline as the date moves away from that. For dates outside December 13-27, these features will take a value of zero. This may not be the most sophisticated way to reflect the Christmas effects on our model, but it should be simple and effective.
 
 ```{python FeatEngDecember}
 
@@ -738,7 +740,7 @@ df_train.loc[
 df_train.loc[(df_train["xmas_before"] != 0) | (df_train["xmas_after"] != 0), ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 ```
 
-To account for the effect of the April 2016 earthquake, we create a feature that reflects the strength of the increase in sales based on the date. The feature takes a value of zero for dates outside April 17-22, 2016.
+To account for the effect of the April 2016 earthquake, we create a feature similar to the ones for Christmas. The feature peaks at April 18th and takes a value of zero for dates outside April 17-22, 2016.
 
 ```{python FeatEngQuake}
 
@@ -753,7 +755,7 @@ df_train.loc[df_train.index == "2016-04-21", "quake_after"] = 2
 df_train.loc[df_train.index == "2016-04-22", "quake_after"] = 1
 ```
 
-We previously created dummy features to indicate local-regional-national holidays, and special events. There are only a few different events, and they differ in nature, so we will create separate dummy features for each one. We already created a feature for the earthquake, so we'll skip that one.
+We previously created dummy features to indicate local-regional-national holidays, and special events. There are only a few different events in the dataset, and they differ in nature, so we will break up the events column and create separate dummy features for each event. We already created a feature for the earthquake, so we'll skip that one.
 
 ```{python FeatEngEvents}
 
@@ -767,19 +769,6 @@ df_train["black_friday"] = ((df_train["event"] == 1) & (df_train.index.isin(["20
 df_train["cyber_monday"] = ((df_train["event"] == 1) & (df_train.index.isin(["2014-12-01", "2015-11-30", "2016-11-28"]))).astype(int)
 
 df_train = df_train.drop("event", axis=1)
-```
-
-To capture the weekly seasonality in a simple manner, we'll create a dummy feature for each day of the week. We won't create one for Monday to avoid perfect multicollinearity.
-
-```{python FeatEngDaysWeek}
-
-# Days of week dummies (monday intercept)
-df_train["tuesday"] = (df_train.index.dayofweek == 1).astype(int)
-df_train["wednesday"] = (df_train.index.dayofweek == 2).astype(int)
-df_train["thursday"] = (df_train.index.dayofweek == 3).astype(int)
-df_train["friday"] = (df_train.index.dayofweek == 4).astype(int)
-df_train["saturday"] = (df_train.index.dayofweek == 5).astype(int)
-df_train["sunday"] = (df_train.index.dayofweek == 6).astype(int)
 ```
 
 Holidays and events may lead to an increase in sales in advance, so we will create one lag column for each holiday column, and the Mother's Day event. These features could be tailored more carefully according to each holiday and event, but we'll keep it simple.
@@ -797,7 +786,20 @@ pd.isnull(df_train).sum()
 
 ```
 
-Now we will aggregate the time features by mean. For local and regional holidays, this will give us values between 0 and 1, reflecting the
+To capture the weekly seasonality in a simple manner, we'll create 6 dummy features for days of the week. We won't create one for Monday to avoid perfect multicollinearity.
+
+```{python FeatEngDaysWeek}
+
+# Days of week dummies
+df_train["tuesday"] = (df_train.index.dayofweek == 1).astype(int)
+df_train["wednesday"] = (df_train.index.dayofweek == 2).astype(int)
+df_train["thursday"] = (df_train.index.dayofweek == 3).astype(int)
+df_train["friday"] = (df_train.index.dayofweek == 4).astype(int)
+df_train["saturday"] = (df_train.index.dayofweek == 5).astype(int)
+df_train["sunday"] = (df_train.index.dayofweek == 6).astype(int)
+```
+
+Now we will aggregate the time features by mean. For local and regional holidays, this will give us fractional values between 0 and 1, which is likely a decent way to reflect local and regional holidays' effects on national sales.
 
 ```{python FeatEngTimeAgg}
 
@@ -805,7 +807,13 @@ Now we will aggregate the time features by mean. For local and regional holidays
 time_covars = df_train.drop(columns=['id', 'store_nbr', 'family', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
 ```
 
-### Trend & seasonality features
+### Trend & monthly seasonality features
+
+In the exploratory analysis, we saw the overall trend can be modelled linearly, but the rate of increase (the slope of the trend line) declines roughly from the start of 2015. To capture this, we will model a piecewise linear trend with one knot at 01-01-2015.
+
+-   In effect, the slope of the linear trend will change and decline once, at the knot date.
+
+-   It's possible to add more "turns" to a linear trend with more knots, but one is enough in our case. We want the trend to be simple and robust against seasonal or cyclical fluctuations.
 
 ```{python FeatEngTrend}
 
@@ -822,6 +830,14 @@ time_covars.iloc[728:,-1] = range(0, 956)
 # Check start and end of knot
 time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]] 
 ```
+
+For the monthly seasonality, we will create Fourier features.
+
+-   Named after the French mathematician, Fourier series allow us to model any periodic, repeating fluctuation / waveform as sums of numerous sine-cosine pairs.
+
+-   We'll create 5 Fourier pairs (10 columns in total) for 28-period seasonality. This will mostly capture the slight increases and decreases in sales throughout a month, due to proximity to paydays.
+
+-   December was an exception to the monthly seasonality pattern, but our Christmas and NY features will adjust for that.
 
 ```{python FeatEngFourier}
 
@@ -845,22 +861,27 @@ time_covars.iloc[0:5, -10:]
 
 ## Model 1 - Time effects decomposition
 
+We will now build our time decomposition model in Darts, and compare it with some baseline models, as well as some simpler and quicker methods.
+
 ### Preprocessing
 
 ```{python TSTimeCovars}
+#| output: false
 
-# Make Darts time series with time feats
+# Create Darts time series with time feats
 ts_timecovars = TimeSeries.from_dataframe(
   time_covars, freq="D", fill_missing_dates=False)
-
-ts_timecovars
 ```
+
+Our target and covariate Series had1684 rows each, but the Darts TimeSeries we create from them have 1688 dates. This is likely because we have gaps in our original series. We can check this easily in Darts.
 
 ```{python TSGaps}
 
 # Scan for gaps
 ts_timecovars.gaps()
 ```
+
+It seems our data is missing values for December 25th, in every year. Darts automatically filled in the missing dates to 1688, but we need to fill the missing values in our target and covariate series.
 
 ```{python FillGaps}
 
@@ -872,17 +893,28 @@ ts_timecovars = na_filler.transform(ts_timecovars)
 
 # Scan for gaps again
 ts_timecovars.gaps()
+ts_sales.gaps()
 ```
+
+Our exploratory analysis showed that the seasonal fluctuations in sales become larger over time. We should use a multiplicative decomposition instead of additive.
+
+-   In additive decomposition, we decompose a time series as Trend + Seasonality + Remainder.
+
+-   In multiplicative decomposition, we decompose a time series as Trend \* Seasonality \* Remainder.
+
+One way of performing multiplicative decomposition is taking the logarithm of the time series and performing additive decomposition, as addition / division in log(x) is equivalent to multiplication / subtraction in x.
 
 ```{python LogExpTrafos}
 
-# Define functions to perform log transformation and reverse it
+# Define functions to perform log transformation and reverse it. +1 to avoid zeroes
 def trafo_log(x):
   return x.map(lambda x: np.log(x+1))
 
 def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
 ```
+
+We'll train our time decomposition models on the daily sales data from 2013-2016, and validate their prediction performance on 2017.
 
 ```{python TrainValSplit1}
 
@@ -892,6 +924,22 @@ x_train1, x_val1 = ts_timecovars[:-227], ts_timecovars[-227:]
 ```
 
 ### Model specification
+
+We'll compare the performance of our linear regression model against a few other models.
+
+Naive drift and naive seasonal are two baseline models, meant to represent the performance of a very simple prediction.
+
+-   Naive drift simply fits a straight line from the start to the end of the training data, and extrapolates it.
+
+-   Naive seasonal simply predicts the last value in the training set.
+
+We'll also test two simple seasonal models which require little input. These models can capture a trend and one seasonality period, but cannot use other covariates in their predictions.
+
+-   Fast Fourier Transform is an algorithm that converts a signal from the time domain to the frequency domain, used in many fields such as engineering and music. In our case, we'll try to model the weekly seasonality with FFT, as it is the strongest, along with a linear trend.
+
+-   Exponential smoothing uses exponentially weighted moving averages of a certain number of lags to make predictions. Again, we'll model the weekly seasonality with a linear trend.
+
+And finally, we'll use our tailored linear regression model with piecewise linear trend dummies, Fourier features for monthly seasonality and dummy features for weekly seasonality & calendar effects. We'll see how much better it performs compared to models that can be specified and applied quickly.
 
 ```{python ModelSpec1}
 
@@ -907,26 +955,30 @@ model_seasonal = NaiveSeasonal()
 
 # Specify FFT model
 model_fft = FFT(
-  nr_freqs_to_keep = 10,
+  required_matches = {"day_of_week"}, # Try to match the weekdays of the training sequence with the predictions  
+  nr_freqs_to_keep = 10, # Keep 10 frequencies
   trend = "poly",
-  trend_poly_degree = 1
+  trend_poly_degree = 1 # Linear trend
 )
 
 # Specify ETS model
 model_ets = ETS(
-  season_length = 7,
-  model = "AAA"
+  season_length = 7, # Weekly seasonality
+  model = "AAA" # Additive trend, seasonality and remainder component
 )
 
 # Specify linear regression model
 model_linear1 = LinearRegressionModel(
-  lags_future_covariates = [0])
+  lags_future_covariates = [0] # Don't create any more lagged covariate values
+  )
 ```
 
 ### Model validation: Predicting 2017 sales
 
+We'll train our models on 2013-2016 sales data, predict the sales for 2017, and score the predictions with a custom function.
+
 ```{python 2017Pred1}
-#| include: false
+#| output: false
 
 # Fit models on train data (pre-2017), predict validation data (2017)
 model_drift.fit(y_train1)
@@ -974,13 +1026,19 @@ perf_scores(y_val1, pred_ets, model="Exponential smoothing")
 perf_scores(y_val1, pred_linear1, model="Linear regression")
 ```
 
+We see our linear regression model performs much better than the baseline and simple methods tested.
+
+-   RMSLE stands for root mean squared log error. Log errors penalize underpredictions much more strongly than overpredictions, which could be particularly good for assessing sales predictions, as unfulfilled demand is likely more costly than overstocking. The competition is scored on RMSLE.
+
+Let's plot the predictions of our models and compare them visually with the actual values.
+
 ```{python 2017Plot1}
 #| echo: false
 #| message: false
 
 # FIG7: Plot models' predictions against actual values
 fig7, axes7 = plt.subplots(3, sharex=True, sharey=True)
-_ = fig7.suptitle("Actual vs. predicted sales, time decomposition models, orange=Predicted")
+_ = fig7.suptitle("Actual vs. predicted sales, time decomposition models, blue=Predicted")
 
 # FFT
 _ = trafo_exp(y_val1).plot(ax = axes7[0], label="Actual")
@@ -1006,11 +1064,27 @@ plt.show()
 plt.close("all")
 ```
 
-### Backtesting / Historical forecasts
+The FFT and ETS models actually did a good job of capturing the weekly seasonality pattern in the data, as the shape and timing of the waves in the predictions are similar to the actual values.
+
+-   However, the FFT and ETS models almost always overestimated the levels of 2017 sales. This is likely because they modeled the trend with a simple linear term, so it can't adjust for the slope decline that happens in 2015.
+
+-   The FFT and ETS models also couldn't account for the sharp drop in sales in January 1st, as they don't take in covariates.
+
+-   In contrast, the linear model's trend and seasonality are both on point, and the January 1st drop, along with the January 2nd recovery, are adjusted for nicely. The model is not able to match some peaks and troughs fully, which are likely cyclical in nature. That's where Model 2 will come in.
+
+### Rolling crossvalidation 
+
+We can further evaluate the performance of our model with rolling crossvalidation: This is the practice of training a model with past data up to a certain time point, predicting the next time point(s), adding them to the training data and repeating the process with increasingly wider training windows.
+
+-   We'll start by training the model on 2013 only, as it makes sense to feed a full year of the seasonality patterns to the model.
+
+-   Then we'll predict the next period, add it to the training data, and repeat the process until the end of the data. This could take a long time for more complex models, but it should be fine for linear regression.
+
+-   We'll also retrieve the residuals for each prediction, which will represent the decomposed sales we'll use as our target variable in the second model..
 
 ```{python HistFore1}
 
-# Retrieve historical forecasts and 14-17 decomposed residuals
+# Retrieve historical forecasts and decomposed residuals for 2014-2017
 pred_hist1 = model_linear1.historical_forecasts(
   trafo_log(ts_sales), 
   future_covariates = ts_timecovars, start = 365, stride = 1,
@@ -1033,7 +1107,11 @@ plt.show()
 plt.close("all")
 ```
 
+Again, the model captures the trend & seasonality patterns nicely, but the errors due to cyclical effects are even more apparent in 2014 and 2015.
+
 ### Residuals diagnosis
+
+We'll now analyze the residuals from our historical forecasts.
 
 ```{python ResDiag1}
 
@@ -1056,19 +1134,55 @@ plt.show()
 plt.close("all")
 ```
 
-```{python StatTest1}
+Ideally, we'd want very small residuals that are randomly distributed around zero as the truly unpredictable remainder of our models. This is not the case overall, so there's room for improvement in our predictions.
 
-# KPSS and ADF stationarity test on model 1 residuals
+-   We see residuals for 2014-2015 are especially higher. This is likely due to the cyclical behavior we observed in this period. Our second model will aim to account for this.
+
+-   The ACF plot shows strong autocorrelation in the residuals. We'll likely use lagged sales features in the second model.
+
+-   The overall distribution of the residuals is not too far from a normal distribution around zero, but the right tail is bigger, indicating some values are strongly underpredicted. These are mostly from 2015.
+
+A stationary time series is one that doesn't change over time. Ideally, we'd want our residuals to be stationary to consider our predictions done. We can test their stationarity with two statistical tests. First is the Kwiatkowski-Phillips-Schmidt-Shin test.
+
+```{python StatTestKPSS1}
+
+# Import KPSS and ADF tests
 from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
-stationarity_test_kpss(res_linear1) # Null rejected = data is non-stationary
-stationarity_test_adf(res_linear1) # Null rejected = data is stationary around a constant
+
+print(
+  "KPSS test p-value: " + 
+  stationarity_test_kpss(res_linear1)[1].astype(str)
+) # Null rejected = data is non-stationary
 ```
+
+The null hypothesis for the KPSS test is stationarity around a constant value. With a p-value smaller than 0.01, the null is rejected, so the test suggests our residuals are non-stationary.
+
+Second is the Augmented Dickey-Fuller test.
+
+```{python StatTestADF1}
+
+print(
+  "ADF test p-value: " +
+  stationarity_test_adf(res_linear1)[1].astype(str)
+) # Null rejected = data is stationary around a constant
+
+```
+
+The null hypothesis for the ADF test is the presence of a unit root, while the alternative hypothesis is stationarity around a constant. With a very small p-value, the null is rejected, so the test suggests our residuals are stationary around a constant, conflicting with the KPSS test.
 
 ### Time decomposition
 
+We will train our second model on the time-decomposed sales, which are the residuals of the first model.
+
+-   Since 2013-2016 will serve as our training data, we need to fit the first model on 2013-2016, and retrieve the fitted residuals to serve as training data for the second model, but Darts doesn't allow predictions on the training data (which is normally a misleading practice to evaluate model performance).
+
+-   Instead, it's possible to use the residuals() method, which returns the residuals from rolling crossvalidation as performed previously, but this will lead to higher residuals for the earlier days in our data.
+
+-   Since we are ultimately interested in improving our model's performance in 2017 predictions, and we already validated Model 1 on 2017, we'll perform the final time decomposition in sklearn, which allows predictions on the fitted data.
+
 ```{python TimeDecompFinal}
 
-# Perform full time decomposition in Sklearn
+# Perform time decomposition in Sklearn
 
 # Retrieve Darts target and features with filled gaps
 sales = ts_sales.pd_series()
@@ -1095,6 +1209,8 @@ sales_decomp = pd.concat([res1, res2])
 # Concatenate predictions to get model 1 predictions
 preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.index)
 ```
+
+Now, preds_model1 are the predictions of Model 1 on the entire dataset, after being fitted on 2013-2016. sales_decomp are the residuals of these predictions. We'll fit Model 2 on sales_decomp, and add preds_model1 to its predictions to achieve our final hybrid predictions.
 
 ## Exploratory analysis 2 - Lags & covariates
 
