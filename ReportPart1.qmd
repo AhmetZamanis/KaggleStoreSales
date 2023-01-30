@@ -414,7 +414,7 @@ plt.close("all")
 
 -   **Daily:** This plot is a bit noisy, but the very similar fluctuations across all years indicate the data is strongly seasonal. It also highlights some cyclical effects such as the April 2016 earthquake and the 2014 drops.
 
-Another way to look at annual seasonality is to average sales in a certain calendar period across all years, without grouping by year. This shows us the "overall" seasonality pattern across one year: We likely have strong weekly seasonality that persists over years, and some monthly seasonality especially towards December.
+Another way to look at annual seasonality is to average sales in a certain calendar period across all years, without grouping by year.
 
 ```{python AnnualSeasonalityAgg}
 #| echo: false
@@ -470,6 +470,8 @@ plt.show()
 plt.close("all")
 ```
 
+This shows us the "overall" seasonality pattern across one year: We likely have strong weekly seasonality that persists over years, and some monthly seasonality especially towards December.
+
 #### Monthly & weekly seasonality
 
 Now let's look at seasonality across days of a month and days of a week. These will likely be the most important seasonality patterns in supermarket sales. There are three ways to look at these plots: First we will group them by year.
@@ -511,9 +513,9 @@ plt.show()
 plt.close("all")
 ```
 
--   The weekly seasonality across days of a week is strong and clear. Sales are lowest in Tuesdays, then increase and peak at Sundays, afterwards dropping on Mondays. The pattern holds in all years.
+-   The weekly seasonality pattern across days of a week is clear. Sales are lowest in Tuesdays, increase and peak at Sundays, then drop on Mondays. The pattern holds in all years.
 
--   The monthly seasonality across days of a month aren't as strong, but look considerable. Sales are generally highest at the start of a month, likely because most salaries are paid at the end of a month, though the competition information also says salaries are paid biweekly in the middle and end of each month.
+-   The monthly seasonality across days of a month aren't as strong, but look considerable. Sales are generally highest at the start of a month, likely because most salaries are paid at the end of a month, though the competition information also says salaries are paid biweekly, in the middle and at the end of each month.
 
 We can look at the same plots grouped by month.
 
@@ -556,9 +558,11 @@ plt.close("all")
 
 This plot shows us the monthly and weekly seasonality pattern generally holds across all months, but December is a notable exception:
 
--   Sales in December are considerably higher roughly after the 13th, due to Christmas. The Christmas peak seems to happen in the 23th, followed by a decline, and another sharp increase in the 30th. The sales by day of week are also higher in December for every day, but the pattern of the weekly seasonality is the same.
+-   Sales in December are considerably higher roughly after the 13th, due to Christmas. The Christmas peak seems to happen in the 23th, followed by a decline, and another sharp increase in the 30th.
 
--   We can also see that sales decline very sharply, almost to zero in January 1st, and make a considerably sharp recovery in the 2nd.
+-   The sales by day of week are also higher in December for every day, but the pattern of the weekly seasonality is the same.
+
+-   We can also see that sales decline very sharply in January 1st, almost to zero, and make a considerably sharp recovery in the 2nd.
 
 And finally, without any grouping: The averages across all years.
 
@@ -598,7 +602,7 @@ plt.show()
 plt.close("all")
 ```
 
-This plot allows us to see the monthly seasonality pattern more clearly: Sales are higher at the start of a month, slightly decline until the mid-month payday, slightly increase afterwards, and start peaking again after the end-of-month payday.
+This plot allows us to see the overall monthly seasonality pattern more clearly: Sales are higher at the start of a month, slightly decline until the mid-month payday, slightly increase afterwards, and start peaking again after the end-of-month payday.
 
 ### Autocorrelation & partial autocorrelation
 
@@ -624,13 +628,13 @@ The sinusoidal pattern in the ACF plot is typical for strong weekly seasonality:
 
 -   The correlation declines until T=6, which is the previous value of the next weekday from T=0, and peaks at T=7, which is the previous value of the same weekday.
 
--   The pattern repeats after T=7, with declining strength.
+-   The pattern repeats weekly after T=7, with declining strength.
 
-The PACF plot shows the marginal contribution of each lag to the relationship with the present day value. The partial autocorrelation is highest for lag 1, and significant correlations die out roughly after 14 days. In step 2 of this analysis, we will revisit this plot to derive features from sales lags, after removing the effects of time.
+The PACF plot shows the marginal contribution of each lag to the relationship with the present day value. The partial autocorrelation is highest for lag 1, and significant correlations die out roughly after 14 days. In step 2 of this analysis, we will revisit this plot to derive features from sales lags, after performing time decomposition with Model 1.
 
 ### April 2016 Earthquake
 
-One more time effect we will look at is the April 2016 earthquake, which is a one-off occurence we need to adjust for in our model. The plots below show the seasonality of sales in April and May, in every year. The black dashed vertical line marks April 16.
+One more time effect we will look at is the April 2016 earthquake, a one-off occurrence we need to adjust for in our model. The plots below show the seasonality of sales in April and May, in every year. The black dashed vertical line marks April 16.
 
 ```{python EarthquakePlot}
 #| echo: false
@@ -683,7 +687,11 @@ With the earthquake, the sales sharply increased from the expected seasonal patt
 
 ## Feature engineering 1 - Time & calendar features
 
+Our main candidate for the time decomposition model is a simple linear regression, but with numerous time features. We'll flag the dates that influence sales considerably with dummy or ordinal features.
+
 ### Calendar effects features
+
+Sales decline very sharply, almost to zero in January 1st every year. The sales in January 2nd recover sharply, which is a relatively huge increase from the 1st, so we will flag both dates.
 
 ```{python FeatEngNY}
 
@@ -698,6 +706,12 @@ df_train["ny2"] = ((df_train.index.day == 2) & (df_train.index.month == 1)).asty
 
 df_train.loc[df_train["ny2"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 ```
+
+We have considerably higher sales in December due to Christmas and the New Years' Eve.
+
+-   For NY's eve effects, we can simply flag December 30 and 31st with dummy features.
+
+-   For Christmas effects, we will create two integer columns that reflect the strength of the Christmas sales increase, based on day of month. For dates outside December 13-27, these features will take a value of zero. This may not be the most sophisticated way to reflect the Christmas effects on our model, but it should be simple and effective.
 
 ```{python FeatEngDecember}
 
@@ -724,6 +738,8 @@ df_train.loc[
 df_train.loc[(df_train["xmas_before"] != 0) | (df_train["xmas_after"] != 0), ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 ```
 
+To account for the effect of the April 2016 earthquake, we create a feature that reflects the strength of the increase in sales based on the date. The feature takes a value of zero for dates outside April 17-22, 2016.
+
 ```{python FeatEngQuake}
 
 # Strength of earthquake effect on sales
@@ -736,6 +752,8 @@ df_train.loc[df_train.index == "2016-04-20", "quake_after"] = 3
 df_train.loc[df_train.index == "2016-04-21", "quake_after"] = 2
 df_train.loc[df_train.index == "2016-04-22", "quake_after"] = 1
 ```
+
+We previously created dummy features to indicate local-regional-national holidays, and special events. There are only a few different events, and they differ in nature, so we will create separate dummy features for each one. We already created a feature for the earthquake, so we'll skip that one.
 
 ```{python FeatEngEvents}
 
@@ -751,6 +769,8 @@ df_train["cyber_monday"] = ((df_train["event"] == 1) & (df_train.index.isin(["20
 df_train = df_train.drop("event", axis=1)
 ```
 
+To capture the weekly seasonality in a simple manner, we'll create a dummy feature for each day of the week. We won't create one for Monday to avoid perfect multicollinearity.
+
 ```{python FeatEngDaysWeek}
 
 # Days of week dummies (monday intercept)
@@ -761,6 +781,8 @@ df_train["friday"] = (df_train.index.dayofweek == 4).astype(int)
 df_train["saturday"] = (df_train.index.dayofweek == 5).astype(int)
 df_train["sunday"] = (df_train.index.dayofweek == 6).astype(int)
 ```
+
+Holidays and events may lead to an increase in sales in advance, so we will create one lag column for each holiday column, and the Mother's Day event. These features could be tailored more carefully according to each holiday and event, but we'll keep it simple.
 
 ```{python FeatEngLeads}
 
@@ -774,6 +796,8 @@ df_train["diamadre_lead1"] = df_train["dia_madre"].shift(-1).fillna(0)
 pd.isnull(df_train).sum()
 
 ```
+
+Now we will aggregate the time features by mean. For local and regional holidays, this will give us values between 0 and 1, reflecting the
 
 ```{python FeatEngTimeAgg}
 
