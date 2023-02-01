@@ -1,8 +1,9 @@
 ---
 title: "Time series regression - Store sales forecasting, Part 1"
 author: "Ahmet Zamanis"
-format: ipynb
-  toc: true
+format: 
+  ipynb:
+    toc: true
 editor: visual
 jupyter: python3
 execute:
@@ -1041,26 +1042,26 @@ _ = fig7.suptitle("Actual vs. predicted sales, time decomposition models, orange
 _ = trafo_exp(y_val1).plot(ax = axes7[0], label="Actual")
 _ = trafo_exp(pred_seasonal).plot(ax = axes7[0], label="Predicted")
 _ = axes7[0].set_title("Naive seasonal")
-_ = axes7[0].set_label(fontsize="small")
+#_ = axes7[0].set_label(fontsize="small")
 
 # FFT
 _ = trafo_exp(y_val1).plot(ax = axes7[1], label="Actual")
 _ = trafo_exp(pred_fft).plot(ax = axes7[1], label="Predicted")
 _ = axes7[1].set_title("FFT")
-_ = axes7[1].set_label(fontsize="small")
+#_ = axes7[1].set_label(fontsize="small")
 
 # ETS
 _ = trafo_exp(y_val1).plot(ax = axes7[2], label="Actual")
 _ = trafo_exp(pred_ets).plot(ax = axes7[2], label="Predicted")
 _ = axes7[2].set_title("ETS")
-_ = axes7[2].set_label(fontsize="small")
+#_ = axes7[2].set_label(fontsize="small")
 
 # Linear regression
 _ = trafo_exp(y_val1).plot(ax = axes7[3], label="Actual")
 _ = trafo_exp(pred_linear1).plot(ax = axes7[3], label="Predicted")
 _ = axes7[3].legend("", frameon = False)
 _ = axes7[3].set_title("Linear regression")
-_ = axes7[3].set_label(fontsize="small")
+#_ = axes7[3].set_label(fontsize="small")
 
 # Show FIG7
 plt.show()
