@@ -2,7 +2,7 @@
 title: "Time series regression - Store sales forecasting, Part 1"
 author: "Ahmet Zamanis"
 format: 
-  html:
+  gfm:
     toc: true
 editor: visual
 jupyter: python3
