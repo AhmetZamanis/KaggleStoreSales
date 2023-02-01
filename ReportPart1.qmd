@@ -8,7 +8,6 @@ jupyter: python3
 execute:
   warning: false
   message: false
-  error: false
 ---
 
 ## Introduction
@@ -1113,9 +1112,9 @@ plt.show()
 plt.close("all")
 ```
 
-Again, the model captures the trend & seasonality patterns nicely, but the errors due to cyclical effects are even more apparent in 2014 and 2015.
+Again, the model captures the trend & seasonality patterns nicely, but the errors due to cyclical effects are even more apparent in 2014 and 2015. If we had modeled trend non-linearly, such as with an STL decomposition, the trend term would likely respond strongly to these fluctuations, and potentially be less robust for predictions after the training time period.
 
-### Residuals diagnosis
+### Residuals diagnosis & stationarity
 
 We'll now analyze the residuals from our historical forecasts.
 
@@ -1234,13 +1233,13 @@ covars = df_train.groupby("date").agg(
 sales_covariates = covars.merge(sales_decomp.rename("sales"), on = "date", how = "left")
 ```
 
-### Differencing
+### Covariates stationarity & differencing
 
 Oil, onpromotion and transactions are time series that we will consider as predictors of sales.
 
--   However, we performed time decomposition on sales, removing seasonal effects.
+-   However, we performed time decomposition on sales, removing effects of time.
 
--   Our covariate series may display their own seasonalities. We can use stationarity tests to quickly check for this.
+-   Our covariate series may display their own time effects and seasonalities. We can use stationarity tests to quickly check for this.
 
 -   If a covariate is non-stationary, a quick way to possibly make it stationary is differencing: Subtracting each value from the value of the previous period. This will give us the change in each period, instead of the absolute value.
 
@@ -1273,11 +1272,11 @@ sales_covariates[
 sales_covariates
 ```
 
-Now our columns all represent the change in each covariate compared to the previous period.
+Now our covariate columns all represent the change in each covariate compared to the previous period.
 
 ### Sales features
 
-Let's evaluate features from sales lags as a possible predictor.
+Let's evaluate features derived from sales lags as possible predictors. We'll start with autocorrelation plots.
 
 ```{python LoadLagPlots}
 from statsmodels.graphics.tsaplots import plot_pacf as pacf_tsa
@@ -1309,7 +1308,7 @@ plt.show()
 plt.close("all")
 ```
 
-As we saw in model 1 residuals analysis, sales lag 1 makes a strong contribution to the partial autocorrelation, while lags 2 to 7 make weak but significant contributions.
+As we saw in Model 1's residuals analysis, sales lag 1 makes a strong contribution to the partial autocorrelation, while lags 2 to 7 make weak but significant contributions.
 
 Linear correlation may not always do justice to the relationship between two variables, so let's look at the scatterplots of sales with its first 9 lags.
 
@@ -1326,7 +1325,7 @@ plt.show()
 plt.close("all")
 ```
 
-It doesn't look like any lag after 1 displays a different relationship with sales.
+It doesn't look like any lag after 1 displays a considerably different relationship with sales.
 
 We can also consider a rolling feature, such as a moving average.
 
@@ -1355,7 +1354,7 @@ plt.show()
 plt.close("all")
 ```
 
-We can see sales EMA7 is a good linear predictor of sales, similar to lag 1. Let's compare its correlation with sales to lag 1's correlation with sales.
+We can see sales EMA7 is a good linear predictor of sales, similar to lag 1. Let's compare lag 1's correlation with sales to EMA7's correlation with sales.
 
 ```{python SalesCorrs}
 
@@ -1372,9 +1371,9 @@ Lag 1 comes out as the stronger linear predictor, but EMA7 is a good one too. We
 
 The oil price change of one day is not likely to mean much by itself, and the effect of oil prices on the economy likely takes some time to manifest.
 
--   Because of these, we'll just consider moving averages of the oil prices as features.
+-   Therefore, we'll just consider moving averages of the oil prices as features.
 
--   These won't be exponentially weighted averages, as recent oil prices likely require time to make their effect on sales.
+-   These won't be exponentially weighted averages, as recent oil prices likely require time to make their effect on sales. It's even possible oil prices with a certain degree of lag are the more important predictors compared to more recent oil prices.
 
 ```{python OilMAs}
 
@@ -1491,9 +1490,9 @@ plt.show()
 plt.close("all")
 ```
 
-We don't see particularly strong relationships between oil price change MAs and sales, though the monthly MA is the most notable one, so we will use that as a feature.
+We don't see particularly strong relationships between oil price change MAs and sales, though the monthly MA is the most notable one with a correlation of -0.2, so we will use that as a feature.
 
-Since we need 28 past periods to calculate this MA for a 29th period, we'll have missing values for the first 28 periods in our data. After some iteration, these were interpolated well with a second-order spline interpolation.
+Since we need 28 past periods to calculate this MA for a 29th period, we'll have missing values for the first 28 periods in our data. After some iteration, these were interpolated decently with a second-order spline interpolation.
 
 ```{python OilMaInterpolate}
 
@@ -1514,6 +1513,8 @@ plt.close("all")
 
 ### Onpromotion features
 
+Onpromotion is the number of items that are on sale, aggregated across all stores and categories. We'll start exploring the relationship between onpromotion and sales using a cross-correlation plot: The correlations of sales at time 0, with lags and leads of onpromotion. Since the supermarket chain controls the number of items that will go on sale, it may be feasible to use leading values of onpromotion as predictors.
+
 ```{python OnpCCF}
 #| echo: false
 
@@ -1527,6 +1528,8 @@ _ = plt.title("Cross-correlation, decomposed sales & onpromotion change")
 plt.show()
 plt.close("all")
 ```
+
+Single lags / leads of onpromotion don't display any significant correlations with sales, though there is a repeating pattern of likely six days. Let's look at the scatterplots of sales at time 0, with four of the more relatively significant lags (lag 0 being the present value of onpromotion).
 
 ```{python OnpLags}
 #| echo: false
@@ -1595,6 +1598,8 @@ _ = axes12[1,1].annotate(
 plt.show()
 plt.close("all")
 ```
+
+Again, no significant relationship between single onpromotion lags and sales. Let's consider moving averages.
 
 ```{python OnpMAs}
 #| echo: false
@@ -1676,6 +1681,8 @@ plt.show()
 plt.close("all")
 ```
 
+The monthly and quarterly MA of onpromotion seems to be slightly positively correlated with sales. We'll use the monthly MA as a feature, as we would have to fill in too many missing values for the quarterly MA.
+
 ```{python OnpMaInterpolate}
 
 # Keep monthly onpromotion MAs as a feature
@@ -1693,7 +1700,21 @@ plt.show()
 plt.close("all")
 ```
 
+The daily changes in onpromotion are practically zero roughly until Q1 2014. Afterwards, changes in onpromotion became increasingly larger, which probably hints at a macroeconomic shift in 2014. The cyclicality in our data becomes especially prominent in 2014 as well.
+
 ### Transactions features
+
+Finally, we have the number of transactions, aggregated across all stores.
+
+-   This is most likely to be a current predictor of sales, i.e. days with higher transactions are likely to be days with higher sales.
+
+-   Still, recent levels of transactions may help us predict future sales.
+
+-   The transactions data is only available for the training dataset (up to mid-August 2017), and not for the testing dataset (15 days after the training dataset).
+
+-   We can freely consider transactions as a feature for Part 1 of this analysis, but in Part 2, we'll aim to predict the testing data and make a competition submission, so we'll only be able to consider lag 15 or older values of transactions as features.
+
+-   Lag 15 is marked with a red dashed vertical line in the cross-correlation plot below.
 
 ```{python TransCCF}
 #| echo: false
@@ -1709,6 +1730,8 @@ _ = plt.title("Cross-correlation, decomposed sales & transactions change")
 plt.show()
 plt.close("all")
 ```
+
+Again, single transactions lags don't display strong correlations with sales. Unlike onpromotion, there doesn't seem to be a repeating pattern either. Lags 0-3 are relatively stronger, so let's see their scatterplots.
 
 ```{python TransLags}
 #| echo: false
@@ -1778,6 +1801,14 @@ plt.show()
 plt.close("all")
 
 ```
+
+As we expected, the present value of transactions have a weak, but relatively stronger positive relationship with the value of sales compared to the lags.
+
+-   However, the correlation and the line is impacted by a few outliers with particularly low or high values for transactions, while the relationship seems even weaker for the vast majority of observations.
+
+-   This likely tells us that a huge drop / increase in transactions is likely to affect sales a bit, but usual fluctuations in transactions doesn't tell much about the sales.
+
+Let's consider moving averages of changes in transactions, as a possible indicator of recent sales activity.
 
 ```{python TransMAs}
 #| echo: true
@@ -1859,6 +1890,8 @@ plt.show()
 plt.close("all")
 ```
 
+The MAs are much more significant than single lags, though the correlations are still likely impacted by extreme values. Still, these features could help our model adjust for extreme increases / decreases in transactions. We'll keep the weekly MA as it has the strongest linear relationship, and will create the fewest number of missing values to fill in.
+
 ```{python TransMAInterpolate}
 
 # Keep weekly transactions MA
@@ -1875,9 +1908,13 @@ plt.show()
 plt.close("all")
 ```
 
+We can see the sharp drop in transactions on January 1st, and the recovery on January 2nd, reflected both in the time series plot of transactions changes, and its weekly moving average.
+
 ## Model 2 - Lags & covariates
 
 ### Preprocessing
+
+We repeat some preprocessing steps for Model 2.
 
 ```{python Model2Covars}
 
@@ -1885,7 +1922,7 @@ plt.close("all")
 lags_covars = sales_covariates.drop(
   ['oil', 'onpromotion', 'transactions', 'sales'], axis = 1)
 
-# Make Darts TS with covariates
+# Make Darts TS with selected covariates
 ts_lagscovars = TimeSeries.from_dataframe(
   lags_covars, freq="D")
 
@@ -1904,6 +1941,8 @@ y_train2, y_val2 = ts_decomp[:-227], trafo_log(ts_sales[-227:])
 x_train2, x_val2 = ts_lagscovars[:-227], ts_lagscovars[-227:]
 ```
 
+In Model 1, our features were trend dummies, Fourier pairs and binary / ordinal features for calendar effects, none of which required scaling. In this model, we have covariates of different natures and value ranges. For example, the oil price changes are often fractional, while changes in transactions are often in the thousands. The former reflects a unit price, the latter reflects a count. Therefore, we'll scale and center our features to avoid domination by features with large values.
+
 ```{python ScaleCovars}
 
 # Scale covariates
@@ -1916,6 +1955,24 @@ x_val2 = scaler.transform(x_val2)
 
 ### Model specification
 
+We'll use the same baseline models as we did in Model 1. We'll compare them with an ARIMA model, another linear regression, and a random forest model.
+
+-   ARIMA models combine **autoregressive models (AR)** and **moving average models (MA)**.
+
+    -   An AR model of **order p** uses the linear combination of **past p values** of a series as predictors, to forecast its future values.
+
+    -   A MA model of **order q** performs regression on the **past q forecast errors** of a series to forecast its future values. It can be thought of as a weighted moving average of the past q forecast errors.
+
+    -   The **order d** indicates the order of differentiation previously applied to the target series.
+
+    -   The ARIMA model (at least this implementation) doesn't take in other covariates.
+
+-   A random forest builds **an N number of decision trees**, each with **an M number of randomly selected predictors** out of all the predictors in the data. The predictions of each tree are combined with a voting system, yielding an **ensemble prediction** robust against overfitting.
+
+    -   Tree-based models can perform feature selection to a degree, capture non-linear relationships, and discover interactions between predictions. They can't extrapolate a relationship outside the value ranges in the training set, so we didn't consider them for the time decomposition model.
+
+    -   We could also include a more capable tree-based gradient boosting algorithm such as XGBoost, but these often require [extensive hyperparameter tuning](https://github.com/AhmetZamanis/LoanRequestClassification/blob/main/Report.md#xgboost) to perform at their best, so we will skip it for Part 1 of this analysis. In contrast, the random forest has few hyperparameters, and the default settings often do well without needing tuning.
+
 ```{python ModelSpec2}
 
 # Import models
@@ -1926,28 +1983,52 @@ from darts.models.forecasting.random_forest import RandomForest
 
 # Specify baseline models
 model_drift = NaiveDrift()
-model_seasonal = NaiveSeasonal()
+model_seasonal = NaiveSeasonal(K=7)
 
 # Specify ARIMA model
-model_arima = ARIMA(p = 1, d = 0, q = 0, trend = "n", random_state = 1923)
+model_arima = ARIMA(
+  p = 7, # AR model of order 7 
+  d = 0, # No MA model
+  q = 0, # No differentiation applied to target
+  trend = "n", # No trend
+  random_state = 1923
+  )
 
 # Specify second linear regression model
 model_linear2 = LinearRegressionModel(
-  lags = 1,
-  lags_future_covariates = [0])
+  lags = 1, # Target lag 1
+  lags_future_covariates = [0] # No covariate lags
+  )
 
 # Specify random forest model  
 model_forest = RandomForest(
-  lags = 1,
-  lags_future_covariates = [0], 
+  lags = [-1, -2, -3, -4, -5, -6, -7], # Target lags that can be used
+  lags_future_covariates = [0], # No covariate lags
   random_state = 1923,
-  n_jobs = 3)
+  n_jobs = -2 # Use all but one of the CPUs
+  )
 ```
+
+As with Model 1, our naive seasonal model will repeat the last 7 values in the training data. This was the most significant seasonality period before time decomposition. Now it appears to be the most significant period for cyclical effects.
+
+-   To determine the orders of the AR and MA components in the ARIMA model, we look at the ACF and PACF plots of decomposed sales (see [Sales features]).
+
+    -   An ARIMA model of (p, d, 0) may be suitable if the ACF plot shows exponential / sinusoidal decline, and the last significant spike in the PACF plot is at lag p.
+
+    -   Accordingly, we specify a (p = 7, d = 0, q = 0) ARIMA model. This amounts to an AR(7) model, with no MA component.
+
+    -   We specify a differencing order of 0 (d = 0), as our target is already decomposed of time effects, so we didn't difference it. We do not perform detrending either.
+
+-   Our linear regression model will take in sales lag 1, sales EMA7, oil MA28, onpromotion MA28 and transactions MA7 as predictors.
+
+-   The random forest model is capable of feature selection to a degree, so we will feed it the same predictors as the linear regression model, plus lags 2-7 which were slightly significant on their own.
 
 ### Model validation: Predicting 2017 sales
 
+Let's train our models on the decomposed sales of 2013-2016, predict the values for 2017, and add these to the 2017 predictions of Model 1 to retrieve our final, hybrid model predictions.
+
 ```{python 2017Pred2}
-#| include: false
+#| output: false
 
 # Fit models on train data (pre-2017), predict validation data (2017)
 model_drift.fit(y_train2)
@@ -1978,12 +2059,36 @@ perf_scores(y_val2, pred_linear2, model="Linear")
 perf_scores(y_val2, pred_forest, model="Random forest")
 ```
 
+Remember that these are hybrid predictions: Each prediction is the combined result of the linear regression time decomposition model, and the respective lags & covariates models.
+
+-   As a refresher, Model 1's standalone performance scores on 2017 data:
+
+        RMSE: 75003.7023
+        RMSLE: 0.1061
+        MAPE: 8.1491
+
+-   Combining Model 1 with a baseline model doesn't increase prediction errors all that much. This is because our data had strong time effects, so getting Model 1 right did most of the job. The residuals (decomposed sales) are small in comparison to the Model 1 predictions, so adding the predictions from a naive Model 2 don't impact the final predictions too badly.
+
+-   Combining Model 1 with an ARIMA model increases our errors slightly.
+
+-   Combining Model 1 with a second linear model increases our RMSE and RMSLE a bit, but also reduces our MAPE.
+
+    -   This is likely because MAPE is a measure of relative error, while RMSE and RMSLE are measures of absolute error. For example, an absolute error of 2 translates to 2% MAPE if the actual value is 100, but it translates to 0.2% MAPE if the actual value is 1000. In both cases, the absolute error is the same, but we may argue it's more "costly" for the former case.
+
+    -   This likely means that the Model 1 + linear hybrid makes larger absolute errors but for more for larger values, while Model 1 makes smaller absolute errors but for more for smaller values. Which case is better is subjective.
+
+    -   In either case RMSLE could be preferred as it penalizes underpredictions more, and meeting demand can be considered our primary goal.
+
+-   Combining Model 1 with the random forest model decreases all error metrics considerably, and it appears to be the winning choice.
+
+Let's see the predictions plotted against the actual values, and compare them with Model 1 plots.
+
 ```{python 2017Plot2}
 #| echo: false
 
 # FIG15: Plot models' predictions against actual values
 fig15, axes15 = plt.subplots(3, sharex=True, sharey=True)
-_ = fig15.suptitle("Actual vs. predicted sales, hybrid models, orange = Actual")
+_ = fig15.suptitle("Actual vs. predicted sales, hybrid models, orange = predicted")
 
 # ARIMA
 _ = trafo_exp(y_val2).plot(ax = axes15[0], label="Actual")
@@ -2006,7 +2111,23 @@ plt.show()
 plt.close("all")
 ```
 
+The performance of the 3 hybrids are similar overall, and it's hard to see big differences from the plots.
+
+-   The random forest did a better job of adjusting to some peaks and troughs, likely because it is able to select features and find interactions between predictors.
+
+-   Still, certain large peaks are unaccounted for, especially the sharp recovery after January 1st, and the peaks at the start of April and May 2017. These may be due to factors not documented in our dataset. Or they may be related to commemorations for the earthquake in April 2016.
+
 ### Backtesting / Historical forecasts
+
+We can retrieve the historical forecasts for the hybrid model as we did for Model 1.
+
+-   Keep in mind we performed time decomposition by fitting Model 1 on 2013-2016 and retrieving the fitted residuals for 2013-2016.
+
+-   This will bias the historical forecasts for 2013-2016, so they shouldn't be interpreted as reliable out-of-sample validation.
+
+-   2017 does not suffer from this issue, as 2017 time decomposed sales were predicted out-of-sample.
+
+-   As before, we'll start by feeding the full year of 2013 as our initial training data, and expand our training window by 1 day in each iteration.
 
 ```{python HistFore2}
 
@@ -2028,6 +2149,8 @@ res_hist2 = trafo_log(ts_sales[365:]) - pred_hist2
 perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + random forest")
 ```
 
+With Model 1, the historical forecasts performed considerably worse than the 2017 predictions. With the hybrid, the historical forecasts seem to have performed slightly better than the 2017. Again, this is partly misleading due to the way we performed time decomposition, but the improvements from accounting for cyclical effects in 2014-2015 are likely a factor too.
+
 ```{python HistForePlot2}
 #| echo: false
 
@@ -2040,7 +2163,11 @@ plt.show()
 plt.close("all")
 ```
 
-### Residuals diagnosis
+As we see from the historical forecasts plot, the cyclical fluctuations in 2014 and H1 2015, which were mostly unaccounted for in Model 1, are matched nicely with the hybrid model. The peaks and troughs in the rest of the data are also matched better.
+
+### Residuals diagnosis & stationarity
+
+We can diagnose the residuals of the hybrid model and test their stationarity.
 
 ```{python DiagModel2}
 
@@ -2062,11 +2189,55 @@ plt.show()
 plt.close("all")
 ```
 
-```{python StatTestModel2}
+Overall, the residuals seem much closer to stationary.
+
+-   There are a few particularly large residuals, especially in 2014-2015, and at year starts.
+
+-   The distribution of residuals is more centered around 0, with smaller extreme values. This time, the extreme values are well-balanced between positive and negative. Still, it's possible to say the models underpredict a bit more than they overpredict. The opposite would be more preferable.
+
+-   The ACF and PACF plots display almost no significant autocorrelation, except for a weak autocorrelation with lag 1.
+
+```{python StatTestKPSS1}
 
 # Stationarity tests on hybrid model residuals
-stationarity_test_kpss(res_hist2)
-stationarity_test_adf(res_hist2)
+print(
+  "KPSS test p-value: " + 
+  stationarity_test_kpss(res_hist2)[1].astype(str)
+) # Null rejected = data is non-stationary
+
+print(
+  "ADF test p-value: " + 
+  str(stationarity_test_adf(res_hist2)[1])
+) # Null rejected = data is stationary around a constant
+
 ```
 
+The stationarity tests are still conflicting:
+
+-   The p-value for the KPSS test is smaller than 0.05, leading us to reject the null hypothesis of stationarity around a constant. However, the p-value is much larger than the KPSS test on Model 1 residuals.
+
+-   The p-value for the ADF test is 0, rejecting the null hypothesis of the presence of an unit root. This implies the data is stationary around a constant.
+
 ## Conclusion
+
+In part 1 of this analysis, we were able to predict national daily sales, aggregated across all categories and stores, pretty well.
+
+-   In the end, a hybrid model combining linear regression for the time effects, and random forest regression for the remainder, gave us the best results.
+
+-   However, the second model's relative improvement was fairly small, as the first model already performed very well.
+
+-   This means the time & seasonality effects in our data were much stronger than any "unexpected" cyclicality, which is what we'd intuitively expect for supermarket sales.
+
+-   Still, there was considerable cyclicality in 2014 and H2 2015, which showed up as relatively large values in the residuals of model 1. Applying autoregression in model 2 helped us adjust for these.
+
+-   Autoregression is more "reactive" than predictive: It likely won't predict a first sudden fluctuation before it happens, but that fluctuation will enter the model as a predictor in the next period, and allow the model to adjust for the following periods.
+
+In part 2, we will attempt to make a competition submission, predicting the daily sales for every store & every category combination. That makes 33 categories across 54 stores, a total of 1782 series to generate a prediction for.
+
+-   In part 1, with only one series to predict, we were able to perform exploratory analysis and carefully tailor our models, especially for time decomposition. It's also generally easier to predict more aggregated series, as they are less noisy: The national sales likely fluctuate much less compared to sales in one store or category.
+
+-   In part 2, we will have to come up with a strategy that will simplify our work, while still yielding good predictions. The 33 product categories likely have very different seasonality patterns. We'll likely rely on more "automatic" models that are able to derive time effects & seasonality, and ideally model them along with autocorrelation and any covariate effects in one go instead of using hybrids or tailored feature sets.
+
+-   We'll also explore the topic of **hierarchical reconciliation**: Making sure our predictions are coherent within the levels of hierarchy. There are several methods to reconcile predictions in a hierarchy, and it can even improve prediction accuracy.
+
+Any comment or suggestion is welcome.
