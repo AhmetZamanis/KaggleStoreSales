@@ -101,85 +101,15 @@ consists of the following 15 days, in August 2017. We won’t do a
 competition submission in Part 1, so we won’t load the testing data.
 
 ``` python
-# View the daily sales data
-df_train.head(5)
+print(df_train.head(5))
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>id</th>
-      <th>date</th>
-      <th>store_nbr</th>
-      <th>family</th>
-      <th>sales</th>
-      <th>onpromotion</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>0</td>
-      <td>2013-01-01</td>
-      <td>1</td>
-      <td>AUTOMOTIVE</td>
-      <td>0.0000</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1</td>
-      <td>2013-01-01</td>
-      <td>1</td>
-      <td>BABY CARE</td>
-      <td>0.0000</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>2</td>
-      <td>2013-01-01</td>
-      <td>1</td>
-      <td>BEAUTY</td>
-      <td>0.0000</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>3</td>
-      <td>2013-01-01</td>
-      <td>1</td>
-      <td>BEVERAGES</td>
-      <td>0.0000</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>4</td>
-      <td>2013-01-01</td>
-      <td>1</td>
-      <td>BOOKS</td>
-      <td>0.0000</td>
-      <td>0</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+       id        date  store_nbr      family  sales  onpromotion
+    0   0  2013-01-01          1  AUTOMOTIVE 0.0000            0
+    1   1  2013-01-01          1   BABY CARE 0.0000            0
+    2   2  2013-01-01          1      BEAUTY 0.0000            0
+    3   3  2013-01-01          1   BEVERAGES 0.0000            0
+    4   4  2013-01-01          1       BOOKS 0.0000            0
 
 - For each day, we have the sales in each store (out of a possible 54)
   and each product category (out of a possible 33). This amounts to 1782
@@ -194,78 +124,15 @@ df_train.head(5)
 state, store type and store cluster.
 
 ``` python
-df_stores.head(5)
+print(df_stores.head(5))
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>store_nbr</th>
-      <th>city</th>
-      <th>state</th>
-      <th>type</th>
-      <th>cluster</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>1</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>2</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>3</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>8</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>4</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>9</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>5</td>
-      <td>Santo Domingo</td>
-      <td>Santo Domingo de los Tsachilas</td>
-      <td>D</td>
-      <td>4</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+       store_nbr           city                           state type  cluster
+    0          1          Quito                       Pichincha    D       13
+    1          2          Quito                       Pichincha    D       13
+    2          3          Quito                       Pichincha    D        8
+    3          4          Quito                       Pichincha    D        9
+    4          5  Santo Domingo  Santo Domingo de los Tsachilas    D        4
 
 **holidays.csv** contains information about local (city-wide), regional
 (state-wide) and national holidays, and some special nation-wide events
@@ -273,84 +140,22 @@ in the time period. We will use these along with the stores’ location
 data to create calendar features.
 
 ``` python
-df_holidays.head(5)
+print(df_holidays.head(5))
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+             date     type    locale locale_name                    description  \
+    0  2012-03-02  Holiday     Local       Manta             Fundacion de Manta   
+    1  2012-04-01  Holiday  Regional    Cotopaxi  Provincializacion de Cotopaxi   
+    2  2012-04-12  Holiday     Local      Cuenca            Fundacion de Cuenca   
+    3  2012-04-14  Holiday     Local    Libertad      Cantonizacion de Libertad   
+    4  2012-04-21  Holiday     Local    Riobamba      Cantonizacion de Riobamba   
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>type</th>
-      <th>locale</th>
-      <th>locale_name</th>
-      <th>description</th>
-      <th>transferred</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>2012-03-02</td>
-      <td>Holiday</td>
-      <td>Local</td>
-      <td>Manta</td>
-      <td>Fundacion de Manta</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>2012-04-01</td>
-      <td>Holiday</td>
-      <td>Regional</td>
-      <td>Cotopaxi</td>
-      <td>Provincializacion de Cotopaxi</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>2012-04-12</td>
-      <td>Holiday</td>
-      <td>Local</td>
-      <td>Cuenca</td>
-      <td>Fundacion de Cuenca</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>2012-04-14</td>
-      <td>Holiday</td>
-      <td>Local</td>
-      <td>Libertad</td>
-      <td>Cantonizacion de Libertad</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>2012-04-21</td>
-      <td>Holiday</td>
-      <td>Local</td>
-      <td>Riobamba</td>
-      <td>Cantonizacion de Riobamba</td>
-      <td>False</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+       transferred  
+    0        False  
+    1        False  
+    2        False  
+    3        False  
+    4        False  
 
 **oil.csv** consists of the daily oil prices in the time period. Ecuador
 has an oil-dependent economy, so this may be a useful predictor of the
@@ -358,126 +163,30 @@ cyclicality in supermarket sales. We don’t have the oil price for the
 first day of the time series.
 
 ``` python
-df_oil.head(5)
+print(df_oil.head(5))
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>dcoilwtico</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>2013-01-01</td>
-      <td>NaN</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>2013-01-02</td>
-      <td>93.1400</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>2013-01-03</td>
-      <td>92.9700</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>2013-01-04</td>
-      <td>93.1200</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>2013-01-07</td>
-      <td>93.2000</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+             date  dcoilwtico
+    0  2013-01-01         NaN
+    1  2013-01-02     93.1400
+    2  2013-01-03     92.9700
+    3  2013-01-04     93.1200
+    4  2013-01-07     93.2000
 
 **transactions.csv** consists of the daily number of transactions at a
 store. Another potentially useful feature. Each row is the number of
 transactions in all categories, one day, at one store.
 
 ``` python
-df_trans.head(5)
+print(df_trans.head(5))
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>store_nbr</th>
-      <th>transactions</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>2013-01-01</td>
-      <td>25</td>
-      <td>770</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>2013-01-02</td>
-      <td>1</td>
-      <td>2111</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>2013-01-02</td>
-      <td>2</td>
-      <td>2358</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>2013-01-02</td>
-      <td>3</td>
-      <td>3487</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>2013-01-02</td>
-      <td>4</td>
-      <td>1922</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+             date  store_nbr  transactions
+    0  2013-01-01         25           770
+    1  2013-01-02          1          2111
+    2  2013-01-02          2          2358
+    3  2013-01-02          3          3487
+    4  2013-01-02          4          1922
 
 We will rename some columns from the datasets and merge the
 supplementary information into the sales dataset. We’ll aggregate daily
@@ -529,57 +238,16 @@ issues in feature engineering.
 
 ``` python
 # Inspect local holidays sharing same date & locale
-local[local.duplicated(["date", "locale_name"], keep = False)]
+print(local[local.duplicated(["date", "locale_name"], keep = False)])
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+               date holiday_type locale locale_name  \
+    264  2016-07-24   Additional  Local   Guayaquil   
+    265  2016-07-24     Transfer  Local   Guayaquil   
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>holiday_type</th>
-      <th>locale</th>
-      <th>locale_name</th>
-      <th>description</th>
-      <th>transferred</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>264</th>
-      <td>2016-07-24</td>
-      <td>Additional</td>
-      <td>Local</td>
-      <td>Guayaquil</td>
-      <td>Fundacion de Guayaquil-1</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>265</th>
-      <td>2016-07-24</td>
-      <td>Transfer</td>
-      <td>Local</td>
-      <td>Guayaquil</td>
-      <td>Traslado Fundacion de Guayaquil</td>
-      <td>False</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+                             description  transferred  
+    264         Fundacion de Guayaquil-1        False  
+    265  Traslado Fundacion de Guayaquil        False  
 
 ``` python
 # Drop the transfer row
@@ -588,129 +256,33 @@ local = local.drop(265, axis = 0)
 
 ``` python
 # Inspect regional holidays sharing same date & locale. None exist
-regional[regional.duplicated(["date", "locale_name"], keep = False)]
+print(regional[regional.duplicated(["date", "locale_name"], keep = False)])
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>holiday_type</th>
-      <th>locale</th>
-      <th>locale_name</th>
-      <th>description</th>
-      <th>transferred</th>
-    </tr>
-  </thead>
-  <tbody>
-  </tbody>
-</table>
-</div>
+    Empty DataFrame
+    Columns: [date, holiday_type, locale, locale_name, description, transferred]
+    Index: []
 
 ``` python
 # Inspect national holidays sharing same date & locale
-national[national.duplicated(["date"], keep = False)]
+print(national[national.duplicated(["date"], keep = False)])
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+               date holiday_type    locale locale_name                description  \
+    35   2012-12-24       Bridge  National     Ecuador             Puente Navidad   
+    36   2012-12-24   Additional  National     Ecuador                  Navidad-1   
+    39   2012-12-31       Bridge  National     Ecuador  Puente Primer dia del ano   
+    40   2012-12-31   Additional  National     Ecuador       Primer dia del ano-1   
+    156  2014-12-26       Bridge  National     Ecuador             Puente Navidad   
+    157  2014-12-26   Additional  National     Ecuador                  Navidad+1   
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>holiday_type</th>
-      <th>locale</th>
-      <th>locale_name</th>
-      <th>description</th>
-      <th>transferred</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>35</th>
-      <td>2012-12-24</td>
-      <td>Bridge</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Puente Navidad</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>36</th>
-      <td>2012-12-24</td>
-      <td>Additional</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Navidad-1</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>39</th>
-      <td>2012-12-31</td>
-      <td>Bridge</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Puente Primer dia del ano</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>40</th>
-      <td>2012-12-31</td>
-      <td>Additional</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Primer dia del ano-1</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>156</th>
-      <td>2014-12-26</td>
-      <td>Bridge</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Puente Navidad</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>157</th>
-      <td>2014-12-26</td>
-      <td>Additional</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Navidad+1</td>
-      <td>False</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+         transferred  
+    35         False  
+    36         False  
+    39         False  
+    40         False  
+    156        False  
+    157        False  
 
 ``` python
 # Drop bridge days
@@ -719,57 +291,16 @@ national = national.drop([35, 39, 156], axis = 0)
 
 ``` python
 # Inspect events sharing same date
-events[events.duplicated(["date"], keep = False)]
+print(events[events.duplicated(["date"], keep = False)])
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+               date holiday_type    locale locale_name          description  \
+    244  2016-05-08        Event  National     Ecuador  Terremoto Manabi+22   
+    245  2016-05-08        Event  National     Ecuador      Dia de la Madre   
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>date</th>
-      <th>holiday_type</th>
-      <th>locale</th>
-      <th>locale_name</th>
-      <th>description</th>
-      <th>transferred</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>244</th>
-      <td>2016-05-08</td>
-      <td>Event</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Terremoto Manabi+22</td>
-      <td>False</td>
-    </tr>
-    <tr>
-      <th>245</th>
-      <td>2016-05-08</td>
-      <td>Event</td>
-      <td>National</td>
-      <td>Ecuador</td>
-      <td>Dia de la Madre</td>
-      <td>False</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+         transferred  
+    244        False  
+    245        False  
 
 ``` python
 # Drop the earthquake row as it is a one-time event
@@ -843,156 +374,32 @@ data with the added columns.
 # Set datetime index
 df_train = df_train.set_index(pd.to_datetime(df_train.date))
 df_train = df_train.drop("date", axis=1)
-df_train.head(5)
+print(df_train.head(5))
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+                id  store_nbr      family  sales  onpromotion  transactions  oil  \
+    date                                                                           
+    2013-01-01   0          1  AUTOMOTIVE 0.0000            0      770.0000  NaN   
+    2013-01-01   1          1   BABY CARE 0.0000            0      770.0000  NaN   
+    2013-01-01   2          1      BEAUTY 0.0000            0      770.0000  NaN   
+    2013-01-01   3          1   BEVERAGES 0.0000            0      770.0000  NaN   
+    2013-01-01   4          1       BOOKS 0.0000            0      770.0000  NaN   
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
+                 city      state store_type  store_cluster  local_holiday  \
+    date                                                                    
+    2013-01-01  Quito  Pichincha          D             13              0   
+    2013-01-01  Quito  Pichincha          D             13              0   
+    2013-01-01  Quito  Pichincha          D             13              0   
+    2013-01-01  Quito  Pichincha          D             13              0   
+    2013-01-01  Quito  Pichincha          D             13              0   
 
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>id</th>
-      <th>store_nbr</th>
-      <th>family</th>
-      <th>sales</th>
-      <th>onpromotion</th>
-      <th>transactions</th>
-      <th>oil</th>
-      <th>city</th>
-      <th>state</th>
-      <th>store_type</th>
-      <th>store_cluster</th>
-      <th>local_holiday</th>
-      <th>regional_holiday</th>
-      <th>national_holiday</th>
-      <th>event</th>
-    </tr>
-    <tr>
-      <th>date</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>2013-01-01</th>
-      <td>0</td>
-      <td>1</td>
-      <td>AUTOMOTIVE</td>
-      <td>0.0000</td>
-      <td>0</td>
-      <td>770.0000</td>
-      <td>NaN</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-      <td>0</td>
-      <td>0</td>
-      <td>1</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>2013-01-01</th>
-      <td>1</td>
-      <td>1</td>
-      <td>BABY CARE</td>
-      <td>0.0000</td>
-      <td>0</td>
-      <td>770.0000</td>
-      <td>NaN</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-      <td>0</td>
-      <td>0</td>
-      <td>1</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>2013-01-01</th>
-      <td>2</td>
-      <td>1</td>
-      <td>BEAUTY</td>
-      <td>0.0000</td>
-      <td>0</td>
-      <td>770.0000</td>
-      <td>NaN</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-      <td>0</td>
-      <td>0</td>
-      <td>1</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>2013-01-01</th>
-      <td>3</td>
-      <td>1</td>
-      <td>BEVERAGES</td>
-      <td>0.0000</td>
-      <td>0</td>
-      <td>770.0000</td>
-      <td>NaN</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-      <td>0</td>
-      <td>0</td>
-      <td>1</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>2013-01-01</th>
-      <td>4</td>
-      <td>1</td>
-      <td>BOOKS</td>
-      <td>0.0000</td>
-      <td>0</td>
-      <td>770.0000</td>
-      <td>NaN</td>
-      <td>Quito</td>
-      <td>Pichincha</td>
-      <td>D</td>
-      <td>13</td>
-      <td>0</td>
-      <td>0</td>
-      <td>1</td>
-      <td>0</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+                regional_holiday  national_holiday  event  
+    date                                                   
+    2013-01-01                 0                 1      0  
+    2013-01-01                 0                 1      0  
+    2013-01-01                 0                 1      0  
+    2013-01-01                 0                 1      0  
+    2013-01-01                 0                 1      0  
 
 With financial data, it’s a good idea to normalize for inflation. We’ll
 CPI adjust the sales and oil prices columns, with 2010 as our base year.
@@ -1087,415 +494,30 @@ ts_sales = TimeSeries.from_series(
   sales, 
   freq="D" # Time series frequency is daily
   )
-ts_sales
+print(ts_sales)
 ```
 
-<div><svg style="position: absolute; width: 0; height: 0; overflow: hidden">
-<defs>
-<symbol id="icon-database" viewBox="0 0 32 32">
-<path d="M16 0c-8.837 0-16 2.239-16 5v4c0 2.761 7.163 5 16 5s16-2.239 16-5v-4c0-2.761-7.163-5-16-5z"></path>
-<path d="M16 17c-8.837 0-16-2.239-16-5v6c0 2.761 7.163 5 16 5s16-2.239 16-5v-6c0 2.761-7.163 5-16 5z"></path>
-<path d="M16 26c-8.837 0-16-2.239-16-5v6c0 2.761 7.163 5 16 5s16-2.239 16-5v-6c0 2.761-7.163 5-16 5z"></path>
-</symbol>
-<symbol id="icon-file-text2" viewBox="0 0 32 32">
-<path d="M28.681 7.159c-0.694-0.947-1.662-2.053-2.724-3.116s-2.169-2.030-3.116-2.724c-1.612-1.182-2.393-1.319-2.841-1.319h-15.5c-1.378 0-2.5 1.121-2.5 2.5v27c0 1.378 1.122 2.5 2.5 2.5h23c1.378 0 2.5-1.122 2.5-2.5v-19.5c0-0.448-0.137-1.23-1.319-2.841zM24.543 5.457c0.959 0.959 1.712 1.825 2.268 2.543h-4.811v-4.811c0.718 0.556 1.584 1.309 2.543 2.268zM28 29.5c0 0.271-0.229 0.5-0.5 0.5h-23c-0.271 0-0.5-0.229-0.5-0.5v-27c0-0.271 0.229-0.5 0.5-0.5 0 0 15.499-0 15.5 0v7c0 0.552 0.448 1 1 1h7v19.5z"></path>
-<path d="M23 26h-14c-0.552 0-1-0.448-1-1s0.448-1 1-1h14c0.552 0 1 0.448 1 1s-0.448 1-1 1z"></path>
-<path d="M23 22h-14c-0.552 0-1-0.448-1-1s0.448-1 1-1h14c0.552 0 1 0.448 1 1s-0.448 1-1 1z"></path>
-<path d="M23 18h-14c-0.552 0-1-0.448-1-1s0.448-1 1-1h14c0.552 0 1 0.448 1 1s-0.448 1-1 1z"></path>
-</symbol>
-</defs>
-</svg>
-<style>/* CSS stylesheet for displaying xarray objects in jupyterlab.
- *
- */
+    <TimeSeries (DataArray) (date: 1688, component: 1, sample: 1)>
+    array([[[  2226.6126]],
 
-:root {
-  --xr-font-color0: var(--jp-content-font-color0, rgba(0, 0, 0, 1));
-  --xr-font-color2: var(--jp-content-font-color2, rgba(0, 0, 0, 0.54));
-  --xr-font-color3: var(--jp-content-font-color3, rgba(0, 0, 0, 0.38));
-  --xr-border-color: var(--jp-border-color2, #e0e0e0);
-  --xr-disabled-color: var(--jp-layout-color3, #bdbdbd);
-  --xr-background-color: var(--jp-layout-color0, white);
-  --xr-background-color-row-even: var(--jp-layout-color1, white);
-  --xr-background-color-row-odd: var(--jp-layout-color2, #eeeeee);
-}
+           [[439798.2429]],
 
-html[theme=dark],
-body[data-theme=dark],
-body.vscode-dark {
-  --xr-font-color0: rgba(255, 255, 255, 1);
-  --xr-font-color2: rgba(255, 255, 255, 0.54);
-  --xr-font-color3: rgba(255, 255, 255, 0.38);
-  --xr-border-color: #1F1F1F;
-  --xr-disabled-color: #515151;
-  --xr-background-color: #111111;
-  --xr-background-color-row-even: #111111;
-  --xr-background-color-row-odd: #313131;
-}
+           [[320444.3538]],
 
-.xr-wrap {
-  display: block !important;
-  min-width: 300px;
-  max-width: 700px;
-}
+           ...,
 
-.xr-text-repr-fallback {
-  /* fallback to plain text repr when CSS is not injected (untrusted notebook) */
-  display: none;
-}
+           [[700355.7261]],
 
-.xr-header {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  margin-bottom: 4px;
-  border-bottom: solid 1px var(--xr-border-color);
-}
+           [[615633.0146]],
 
-.xr-header > div,
-.xr-header > ul {
-  display: inline;
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
-.xr-obj-type,
-.xr-array-name {
-  margin-left: 2px;
-  margin-right: 10px;
-}
-
-.xr-obj-type {
-  color: var(--xr-font-color2);
-}
-
-.xr-sections {
-  padding-left: 0 !important;
-  display: grid;
-  grid-template-columns: 150px auto auto 1fr 20px 20px;
-}
-
-.xr-section-item {
-  display: contents;
-}
-
-.xr-section-item input {
-  display: none;
-}
-
-.xr-section-item input + label {
-  color: var(--xr-disabled-color);
-}
-
-.xr-section-item input:enabled + label {
-  cursor: pointer;
-  color: var(--xr-font-color2);
-}
-
-.xr-section-item input:enabled + label:hover {
-  color: var(--xr-font-color0);
-}
-
-.xr-section-summary {
-  grid-column: 1;
-  color: var(--xr-font-color2);
-  font-weight: 500;
-}
-
-.xr-section-summary > span {
-  display: inline-block;
-  padding-left: 0.5em;
-}
-
-.xr-section-summary-in:disabled + label {
-  color: var(--xr-font-color2);
-}
-
-.xr-section-summary-in + label:before {
-  display: inline-block;
-  content: '►';
-  font-size: 11px;
-  width: 15px;
-  text-align: center;
-}
-
-.xr-section-summary-in:disabled + label:before {
-  color: var(--xr-disabled-color);
-}
-
-.xr-section-summary-in:checked + label:before {
-  content: '▼';
-}
-
-.xr-section-summary-in:checked + label > span {
-  display: none;
-}
-
-.xr-section-summary,
-.xr-section-inline-details {
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-
-.xr-section-inline-details {
-  grid-column: 2 / -1;
-}
-
-.xr-section-details {
-  display: none;
-  grid-column: 1 / -1;
-  margin-bottom: 5px;
-}
-
-.xr-section-summary-in:checked ~ .xr-section-details {
-  display: contents;
-}
-
-.xr-array-wrap {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 20px auto;
-}
-
-.xr-array-wrap > label {
-  grid-column: 1;
-  vertical-align: top;
-}
-
-.xr-preview {
-  color: var(--xr-font-color3);
-}
-
-.xr-array-preview,
-.xr-array-data {
-  padding: 0 5px !important;
-  grid-column: 2;
-}
-
-.xr-array-data,
-.xr-array-in:checked ~ .xr-array-preview {
-  display: none;
-}
-
-.xr-array-in:checked ~ .xr-array-data,
-.xr-array-preview {
-  display: inline-block;
-}
-
-.xr-dim-list {
-  display: inline-block !important;
-  list-style: none;
-  padding: 0 !important;
-  margin: 0;
-}
-
-.xr-dim-list li {
-  display: inline-block;
-  padding: 0;
-  margin: 0;
-}
-
-.xr-dim-list:before {
-  content: '(';
-}
-
-.xr-dim-list:after {
-  content: ')';
-}
-
-.xr-dim-list li:not(:last-child):after {
-  content: ',';
-  padding-right: 5px;
-}
-
-.xr-has-index {
-  font-weight: bold;
-}
-
-.xr-var-list,
-.xr-var-item {
-  display: contents;
-}
-
-.xr-var-item > div,
-.xr-var-item label,
-.xr-var-item > .xr-var-name span {
-  background-color: var(--xr-background-color-row-even);
-  margin-bottom: 0;
-}
-
-.xr-var-item > .xr-var-name:hover span {
-  padding-right: 5px;
-}
-
-.xr-var-list > li:nth-child(odd) > div,
-.xr-var-list > li:nth-child(odd) > label,
-.xr-var-list > li:nth-child(odd) > .xr-var-name span {
-  background-color: var(--xr-background-color-row-odd);
-}
-
-.xr-var-name {
-  grid-column: 1;
-}
-
-.xr-var-dims {
-  grid-column: 2;
-}
-
-.xr-var-dtype {
-  grid-column: 3;
-  text-align: right;
-  color: var(--xr-font-color2);
-}
-
-.xr-var-preview {
-  grid-column: 4;
-}
-
-.xr-index-preview {
-  grid-column: 2 / 5;
-  color: var(--xr-font-color2);
-}
-
-.xr-var-name,
-.xr-var-dims,
-.xr-var-dtype,
-.xr-preview,
-.xr-attrs dt {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-right: 10px;
-}
-
-.xr-var-name:hover,
-.xr-var-dims:hover,
-.xr-var-dtype:hover,
-.xr-attrs dt:hover {
-  overflow: visible;
-  width: auto;
-  z-index: 1;
-}
-
-.xr-var-attrs,
-.xr-var-data,
-.xr-index-data {
-  display: none;
-  background-color: var(--xr-background-color) !important;
-  padding-bottom: 5px !important;
-}
-
-.xr-var-attrs-in:checked ~ .xr-var-attrs,
-.xr-var-data-in:checked ~ .xr-var-data,
-.xr-index-data-in:checked ~ .xr-index-data {
-  display: block;
-}
-
-.xr-var-data > table {
-  float: right;
-}
-
-.xr-var-name span,
-.xr-var-data,
-.xr-index-name div,
-.xr-index-data,
-.xr-attrs {
-  padding-left: 25px !important;
-}
-
-.xr-attrs,
-.xr-var-attrs,
-.xr-var-data,
-.xr-index-data {
-  grid-column: 1 / -1;
-}
-
-dl.xr-attrs {
-  padding: 0;
-  margin: 0;
-  display: grid;
-  grid-template-columns: 125px auto;
-}
-
-.xr-attrs dt,
-.xr-attrs dd {
-  padding: 0;
-  margin: 0;
-  float: left;
-  padding-right: 10px;
-  width: auto;
-}
-
-.xr-attrs dt {
-  font-weight: normal;
-  grid-column: 1;
-}
-
-.xr-attrs dt:hover span {
-  display: inline-block;
-  background: var(--xr-background-color);
-  padding-right: 10px;
-}
-
-.xr-attrs dd {
-  grid-column: 2;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.xr-icon-database,
-.xr-icon-file-text2,
-.xr-no-icon {
-  display: inline-block;
-  vertical-align: middle;
-  width: 1em;
-  height: 1.5em !important;
-  stroke-width: 0;
-  stroke: currentColor;
-  fill: currentColor;
-}
-</style><pre class='xr-text-repr-fallback'>&lt;TimeSeries (DataArray) (date: 1688, component: 1, sample: 1)&gt;
-array([[[  2226.6126]],
-
-       [[439798.2429]],
-
-       [[320444.3538]],
-
-       ...,
-
-       [[700355.7261]],
-
-       [[615633.0146]],
-
-       [[617040.4012]]])
-Coordinates:
-  * date       (date) datetime64[ns] 2013-01-01 2013-01-02 ... 2017-08-15
-  * component  (component) object &#x27;sales&#x27;
-Dimensions without coordinates: sample
-Attributes:
-    static_covariates:  None
-    hierarchy:          None</pre><div class='xr-wrap' style='display:none'><div class='xr-header'><div class='xr-obj-type'>TimeSeries (DataArray)</div><div class='xr-array-name'></div><ul class='xr-dim-list'><li><span class='xr-has-index'>date</span>: 1688</li><li><span class='xr-has-index'>component</span>: 1</li><li><span>sample</span>: 1</li></ul></div><ul class='xr-sections'><li class='xr-section-item'><div class='xr-array-wrap'><input id='section-35e95a62-0811-4cbf-88d0-1291d0078986' class='xr-array-in' type='checkbox' checked><label for='section-35e95a62-0811-4cbf-88d0-1291d0078986' title='Show/hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-array-preview xr-preview'><span>2.227e+03 4.398e+05 3.204e+05 ... 7.004e+05 6.156e+05 6.17e+05</span></div><div class='xr-array-data'><pre>array([[[  2226.6126]],
-
-       [[439798.2429]],
-
-       [[320444.3538]],
-
-       ...,
-
-       [[700355.7261]],
-
-       [[615633.0146]],
-
-       [[617040.4012]]])</pre></div></div></li><li class='xr-section-item'><input id='section-b30fd388-83c4-4f5b-b7c0-3567739c3fb8' class='xr-section-summary-in' type='checkbox'  checked><label for='section-b30fd388-83c4-4f5b-b7c0-3567739c3fb8' class='xr-section-summary' >Coordinates: <span>(2)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>date</span></div><div class='xr-var-dims'>(date)</div><div class='xr-var-dtype'>datetime64[ns]</div><div class='xr-var-preview xr-preview'>2013-01-01 ... 2017-08-15</div><input id='attrs-d80d171d-19f1-4b46-8707-6841a77f8fe6' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-d80d171d-19f1-4b46-8707-6841a77f8fe6' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-d1a6da13-c7d4-490b-89b6-a7ea75439278' class='xr-var-data-in' type='checkbox'><label for='data-d1a6da13-c7d4-490b-89b6-a7ea75439278' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([&#x27;2013-01-01T00:00:00.000000000&#x27;, &#x27;2013-01-02T00:00:00.000000000&#x27;,
-       &#x27;2013-01-03T00:00:00.000000000&#x27;, ..., &#x27;2017-08-13T00:00:00.000000000&#x27;,
-       &#x27;2017-08-14T00:00:00.000000000&#x27;, &#x27;2017-08-15T00:00:00.000000000&#x27;],
-      dtype=&#x27;datetime64[ns]&#x27;)</pre></div></li><li class='xr-var-item'><div class='xr-var-name'><span class='xr-has-index'>component</span></div><div class='xr-var-dims'>(component)</div><div class='xr-var-dtype'>object</div><div class='xr-var-preview xr-preview'>&#x27;sales&#x27;</div><input id='attrs-03094209-d92e-4468-bbf9-7c5a615e89ec' class='xr-var-attrs-in' type='checkbox' disabled><label for='attrs-03094209-d92e-4468-bbf9-7c5a615e89ec' title='Show/Hide attributes'><svg class='icon xr-icon-file-text2'><use xlink:href='#icon-file-text2'></use></svg></label><input id='data-9af2c8e7-1388-4378-bf69-8a2b4375b7ff' class='xr-var-data-in' type='checkbox'><label for='data-9af2c8e7-1388-4378-bf69-8a2b4375b7ff' title='Show/Hide data repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-var-attrs'><dl class='xr-attrs'></dl></div><div class='xr-var-data'><pre>array([&#x27;sales&#x27;], dtype=object)</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-ad7bf73b-a0c1-4afa-a0af-e7eea5392ff4' class='xr-section-summary-in' type='checkbox'  ><label for='section-ad7bf73b-a0c1-4afa-a0af-e7eea5392ff4' class='xr-section-summary' >Indexes: <span>(2)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><ul class='xr-var-list'><li class='xr-var-item'><div class='xr-index-name'><div>date</div></div><div class='xr-index-preview'>PandasIndex</div><div></div><input id='index-9ca61e51-38d8-4d80-9a67-63806c9ade56' class='xr-index-data-in' type='checkbox'/><label for='index-9ca61e51-38d8-4d80-9a67-63806c9ade56' title='Show/Hide index repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-index-data'><pre>PandasIndex(DatetimeIndex([&#x27;2013-01-01&#x27;, &#x27;2013-01-02&#x27;, &#x27;2013-01-03&#x27;, &#x27;2013-01-04&#x27;,
-               &#x27;2013-01-05&#x27;, &#x27;2013-01-06&#x27;, &#x27;2013-01-07&#x27;, &#x27;2013-01-08&#x27;,
-               &#x27;2013-01-09&#x27;, &#x27;2013-01-10&#x27;,
-               ...
-               &#x27;2017-08-06&#x27;, &#x27;2017-08-07&#x27;, &#x27;2017-08-08&#x27;, &#x27;2017-08-09&#x27;,
-               &#x27;2017-08-10&#x27;, &#x27;2017-08-11&#x27;, &#x27;2017-08-12&#x27;, &#x27;2017-08-13&#x27;,
-               &#x27;2017-08-14&#x27;, &#x27;2017-08-15&#x27;],
-              dtype=&#x27;datetime64[ns]&#x27;, name=&#x27;date&#x27;, length=1688, freq=&#x27;D&#x27;))</pre></div></li><li class='xr-var-item'><div class='xr-index-name'><div>component</div></div><div class='xr-index-preview'>PandasIndex</div><div></div><input id='index-b67e1535-ef12-476c-b2af-ad84d4f7da53' class='xr-index-data-in' type='checkbox'/><label for='index-b67e1535-ef12-476c-b2af-ad84d4f7da53' title='Show/Hide index repr'><svg class='icon xr-icon-database'><use xlink:href='#icon-database'></use></svg></label><div class='xr-index-data'><pre>PandasIndex(Index([&#x27;sales&#x27;], dtype=&#x27;object&#x27;, name=&#x27;component&#x27;))</pre></div></li></ul></div></li><li class='xr-section-item'><input id='section-2957318e-b610-46c6-b96f-f6fc04fb7789' class='xr-section-summary-in' type='checkbox'  checked><label for='section-2957318e-b610-46c6-b96f-f6fc04fb7789' class='xr-section-summary' >Attributes: <span>(2)</span></label><div class='xr-section-inline-details'></div><div class='xr-section-details'><dl class='xr-attrs'><dt><span>static_covariates :</span></dt><dd>None</dd><dt><span>hierarchy :</span></dt><dd>None</dd></dl></div></li></ul></div></div>
+           [[617040.4012]]])
+    Coordinates:
+      * date       (date) datetime64[ns] 2013-01-01 2013-01-02 ... 2017-08-15
+      * component  (component) object 'sales'
+    Dimensions without coordinates: sample
+    Attributes:
+        static_covariates:  None
+        hierarchy:          None
 
 - Each Pandas series / dataframe column passed is stored as a component
   in the Darts TS. The date-time index is stored in **time_index.** We
@@ -1908,103 +930,37 @@ piecewise linear trend with one knot at 01-01-2015.
 time_covars["trend"] = range(1, 1685) # Linear dummy 1
 
 # Knot to be put at period 729
-time_covars.loc[time_covars.index=="2015-01-01"]["trend"] 
+print(time_covars.loc[time_covars.index=="2015-01-01"]["trend"]) 
+```
 
+    date
+    2015-01-01    729
+    Name: trend, dtype: int64
+
+``` python
 # Add second linear trend dummy
 time_covars["trend_knot"] = 0
 time_covars.iloc[728:,-1] = range(0, 956)
 
 # Check start and end of knot
-time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]] 
+print(time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]]) 
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+                trend  trend_knot
+    date                         
+    2015-01-01    729           0
+    2015-01-02    730           1
+    2015-01-03    731           2
+    2015-01-04    732           3
+    2015-01-05    733           4
+    ...           ...         ...
+    2017-08-11   1680         951
+    2017-08-12   1681         952
+    2017-08-13   1682         953
+    2017-08-14   1683         954
+    2017-08-15   1684         955
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>trend</th>
-      <th>trend_knot</th>
-    </tr>
-    <tr>
-      <th>date</th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>2015-01-01</th>
-      <td>729</td>
-      <td>0</td>
-    </tr>
-    <tr>
-      <th>2015-01-02</th>
-      <td>730</td>
-      <td>1</td>
-    </tr>
-    <tr>
-      <th>2015-01-03</th>
-      <td>731</td>
-      <td>2</td>
-    </tr>
-    <tr>
-      <th>2015-01-04</th>
-      <td>732</td>
-      <td>3</td>
-    </tr>
-    <tr>
-      <th>2015-01-05</th>
-      <td>733</td>
-      <td>4</td>
-    </tr>
-    <tr>
-      <th>...</th>
-      <td>...</td>
-      <td>...</td>
-    </tr>
-    <tr>
-      <th>2017-08-11</th>
-      <td>1680</td>
-      <td>951</td>
-    </tr>
-    <tr>
-      <th>2017-08-12</th>
-      <td>1681</td>
-      <td>952</td>
-    </tr>
-    <tr>
-      <th>2017-08-13</th>
-      <td>1682</td>
-      <td>953</td>
-    </tr>
-    <tr>
-      <th>2017-08-14</th>
-      <td>1683</td>
-      <td>954</td>
-    </tr>
-    <tr>
-      <th>2017-08-15</th>
-      <td>1684</td>
-      <td>955</td>
-    </tr>
-  </tbody>
-</table>
-<p>956 rows × 2 columns</p>
-</div>
+    [956 rows x 2 columns]
 
 For the monthly seasonality, we will create Fourier features.
 
@@ -2035,121 +991,24 @@ dp = DeterministicProcess(
 time_covars = time_covars.merge(dp.in_sample(), how="left", on="date")
 
 # View Fourier features
-time_covars.iloc[0:5, -10:]
+print(time_covars.iloc[0:5, -10:])
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+                sin(1,28)  cos(1,28)  sin(2,28)  cos(2,28)  sin(3,28)  cos(3,28)  \
+    date                                                                           
+    2013-01-01     0.0000     1.0000     0.0000     1.0000     0.0000     1.0000   
+    2013-01-02     0.2225     0.9749     0.4339     0.9010     0.6235     0.7818   
+    2013-01-03     0.4339     0.9010     0.7818     0.6235     0.9749     0.2225   
+    2013-01-04     0.6235     0.7818     0.9749     0.2225     0.9010    -0.4339   
+    2013-01-05     0.7818     0.6235     0.9749    -0.2225     0.4339    -0.9010   
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>sin(1,28)</th>
-      <th>cos(1,28)</th>
-      <th>sin(2,28)</th>
-      <th>cos(2,28)</th>
-      <th>sin(3,28)</th>
-      <th>cos(3,28)</th>
-      <th>sin(4,28)</th>
-      <th>cos(4,28)</th>
-      <th>sin(5,28)</th>
-      <th>cos(5,28)</th>
-    </tr>
-    <tr>
-      <th>date</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>2013-01-01</th>
-      <td>0.0000</td>
-      <td>1.0000</td>
-      <td>0.0000</td>
-      <td>1.0000</td>
-      <td>0.0000</td>
-      <td>1.0000</td>
-      <td>0.0000</td>
-      <td>1.0000</td>
-      <td>0.0000</td>
-      <td>1.0000</td>
-    </tr>
-    <tr>
-      <th>2013-01-02</th>
-      <td>0.2225</td>
-      <td>0.9749</td>
-      <td>0.4339</td>
-      <td>0.9010</td>
-      <td>0.6235</td>
-      <td>0.7818</td>
-      <td>0.7818</td>
-      <td>0.6235</td>
-      <td>0.9010</td>
-      <td>0.4339</td>
-    </tr>
-    <tr>
-      <th>2013-01-03</th>
-      <td>0.4339</td>
-      <td>0.9010</td>
-      <td>0.7818</td>
-      <td>0.6235</td>
-      <td>0.9749</td>
-      <td>0.2225</td>
-      <td>0.9749</td>
-      <td>-0.2225</td>
-      <td>0.7818</td>
-      <td>-0.6235</td>
-    </tr>
-    <tr>
-      <th>2013-01-04</th>
-      <td>0.6235</td>
-      <td>0.7818</td>
-      <td>0.9749</td>
-      <td>0.2225</td>
-      <td>0.9010</td>
-      <td>-0.4339</td>
-      <td>0.4339</td>
-      <td>-0.9010</td>
-      <td>-0.2225</td>
-      <td>-0.9749</td>
-    </tr>
-    <tr>
-      <th>2013-01-05</th>
-      <td>0.7818</td>
-      <td>0.6235</td>
-      <td>0.9749</td>
-      <td>-0.2225</td>
-      <td>0.4339</td>
-      <td>-0.9010</td>
-      <td>-0.4339</td>
-      <td>-0.9010</td>
-      <td>-0.9749</td>
-      <td>-0.2225</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+                sin(4,28)  cos(4,28)  sin(5,28)  cos(5,28)  
+    date                                                    
+    2013-01-01     0.0000     1.0000     0.0000     1.0000  
+    2013-01-02     0.7818     0.6235     0.9010     0.4339  
+    2013-01-03     0.9749    -0.2225     0.7818    -0.6235  
+    2013-01-04     0.4339    -0.9010    -0.2225    -0.9749  
+    2013-01-05    -0.4339    -0.9010    -0.9749    -0.2225  
 
 ## Model 1 - Time effects decomposition
 
@@ -2171,60 +1030,14 @@ we have gaps in our original series. We can check this easily in Darts.
 
 ``` python
 # Scan for gaps
-ts_timecovars.gaps()
+print(ts_timecovars.gaps())
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>gap_start</th>
-      <th>gap_end</th>
-      <th>gap_size</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>2013-12-25</td>
-      <td>2013-12-25</td>
-      <td>1</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>2014-12-25</td>
-      <td>2014-12-25</td>
-      <td>1</td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>2015-12-25</td>
-      <td>2015-12-25</td>
-      <td>1</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>2016-12-25</td>
-      <td>2016-12-25</td>
-      <td>1</td>
-    </tr>
-  </tbody>
-</table>
-</div>
+       gap_start    gap_end  gap_size
+    0 2013-12-25 2013-12-25         1
+    1 2014-12-25 2014-12-25         1
+    2 2015-12-25 2015-12-25         1
+    3 2016-12-25 2016-12-25         1
 
 It seems our data is missing values for December 25th in every year (the
 data for 2017 ends in August). Darts automatically filled in the missing
@@ -2239,35 +1052,12 @@ ts_sales = na_filler.transform(ts_sales)
 ts_timecovars = na_filler.transform(ts_timecovars)
 
 # Scan for gaps again
-ts_timecovars.gaps()
+print(ts_timecovars.gaps())
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>gap_start</th>
-      <th>gap_end</th>
-    </tr>
-  </thead>
-  <tbody>
-  </tbody>
-</table>
-</div>
+    Empty DataFrame
+    Columns: [gap_start, gap_end]
+    Index: []
 
 Our exploratory analysis showed that the seasonal fluctuations in sales
 become larger over time. We should use a multiplicative decomposition
@@ -2460,7 +1250,7 @@ RMSE.
 Let’s plot the predictions of our models and compare them visually with
 the actual values.
 
-![](ReportPart1_files/figure-commonmark/cell-50-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-51-output-1.png)
 
 The FFT and ETS models actually did a good job of capturing the weekly
 seasonality pattern in the data, as the shape and timing of the waves in
@@ -2524,7 +1314,7 @@ perf_scores(trafo_log(ts_sales[365:]), pred_hist1, model="Linear regression, his
     MAPE: 13.8001
     --------
 
-![](ReportPart1_files/figure-commonmark/cell-52-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-53-output-1.png)
 
 Again, the model captures the trend & seasonality patterns nicely, but
 the errors due to cyclical effects are even more apparent in 2014 and
@@ -2557,9 +1347,9 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-53-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-54-output-1.png)
 
-![](ReportPart1_files/figure-commonmark/cell-53-output-2.png)
+![](ReportPart1_files/figure-commonmark/cell-54-output-2.png)
 
 Ideally, we’d want very small residuals that are normally distributed
 around zero, representing the truly unpredictable remainder of our
@@ -2737,122 +1527,24 @@ diff = Differencer(lags = 1)
 sales_covariates[
   ['oil', 'onpromotion', 'transactions']] = diff.fit_transform(
     sales_covariates[['oil', 'onpromotion', 'transactions']])
-sales_covariates
+print(sales_covariates)
 ```
 
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
+                   oil  onpromotion  transactions   sales
+    date                                                 
+    2013-01-01  0.0000       0.0000        0.0000 -0.7649
+    2013-01-02  0.0000       0.0000    92445.0000  0.0696
+    2013-01-03 -0.1507       0.0000   -14711.0000  0.2949
+    2013-01-04  0.1330       0.0000      -10.0000  0.1230
+    2013-01-05  0.0236       0.0000    15079.0000  0.1126
+    ...            ...          ...           ...     ...
+    2017-08-11  0.2184    6262.0000     6487.0000 -0.1136
+    2017-08-12 -0.3290   -5867.0000      376.0000 -0.3183
+    2017-08-13 -0.3290     971.0000    -3934.0000 -0.2906
+    2017-08-14 -0.3290   -1240.0000     -545.0000 -0.1182
+    2017-08-15 -0.0162    2562.0000     1113.0000 -0.0716
 
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>oil</th>
-      <th>onpromotion</th>
-      <th>transactions</th>
-      <th>sales</th>
-    </tr>
-    <tr>
-      <th>date</th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>2013-01-01</th>
-      <td>0.0000</td>
-      <td>0.0000</td>
-      <td>0.0000</td>
-      <td>-0.7649</td>
-    </tr>
-    <tr>
-      <th>2013-01-02</th>
-      <td>0.0000</td>
-      <td>0.0000</td>
-      <td>92445.0000</td>
-      <td>0.0696</td>
-    </tr>
-    <tr>
-      <th>2013-01-03</th>
-      <td>-0.1507</td>
-      <td>0.0000</td>
-      <td>-14711.0000</td>
-      <td>0.2949</td>
-    </tr>
-    <tr>
-      <th>2013-01-04</th>
-      <td>0.1330</td>
-      <td>0.0000</td>
-      <td>-10.0000</td>
-      <td>0.1230</td>
-    </tr>
-    <tr>
-      <th>2013-01-05</th>
-      <td>0.0236</td>
-      <td>0.0000</td>
-      <td>15079.0000</td>
-      <td>0.1126</td>
-    </tr>
-    <tr>
-      <th>...</th>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-    </tr>
-    <tr>
-      <th>2017-08-11</th>
-      <td>0.2184</td>
-      <td>6262.0000</td>
-      <td>6487.0000</td>
-      <td>-0.1136</td>
-    </tr>
-    <tr>
-      <th>2017-08-12</th>
-      <td>-0.3290</td>
-      <td>-5867.0000</td>
-      <td>376.0000</td>
-      <td>-0.3183</td>
-    </tr>
-    <tr>
-      <th>2017-08-13</th>
-      <td>-0.3290</td>
-      <td>971.0000</td>
-      <td>-3934.0000</td>
-      <td>-0.2906</td>
-    </tr>
-    <tr>
-      <th>2017-08-14</th>
-      <td>-0.3290</td>
-      <td>-1240.0000</td>
-      <td>-545.0000</td>
-      <td>-0.1182</td>
-    </tr>
-    <tr>
-      <th>2017-08-15</th>
-      <td>-0.0162</td>
-      <td>2562.0000</td>
-      <td>1113.0000</td>
-      <td>-0.0716</td>
-    </tr>
-  </tbody>
-</table>
-<p>1684 rows × 4 columns</p>
-</div>
+    [1684 rows x 4 columns]
 
 Now our covariate columns all represent the change in each covariate
 compared to the previous period.
@@ -2868,7 +1560,7 @@ from sktime.utils.plotting import plot_lags
 from scipy.stats import pearsonr, spearmanr
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-61-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-62-output-1.png)
 
 As we saw in model 1’s residuals analysis, sales lag 1 makes a strong
 contribution to the partial autocorrelation, while lags 2 to 7 make weak
@@ -2889,7 +1581,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-62-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-63-output-1.png)
 
 It doesn’t look like any lag after 1 displays a considerably different
 relationship with sales.
@@ -2910,7 +1602,7 @@ sales_covariates["sales_ema7"] = sales_covariates["sales"].rolling(
   window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-64-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-65-output-1.png)
 
 We can see sales EMA7 is a good linear predictor of sales, similar to
 lag 1. Let’s compare lag 1’s correlation with sales to EMA7’s
@@ -2960,7 +1652,7 @@ oil_ma = sales_covariates.assign(
 )
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-68-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-69-output-1.png)
 
 We don’t see particularly strong relationships between oil price change
 MAs and sales, though the monthly MA is the most notable one with a
@@ -2987,7 +1679,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-69-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-70-output-1.png)
 
 ### Onpromotion features
 
@@ -2999,7 +1691,7 @@ Since the supermarket chain controls the number of items that will go on
 sale, it may be feasible to use leading values of onpromotion as
 predictors.
 
-![](ReportPart1_files/figure-commonmark/cell-70-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-71-output-1.png)
 
 Single lags / leads of onpromotion don’t display any significant
 correlations with sales, though there is a repeating pattern of likely
@@ -3007,12 +1699,12 @@ six days. Let’s look at the scatterplots of sales at time 0, with four
 of the more relatively significant lags (lag 0 being the present value
 of onpromotion).
 
-![](ReportPart1_files/figure-commonmark/cell-71-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-72-output-1.png)
 
 Again, no significant relationship between single onpromotion lags and
 sales. Let’s consider moving averages.
 
-![](ReportPart1_files/figure-commonmark/cell-72-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-73-output-1.png)
 
 The monthly and quarterly MA of onpromotion seems to be slightly
 positively correlated with sales. We’ll use the monthly MA as a feature,
@@ -3035,7 +1727,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-73-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-74-output-1.png)
 
 The daily changes in onpromotion are practically zero roughly until Q1
 2014. Afterwards, changes in onpromotion became increasingly larger,
@@ -3064,14 +1756,14 @@ stores.
 - Lag 15 is marked with a red dashed vertical line in the
   cross-correlation plot below.
 
-![](ReportPart1_files/figure-commonmark/cell-74-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-75-output-1.png)
 
 Again, single transactions lags don’t display strong correlations with
 sales. Unlike onpromotion, there doesn’t seem to be a repeating pattern
 either. Lags 0-3 are relatively stronger, so let’s see their
 scatterplots.
 
-![](ReportPart1_files/figure-commonmark/cell-75-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-76-output-1.png)
 
 As we expected, the present value of transactions have a weak, but
 relatively stronger positive relationship with the value of sales
@@ -3088,85 +1780,7 @@ compared to the lags.
 Let’s consider moving averages of changes in transactions, as a possible
 indicator of recent sales activity.
 
-``` python
-# FIG13: Transactions MAs
-fig13, axes13 = plt.subplots(2,2)
-_ = fig13.suptitle("Transactions change moving averages & decomposed sales")
-
-# Calculate MAs without min_periods = 1
-trns_ma = sales_covariates.assign(
-  trns_ma7 = lambda x: x["transactions"].rolling(window = 7, center = False).mean(),
-  trns_ma14 = lambda x: x["transactions"].rolling(window = 14, center = False).mean(),
-  trns_ma28 = lambda x: x["transactions"].rolling(window = 28, center = False).mean(),
-  trns_ma84 = lambda x: x["transactions"].rolling(window = 84, center = False).mean()
-)
-
-# MA7
-_ = sns.regplot(
-  ax = axes13[0,0],
-  data = trns_ma,
-  x = "trns_ma7",
-  y = "sales"
-)
-_ = axes13[0,0].set_xlabel("weekly MA")
-_ = axes13[0,0].annotate(
-    'Corr={:.2f}'.format(
-      spearmanr(trns_ma["trns_ma7"], trns_ma["sales"], nan_policy='omit')[0]
-      ), 
-      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
-      )
-
-# MA14
-_ = sns.regplot(
-  ax = axes13[0,1],
-  data = trns_ma,
-  x = "trns_ma14",
-  y = "sales"
-)
-_ = axes13[0,1].set_xlabel("biweekly MA")
-_ = axes13[0,1].annotate(
-    'Corr={:.2f}'.format(
-      spearmanr(trns_ma["trns_ma14"], trns_ma["sales"], nan_policy='omit')[0]
-      ), 
-      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
-      )
-
-# MA28
-_ = sns.regplot(
-  ax = axes13[1,0],
-  data = trns_ma,
-  x = "trns_ma28",
-  y = "sales"
-)
-_ = axes13[1,0].set_xlabel("monthly MA")
-_ = axes13[1,0].annotate(
-    'Corr={:.2f}'.format(
-      spearmanr(trns_ma["trns_ma28"], trns_ma["sales"], nan_policy='omit')[0]
-      ), 
-      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
-      )
-
-# MA84
-_ = sns.regplot(
-  ax = axes13[1,1],
-  data = trns_ma,
-  x = "trns_ma84",
-  y = "sales"
-)
-_ = axes13[1,1].set_xlabel("quarterly MA")
-_ = axes13[1,1].annotate(
-    'Corr={:.2f}'.format(
-      spearmanr(trns_ma["trns_ma84"], trns_ma["sales"], nan_policy='omit')[0]
-      ), 
-      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
-      )
-
-# Show fig13
-plt.show()
-plt.close("all")
-```
-
-![](ReportPart1_files/figure-commonmark/cell-76-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-77-output-1.png)
 
 The MAs are much more significant than single lags, though the
 correlations are still likely impacted by extreme values. Still, these
@@ -3190,7 +1804,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-77-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-78-output-1.png)
 
 We can see the sharp drop in transactions on January 1st, and the
 recovery on January 2nd, reflected both in the time series plot of
@@ -3456,7 +2070,7 @@ the respective lags & covariates models.
 Let’s see the predictions plotted against the actual values, and compare
 them with model 1 plots.
 
-![](ReportPart1_files/figure-commonmark/cell-83-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-84-output-1.png)
 
 The performance of the 3 hybrids are similar overall, and it’s hard to
 see big differences from the plots.
@@ -3524,7 +2138,7 @@ predictions. Again, this is partly misleading due to the way we
 performed time decomposition, but the improvements from accounting for
 cyclical effects in 2014-2015 are likely a factor too.
 
-![](ReportPart1_files/figure-commonmark/cell-85-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-86-output-1.png)
 
 As we see from the historical forecasts plot, the cyclical fluctuations
 in 2014 and H1 2015, which were mostly unaccounted for in model 1, are
@@ -3555,9 +2169,9 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-86-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-87-output-1.png)
 
-![](ReportPart1_files/figure-commonmark/cell-86-output-2.png)
+![](ReportPart1_files/figure-commonmark/cell-87-output-2.png)
 
 Overall, the residuals seem much closer to stationary.
 
@@ -3586,7 +2200,7 @@ print(
 ) # Null rejected = data is stationary around a constant
 ```
 
-    KPSS test p-value: 0.040352670609268615
+    KPSS test p-value: 0.04035267060926879
     ADF test p-value: 0.0
 
 The stationarity tests are still conflicting:

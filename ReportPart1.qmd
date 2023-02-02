@@ -4,6 +4,7 @@ author: "Ahmet Zamanis"
 format: 
   gfm:
     toc: true
+    keep-ipynb: true
 editor: visual
 jupyter: python3
 execute:
@@ -54,8 +55,7 @@ df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
 The data is split into several .csv files. **train.csv** and **test.csv** are the main datasets, consisting of daily sales data. The training data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the following 15 days, in August 2017. We won't do a competition submission in Part 1, so we won't load the testing data.
 
 ```{python df}
-# View the daily sales data
-df_train.head(5)
+print(df_train.head(5))
 ```
 
 -   For each day, we have the sales in each store (out of a possible 54) and each product category (out of a possible 33). This amounts to 1782 time series that need to be forecasted for the competition, but in Part 1 of this analysis, we will keep it simple and only forecast the national sales in each day, in all categories.
@@ -65,25 +65,25 @@ df_train.head(5)
 **stores.csv** contains more information about each store: The city, state, store type and store cluster.
 
 ```{python df_stores}
-df_stores.head(5)
+print(df_stores.head(5))
 ```
 
 **holidays.csv** contains information about local (city-wide), regional (state-wide) and national holidays, and some special nation-wide events in the time period. We will use these along with the stores' location data to create calendar features.
 
 ```{python df_holidays}
-df_holidays.head(5)
+print(df_holidays.head(5))
 ```
 
 **oil.csv** consists of the daily oil prices in the time period. Ecuador has an oil-dependent economy, so this may be a useful predictor of the cyclicality in supermarket sales. We don't have the oil price for the first day of the time series.
 
 ```{python df_oil}
-df_oil.head(5)
+print(df_oil.head(5))
 ```
 
 **transactions.csv** consists of the daily number of transactions at a store. Another potentially useful feature. Each row is the number of transactions in all categories, one day, at one store.
 
 ```{python df_trans}
-df_trans.head(5)
+print(df_trans.head(5))
 ```
 
 We will rename some columns from the datasets and merge the supplementary information into the sales dataset. We'll aggregate daily transactions across all stores beforehand, as we are only interested in predicting daily national sales.
@@ -130,7 +130,7 @@ There are cases of multiple holidays or events sharing the same date and locale.
 
 ```{python Duplicates1}
 # Inspect local holidays sharing same date & locale
-local[local.duplicated(["date", "locale_name"], keep = False)]
+print(local[local.duplicated(["date", "locale_name"], keep = False)])
 ```
 
 ```{python DropDuplicates 1}
@@ -140,12 +140,12 @@ local = local.drop(265, axis = 0)
 
 ```{python Duplicates2}
 # Inspect regional holidays sharing same date & locale. None exist
-regional[regional.duplicated(["date", "locale_name"], keep = False)]
+print(regional[regional.duplicated(["date", "locale_name"], keep = False)])
 ```
 
 ```{python Duplicates3}
 # Inspect national holidays sharing same date & locale
-national[national.duplicated(["date"], keep = False)]
+print(national[national.duplicated(["date"], keep = False)])
 ```
 
 ```{python DropDuplicates3}
@@ -155,7 +155,7 @@ national = national.drop([35, 39, 156], axis = 0)
 
 ```{python Duplicates4}
 # Inspect events sharing same date
-events[events.duplicated(["date"], keep = False)]
+print(events[events.duplicated(["date"], keep = False)])
 ```
 
 ```{python DropDuplicates4}
@@ -231,7 +231,7 @@ We'll set the **date** column to a DateTimeIndex, and view the sales data with t
 # Set datetime index
 df_train = df_train.set_index(pd.to_datetime(df_train.date))
 df_train = df_train.drop("date", axis=1)
-df_train.head(5)
+print(df_train.head(5))
 
 ```
 
@@ -290,7 +290,7 @@ ts_sales = TimeSeries.from_series(
   sales, 
   freq="D" # Time series frequency is daily
   )
-ts_sales
+print(ts_sales)
 ```
 
 -   Each Pandas series / dataframe column passed is stored as a component in the Darts TS. The date-time index is stored in **time_index.** We had 1684 rows in our Pandas series, but the Darts TS has 1688 dates. This means our series had some missing dates, which Darts completed automatically. We'll fill in the values for these dates later.
@@ -820,20 +820,24 @@ In the exploratory analysis, we saw the overall trend can be modeled linearly, b
 
 -   It's possible to add more "turns" to a linear trend with more knots, but one is enough in our case. We want the trend to be simple, and robust against seasonal or cyclical fluctuations.
 
-```{python FeatEngTrend}
+```{python FeatEngTrend1}
 
 # Add piecewise linear trend dummies
 time_covars["trend"] = range(1, 1685) # Linear dummy 1
 
 # Knot to be put at period 729
-time_covars.loc[time_covars.index=="2015-01-01"]["trend"] 
+print(time_covars.loc[time_covars.index=="2015-01-01"]["trend"]) 
+```
+
+```{python FeatEngTrend2}
 
 # Add second linear trend dummy
 time_covars["trend_knot"] = 0
 time_covars.iloc[728:,-1] = range(0, 956)
 
 # Check start and end of knot
-time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]] 
+print(time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]]) 
+
 ```
 
 For the monthly seasonality, we will create Fourier features.
@@ -861,7 +865,7 @@ dp = DeterministicProcess(
 time_covars = time_covars.merge(dp.in_sample(), how="left", on="date")
 
 # View Fourier features
-time_covars.iloc[0:5, -10:]
+print(time_covars.iloc[0:5, -10:])
 ```
 
 ## Model 1 - Time effects decomposition
@@ -883,7 +887,7 @@ Our target and covariate Series had 1684 rows each, but the Darts TimeSeries we 
 ```{python TSGaps}
 
 # Scan for gaps
-ts_timecovars.gaps()
+print(ts_timecovars.gaps())
 ```
 
 It seems our data is missing values for December 25th in every year (the data for 2017 ends in August). Darts automatically filled in the missing dates to 1688, but we need to fill the missing values in our target and covariate series.
@@ -897,7 +901,7 @@ ts_sales = na_filler.transform(ts_sales)
 ts_timecovars = na_filler.transform(ts_timecovars)
 
 # Scan for gaps again
-ts_timecovars.gaps()
+print(ts_timecovars.gaps())
 ```
 
 Our exploratory analysis showed that the seasonal fluctuations in sales become larger over time. We should use a multiplicative decomposition instead of additive.
@@ -1278,7 +1282,7 @@ diff = Differencer(lags = 1)
 sales_covariates[
   ['oil', 'onpromotion', 'transactions']] = diff.fit_transform(
     sales_covariates[['oil', 'onpromotion', 'transactions']])
-sales_covariates
+print(sales_covariates)
 ```
 
 Now our covariate columns all represent the change in each covariate compared to the previous period.
@@ -1820,7 +1824,7 @@ As we expected, the present value of transactions have a weak, but relatively st
 Let's consider moving averages of changes in transactions, as a possible indicator of recent sales activity.
 
 ```{python TransMAs}
-#| echo: true
+#| echo: false
 
 # FIG13: Transactions MAs
 fig13, axes13 = plt.subplots(2,2)
