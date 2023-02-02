@@ -79,26 +79,28 @@ performed in Python, mainly with the
 the [Kaggle Store Sales - Time Series
 Forecasting](https://www.kaggle.com/competitions/store-sales-time-series-forecasting)
 competition. The data consists of daily sales data for an Ecuadorian
-supermarket chain between 2013 and 2017. This is Part 1 of the analysis,
+supermarket chain between 2013 and 2017. This is part 1 of the analysis,
 which will focus only on forecasting the daily national sales of the
-chain, across all stores and categories. In Part 2, we will forecast the
-sales in each category - store combination as required by the
-competition, and attempt various hierarchical reconciliation techniques.
+chain, aggregated across all stores and categories. In part 2, we will
+forecast the sales in each category - store combination as required by
+the competition, and apply hierarchical reconciliation methods.
 
 The main information source used extensively for this analysis is the
 textbook [Forecasting: Principles and
 Practice](https://otexts.com/fpp3/), written by Rob J. Hyndman and
 George Athanasopoulos. The book is the most complete source on time
 series analysis & forecasting I could find. It uses R and the
-[tidyverts](https://tidyverts.org/) libraries in its example code.
+[tidyverts](https://tidyverts.org/) libraries for its examples, which
+have the best time series analysis workflow among the R libraries I’ve
+tried.
 
 ## Data preparation
 
 The data is split into several .csv files. **train.csv** and
 **test.csv** are the main datasets, consisting of daily sales data. The
 training data ranges from 01-01-2013 to 15-08-2017, and the testing data
-consists of the following 15 days, in August 2017. We won’t do a
-competition submission in Part 1, so we won’t load the testing data.
+consists of the following 15 days in August 2017. We won’t do a
+competition submission in part 1, so we won’t work on the testing data.
 
 ``` python
 print(df_train.head(5))
@@ -113,12 +115,10 @@ print(df_train.head(5))
 
 - For each day, we have the sales in each store (out of a possible 54)
   and each product category (out of a possible 33). This amounts to 1782
-  time series that need to be forecasted for the competition, but in
-  Part 1 of this analysis, we will keep it simple and only forecast the
-  national sales in each day, in all categories.
+  time series that need to be forecasted for the competition.
 
-- **onpromotion** is the number of items on sale that day, in that
-  category & store.
+- **onpromotion** is the number of items on sale in one day, in one
+  category & store combination.
 
 **stores.csv** contains more information about each store: The city,
 state, store type and store cluster.
@@ -136,8 +136,9 @@ print(df_stores.head(5))
 
 **holidays.csv** contains information about local (city-wide), regional
 (state-wide) and national holidays, and some special nation-wide events
-in the time period. We will use these along with the stores’ location
-data to create calendar features.
+that occured in the time period. We will use these along with the
+stores’ location data to create calendar features, to adjust for effects
+of holidays and special events on sales.
 
 ``` python
 print(df_holidays.head(5))
@@ -158,9 +159,9 @@ print(df_holidays.head(5))
     4        False  
 
 **oil.csv** consists of the daily oil prices in the time period. Ecuador
-has an oil-dependent economy, so this may be a useful predictor of the
+has an oil-dependent economy, so this may be an useful predictor of the
 cyclicality in supermarket sales. We don’t have the oil price for the
-first day of the time series.
+first day of the data.
 
 ``` python
 print(df_oil.head(5))
@@ -173,9 +174,9 @@ print(df_oil.head(5))
     3  2013-01-04     93.1200
     4  2013-01-07     93.2000
 
-**transactions.csv** consists of the daily number of transactions at a
-store. Another potentially useful feature. Each row is the number of
-transactions in all categories, one day, at one store.
+**transactions.csv** consists of the daily number of transactions at
+each store. Note that only store 25 is recorded for the first day, so
+it’s likely all stores aren’t open in all days.
 
 ``` python
 print(df_trans.head(5))
@@ -189,9 +190,9 @@ print(df_trans.head(5))
     4  2013-01-02          4          1922
 
 We will rename some columns from the datasets and merge the
-supplementary information into the sales dataset. We’ll aggregate daily
-transactions across all stores beforehand, as we are only interested in
-predicting daily national sales.
+supplementary information into the main sales dataset. We’ll aggregate
+daily transactions across all stores beforehand, as we are only
+interested in predicting daily national sales.
 
 ``` python
 # Rename columns
@@ -210,7 +211,9 @@ df_train = df_train.merge(df_stores, on = "store_nbr", how = "left")
 ```
 
 Incorporating the holidays information into the sales dataset will
-require more work.
+require more work. We’ll create a four binary columns that record
+whether a day is a local, regional or national holiday, or had a special
+event.
 
 ``` python
 # Split holidays data into local, regional, national and events
@@ -368,7 +371,8 @@ df_train["event"] = df_train["event"].fillna(0).astype(int)
 ```
 
 We’ll set the **date** column to a DateTimeIndex, and view the sales
-data with the added columns.
+data with the added columns. Remeber that the transactions column is now
+the national transactions across all stores in one day.
 
 ``` python
 # Set datetime index
@@ -406,12 +410,14 @@ CPI adjust the sales and oil prices columns, with 2010 as our base year.
 The CPI values for Ecuador in the time period were retrieved
 [here](https://data.worldbank.org/indicator/FP.CPI.TOTL?end=2017&locations=EC&start=2010&view=chart).
 
-- We’ll use the yearly CPI values for simplicity’s sake, but it’s
-  possible to use monthly CPI for more accuracy.
+- We’ll use the yearly CPI values for simplicity, but it’s possible to
+  use monthly CPI as well.
 
 - Since 2017 is not complete in the data, and we’ll use it as the
   validation period, we’ll use 2016’s CPI for 2017 to avoid leaking
-  information from the future into our predictions.
+  information from the future into our predictions. In a real-life
+  scenario, the expected / forecasted CPI or inflation rates could be
+  used as well.
 
 ``` python
 # CPI adjust sales and oil, with CPI 2010 = 100
@@ -427,7 +433,7 @@ for year in [2013, 2014, 2015, 2016, 2017]:
     df_train.index.year==year] / cpis[str(year)] * cpis["2010"]
 ```
 
-We have some rows with missing values in our training data.
+We have some columns with missing values in our training data.
 
 ``` python
 # Check missing values in each column
@@ -452,8 +458,13 @@ pd.isnull(df_train).sum()
     dtype: int64
 
 We will interpolate the missing values in the oil and transactions
-columns using time interpolation. This performs linear interpolation,
-but also takes the date-time index of observations into account.
+columns using time interpolation.
+
+- This performs linear interpolation, but also takes the date-time index
+  of observations into account.
+
+- If we don’t set `limit_direction = "both"`, the first value for oil
+  won’t be interpolated.
 
 ``` python
 df_train["oil"] = df_train["oil"].interpolate("time", limit_direction = "both")
@@ -520,10 +531,10 @@ print(ts_sales)
         hierarchy:          None
 
 - Each Pandas series / dataframe column passed is stored as a component
-  in the Darts TS. The date-time index is stored in **time_index.** We
-  had 1684 rows in our Pandas series, but the Darts TS has 1688 dates.
-  This means our series had some missing dates, which Darts completed
-  automatically. We’ll fill in the values for these dates later.
+  in the Darts TS. The date-time index is stored in `.time_index`**.**
+  We had 1684 rows in our Pandas series, but the Darts TS has 1688
+  dates. This means our series had some missing dates, which Darts
+  created automatically. We’ll fill in the values for these dates later.
 
 - To create a multivariate time series, we create a Pandas dataframe
   with each time series as a column, and a common date-time index. When
@@ -531,12 +542,14 @@ print(ts_sales)
   component. If the time series have a **hierarchy**, i.e. if they sum
   up together in a certain way, we can map that hierarchy as a
   dictionary to later perform hierarchical reconciliation. We will
-  explore this further in Part 2 of the analysis.
+  explore this further in part 2 of the analysis.
 
-- Static covariates are time-invariant covariates that may be used in
-  predictions. In our case, the city or cluster of a store may be static
-  covariates, but for part 1 of our analysis we are looking at national
-  sales, so we won’t use these.
+- **Static covariates** are time-invariant covariates that may be used
+  as predictors, if not used to split the time series into a
+  multivariate series. They are stored together with the target series
+  in Darts TS. In our case, the type or cluster of a store may be used
+  as static covariates, but for part 1 of our analysis we are looking at
+  national sales, so we won’t use these.
 
 ## Overview of hybrid modeling approach
 
@@ -545,12 +558,13 @@ A time series can be written as the sum of several components:
 - **Trend:** The long-term change.
 
 - **Seasonality:** A fluctuation (or several) that repeats based on a
-  fixed, known time period. For example, the fluctuation of retail store
-  sales across days of a week, or hours of a day.
+  fixed, known time period, often related to how we measure time and
+  schedule our lives. For example, the fluctuation of retail store sales
+  across days of a week, or electricity usage across hours of a day.
 
-- **Cyclicality:** A fluctuation that does not repeat on a fixed, known
-  time period. For example, the effect of a sharp increase / decrese in
-  oil prices on car sales.
+- **Cyclicality:** A fluctuation that does not repeat based on a fixed,
+  known time period, often caused by temporary factors. For example, the
+  effect of a sharp increase / decrease in oil prices on car sales.
 
 - **Remainder / Error:** The unpredictable component of the time series,
   at least with the available data and methods.
@@ -566,19 +580,24 @@ Because of this, we will split our analysis and modeling into two steps:
   series, leaving the effects of cyclicality and the unpredictable
   component. This is called **time decomposition.**
 
-- In step 2, we will re-analyze the decomposed time series, this time
-  considering the effects of covariates and lagged values of sales
+- In step 2, we will re-analyze the time-decomposed time series, this
+  time considering the effects of covariates and lagged values of sales
   itself as predictors, to try and account for the cyclicality. We’ll
   build a model that uses these predictors, train it on the decomposed
   sales, and add up the predictions of both models to arrive at our
-  final predictions. This approach is called a **hybrid model.**
+  final predictions.
+
+- This approach is called a **hybrid model.** It allows us to
+  differentiate and separately model different time series components.
+  We can also use more than one type of algorithm and combine their
+  strengths.
 
 ## Exploratory analysis 1 - Time & calendar effects
 
 ### Trend
 
-Let’s start by analyzing the overall trend in sales. Darts offers the
-ability to plot time series quickly.
+Let’s start by analyzing the overall trend in sales, with a simple time
+series plot. Darts offers the ability to plot time series quickly.
 
 ``` python
 _ =  ts_sales.plot()
@@ -593,19 +612,20 @@ The time series plot shows us several things:
 
 - Supermarket sales show an increasing trend over the years. The trend
   is close to linear overall, but the rate of increase declines roughly
-  from the start of 2015.
+  from the start of 2015. Consider one straight line from 2013 to 2015,
+  and a second, less steep one from 2015 to the end.
 
-- Sales mostly fluctuate around a certain range, which suggests strong
-  seasonality. However, there are also sharp deviations in certain
-  periods, mainly across 2014 and at the start of 2015. This is likely
-  cyclical in nature.
+- Sales mostly fluctuate around the trend, which suggests strong
+  seasonality. However, there are also sharp deviations from the trend
+  in certain periods, mainly across 2014 and at the start of 2015. These
+  are likely cyclical in nature.
 
 - The “waves” of seasonal fluctuations seem to be getting bigger over
   time. This suggests we should use a multiplicative time decomposition
   instead of additive.
 
-- Sales decline very sharply in the first day of every year, likely
-  because it’s a holiday.
+- Sales decline very sharply in the first day of every year, almost to
+  zero.
 
 ### Seasonality
 
@@ -640,9 +660,9 @@ last plot, we just have the daily sales without any averaging).
   - We also see a considerable drop in the first half of 2015, where
     sales dropped roughly to 2014 levels, followed by a recovery.
 
-  - There is a very sharp increase in April 2016, where sales were even
-    higher than 2017 levels. This is due to a large earthquake that
-    happened in April 16, 2016, and the related relief efforts.
+  - There is a sharp increase in April 2016, where sales were as high as
+    2017 levels. This is due to a large earthquake that happened in
+    April 16 2016, and the related relief efforts.
 
 - **Weekly:** The seasonal patterns are more visible in the weekly plot,
   as we see the “waves” of fluctuation line up across years. It’s very
@@ -666,8 +686,8 @@ certain calendar period across all years, without grouping by year.
 ![](ReportPart1_files/figure-commonmark/cell-27-output-1.png)
 
 This shows us the “overall” seasonality pattern across one year: We
-likely have strong weekly seasonality that persists over years, and some
-monthly seasonality especially towards December.
+likely have a strong weekly seasonality pattern that holds across the
+years, and some monthly seasonality especially towards December.
 
 #### Monthly & weekly seasonality
 
@@ -679,7 +699,7 @@ will group them by year.
 ![](ReportPart1_files/figure-commonmark/cell-28-output-1.png)
 
 - The weekly seasonality pattern across days of a week is clear. Sales
-  are lowest in Tuesdays, increase and peak at Sundays, then drop on
+  are lowest in Thursdays, increase and peak at Sundays, then drop on
   Mondays. The pattern holds in all years.
 
 - The monthly seasonality across days of a month aren’t as strong, but
@@ -688,16 +708,17 @@ will group them by year.
   though the competition information also says salaries are paid
   biweekly, in the middle and at the end of each month.
 
-We can look at the same plots grouped by month.
+We can look at the same plots grouped by month. The confidence bands are
+suppressed as they make the plots hard to read.
 
 ![](ReportPart1_files/figure-commonmark/cell-29-output-1.png)
 
 This plot shows us the monthly and weekly seasonality pattern generally
 holds across all months, but December is a notable exception:
 
-- Sales in December are considerably higher roughly after the 13th, due
-  to Christmas. The Christmas peak seems to happen in the 23th, followed
-  by a decline, and another sharp increase in the 30th.
+- Sales in December are considerably higher roughly from the 13th, due
+  to Christmas approaching. The Christmas peak seems to happen in the
+  23th, followed by a decline, and another sharp increase in the 30th.
 
 - The sales by day of week are also higher in December for every day,
   but the pattern of the weekly seasonality is the same.
@@ -705,23 +726,24 @@ holds across all months, but December is a notable exception:
 - We can also see that sales decline very sharply in January 1st, almost
   to zero, and make a considerably sharp recovery in the 2nd.
 
-And finally, without any grouping: The averages across all years.
+And finally, without any grouping: The averages across all years and
+months.
 
 ![](ReportPart1_files/figure-commonmark/cell-30-output-1.png)
 
 This plot allows us to see the overall monthly seasonality pattern more
 clearly: Sales are higher at the start of a month, slightly decline
 until the mid-month payday, slightly increase afterwards, and start
-peaking again after the end-of-month payday.
+peaking again towards the end of a month.
 
 ### Autocorrelation & partial autocorrelation
 
-Autocorrelation is the correlation of a variable at time T, with its own
-lagged values at time T-1, T-2 and so on. Partial autocorrelation can be
-thought of as the marginal contribution of each lagged value to
-autocorrelation, since the lags are likely to hold common information.
-The patterns in the autocorrelation and partial autocorrelation plots
-can give us insight into the seasonal patterns.
+Autocorrelation is the correlation of a variable with its own past
+values. Partial autocorrelation can be thought of as the marginal
+contribution of each lagged value to autocorrelation, since the lags are
+likely to hold common information. The patterns in the autocorrelation
+and partial autocorrelation plots can give us insight into the seasonal
+patterns.
 
 ``` python
 # FIG3: ACF and PACF plots
@@ -777,11 +799,17 @@ like sales were higher than normal for the rest of April 2016, or in May
 Our main candidate for the time decomposition model is a simple linear
 regression, so we will focus our feature engineering towards that.
 
+- With linear regression, we can model and extrapolate trends and
+  seasonality patterns, as well as adjust for one-off calendar effects.
+
+- Methods that can’t extrapolate outside the training values are not
+  suitable for modeling time effects, even if they are more “advanced”.
+
 ### Calendar effects & weekly seasonality features
 
-We’ll flag the dates that influence sales considerably with dummy or
+We’ll flag the dates that influence sales considerably with binary or
 ordinal features. These columns will take non-zero values if a certain
-calendar effect is present in a date, and zeroes otherwise.
+calendar effect is present in a date, and zero values otherwise.
 
 Sales decline very sharply every year in January 1st, almost to zero.
 The sales in January 2nd then recover sharply, which is a huge relative
@@ -807,12 +835,12 @@ New Years’ Eve.
   dummy features.
 
 - For Christmas effects, we will create two integer columns that reflect
-  the ‘strength’ of the Christmas effect on sales, based on day of
-  month. The columns will reach its maximum value in December 23rd, and
-  decline as the date moves away from that. For dates outside December
-  13-27, these features will take a value of zero. This may not be the
-  most sophisticated way to reflect the Christmas effects on our model,
-  but it should be simple and effective.
+  the “strength” of the Christmas effect on sales, based on day of
+  month. The first column will reach its maximum value in December 23rd,
+  and the second will decline as the date moves away from that. For
+  dates outside December 13-27, these features will take a value of
+  zero. This may not be the most sophisticated way to reflect the
+  Christmas effects on our model, but it should be simple and effective.
 
 ``` python
 # NY's eve features
@@ -839,8 +867,8 @@ df_train.loc[(df_train["xmas_before"] != 0) | (df_train["xmas_after"] != 0), ["l
 ```
 
 To account for the effect of the April 2016 earthquake, we create a
-feature similar to the ones for Christmas. The feature peaks at April
-18th and takes a value of zero for dates outside April 17-22, 2016.
+feature similar to the ones for Christmas. The value peaks at April 18th
+and takes a value of zero for dates outside April 17-22, 2016.
 
 ``` python
 # Strength of earthquake effect on sales
@@ -854,11 +882,12 @@ df_train.loc[df_train.index == "2016-04-21", "quake_after"] = 2
 df_train.loc[df_train.index == "2016-04-22", "quake_after"] = 1
 ```
 
-We previously created dummy features to indicate local-regional-national
-holidays, and special events. There are only a few different events in
-the dataset, and they differ in nature, so we will break up the events
-column and create separate dummy features for each event. We already
-created a feature for the earthquake, so we’ll skip that one.
+We previously created binary features to indicate
+local-regional-national holidays, and special events. There are only a
+few different events in the dataset, and they differ in nature, so we
+will break up the events column and create separate binary features for
+each event. We already created a feature for the earthquake, so we’ll
+skip that one.
 
 ``` python
 # Split events, delete events column
@@ -907,7 +936,8 @@ national sales.
 
 ``` python
 # Aggregate time features by mean
-time_covars = df_train.drop(columns=['id', 'store_nbr', 'family', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
+time_covars = df_train.drop(
+  columns=['id', 'store_nbr', 'family', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
 ```
 
 ### Trend & monthly seasonality features
@@ -917,8 +947,8 @@ linearly, but the rate of increase (the slope of the trend line)
 declines from the start of 2015. To capture this, we will model a
 piecewise linear trend with one knot at 01-01-2015.
 
-- In effect, the slope of the linear trend will change and decline once,
-  at the knot date. The result will be two linear trend lines added
+- The slope of the linear trend will change and decline once, at the
+  knot date. In effect, the result will be two linear trend lines added
   together.
 
 - It’s possible to add more “turns” to a linear trend with more knots,
@@ -962,15 +992,19 @@ print(time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]])
 
     [956 rows x 2 columns]
 
-For the monthly seasonality, we will create Fourier features.
+For the monthly seasonality, we will create Fourier features. This will
+capture the slight increases and decreases in sales throughout a month,
+mostly due to proximity to paydays.
 
 - Named after the French mathematician, Fourier series can be used to
   model any periodic, repeating fluctuation / waveform as sums of
   numerous sine-cosine pairs.
 
 - We’ll create 5 Fourier pairs (10 columns in total) for 28-period
-  seasonality. This will capture the slight increases and decreases in
-  sales throughout a month, mostly due to proximity to paydays.
+  seasonality. T
+
+  - Too few pairs may not capture the fluctuations well, while too many
+    run the risk of overfitting.
 
 - December was an exception to the monthly seasonality pattern, but our
   Christmas and NY features will adjust for that.
@@ -1019,7 +1053,7 @@ that are quicker to implement.
 ### Preprocessing
 
 ``` python
-# Create Darts time series with time feats
+# Create Darts time series with time features
 ts_timecovars = TimeSeries.from_dataframe(
   time_covars, freq="D", fill_missing_dates=False)
 ```
@@ -1063,16 +1097,21 @@ Our exploratory analysis showed that the seasonal fluctuations in sales
 become larger over time. We should use a multiplicative decomposition
 instead of additive.
 
-- In **additive decomposition**, we decompose a time series as **Trend +
-  Seasonality + Remainder.**
+- In **additive decomposition**, we decompose a time series as **Total
+  =** **Trend + Seasonality + Remainder.**
 
 - In **multiplicative decomposition**, we decompose a time series as
-  **Trend \* Seasonality \* Remainder.**
+  **Total =** **Trend \* Seasonality \* Remainder.**
 
 One way of performing multiplicative decomposition is taking the
-logarithm of the time series and performing additive decomposition, as
-addition / subtraction in log(x) is equivalent to multiplication /
-division in x.
+logarithm of the time series and performing additive decomposition,
+because if
+
+$Y = T * S * R$,
+
+then
+
+$log(Y) = log(T) + log(S) + log(R)$ .
 
 ``` python
 # Define functions to perform log transformation and reverse it. +1 to avoid zeroes
@@ -1101,24 +1140,31 @@ Naive drift and naive seasonal are two baseline models, meant to
 represent the performance of a very simple prediction.
 
 - Naive drift simply fits a straight line from the start to the end of
-  the training data, and extrapolates it.
+  the training data, and extrapolates it to make predictions.
 
 - Naive seasonal simply repeats the last K values in the training set.
 
-We’ll also test two simple seasonal models which require little input.
-These models can capture a trend and one seasonality period, but cannot
-use other covariates in their predictions, such as our calendar
-features.
+We’ll also test two seasonal models which require little input. These
+models cannot use other covariates in their predictions, such as our
+calendar features.
 
 - Fast Fourier Transform is an algorithm that converts a signal from the
   time domain to the frequency domain, used in many fields such as
-  engineering and music. In our case, we’ll try to model the weekly
-  seasonality waves with FFT, as it is the strongest seasonality in the
-  data, along with a linear trend.
+  engineering and music.
 
-- Exponential smoothing uses exponentially weighted moving averages of a
-  certain number of lags to make predictions. Again, we’ll model the
-  weekly seasonality with a linear trend.
+  - In our case, we’ll try to model the seasonality waves in our data
+    with FFT. We’ll include an exponential trend to try and account for
+    the slope change in 2015.
+
+- Exponential smoothing uses exponentially weighted moving averages to
+  make predictions. The EMA gives more weight to recent observations,
+  and less to older observations.
+
+  - We’ll use the implementation with separate additive trend, seasonal
+    and error components, as well as with trend dampening to try and
+    account for the slope change in 2015. This implementation is also
+    known as the [Holt-Winters’
+    method](https://otexts.com/fpp3/taxonomy.html).
 
 And finally, we’ll use our tailored linear regression model with
 piecewise linear trend dummies, Fourier features for monthly seasonality
@@ -1139,16 +1185,16 @@ model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
 
 # Specify FFT model
 model_fft = FFT(
-  required_matches = {"day_of_week"}, # Try to match the weekdays of the training sequence with the predictions  
+  required_matches = {"day", "day_of_week"}, # Try to match the days of month and days of week of the training sequence with the predictions  
   nr_freqs_to_keep = 10, # Keep 10 frequencies
-  trend = "poly",
-  trend_poly_degree = 1 # Linear trend
+  trend = "exp" # Exponential trend
 )
 
 # Specify ETS model
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
-  model = "AAA" # Additive trend, seasonality and remainder component
+  model = "AAA", # Additive trend, seasonality and remainder component
+  damped = 0.8 # Dampen the trend over time
 )
 
 # Specify linear regression model
@@ -1219,9 +1265,9 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
     MAPE: 64.2437
     --------
     Model: FFT
-    RMSE: 190795.2994
-    RMSLE: 0.378
-    MAPE: 60.8149
+    RMSE: 226535.1335
+    RMSLE: 0.3972
+    MAPE: 59.8851
     --------
     Model: Exponential smoothing
     RMSE: 201526.3126
@@ -1234,18 +1280,30 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
     MAPE: 8.1491
     --------
 
-We see our linear regression model performs much better than the
-baseline and simple methods tested. It’s also notable that the naive
-seasonal model beats the ETS model in all metrics, while beating FFT in
-RMSE.
+We see our linear regression model performs much better than the other
+methods tested.
+
+- It’s also notable that the naive seasonal model beats the ETS model in
+  all metrics, while beating FFT in RMSE and RMSLE. However, FFT beats
+  the naive seasonal model in MAPE.
+
+- The ETS model also beats FFT in RMSE and RMSLE, while having
+  considerably higher MAPE.
+
+- This is likely because MAPE is a measure of relative error, while RMSE
+  and RMSLE are measures of absolute error.
+
+  - For example, an absolute error of 2 translates to 2% MAPE if the
+    actual value is 100, but it translates to 0.2% MAPE if the actual
+    value is 1000.
+
+  - In both cases, the absolute error is the same, but we may argue it’s
+    more “costly” for the former case.
 
 - RMSLE stands for root mean squared log error. Log errors penalize
-  underpredictions much more strongly than overpredictions, which could
-  be particularly good for assessing sales predictions, as unfulfilled
-  demand is likely more costly than overstocking. The competition is
-  scored on RMSLE.
-- Since the naive seasonal model has lower RMSE but higher RMSLE
-  compared to FFT, it’s likely it tends to underpredict compared to FFT.
+  underpredictions more strongly than overpredictions, which could be
+  good for assessing sales predictions, as unfulfilled demand is likely
+  more costly than overstocking. The competition is scored on RMSLE.
 
 Let’s plot the predictions of our models and compare them visually with
 the actual values.
@@ -1256,10 +1314,9 @@ The FFT and ETS models actually did a good job of capturing the weekly
 seasonality pattern in the data, as the shape and timing of the waves in
 the predictions are similar to the actual values.
 
-- However, the FFT and ETS models almost always overestimated the trend
-  of 2017 sales. This is likely because they modeled the trend with a
-  simple linear term, so it can’t adjust for the slope decline that
-  happens in 2015.
+- However, the FFT and ETS models generally overestimated the trend of
+  2017 sales. This is likely because their methods for modeling the
+  trend is not fully suitable for our data.
 
 - The naive seasonal model performed close to FFT and ETS by
   coincidence, because the 7 days of sales it repeated were close to the
@@ -1269,10 +1326,9 @@ the predictions are similar to the actual values.
   in sales in January 1st, as they don’t take in covariates.
 
 - In contrast, the linear model’s trend and seasonality are both on
-  point, and the January 1st drop, along with the January 2nd recovery,
-  are adjusted for nicely. The model is not able to match some peaks and
-  troughs fully, which are possibly cyclical in nature. That’s where
-  Model 2 will come in.
+  point, and the January 1st drop is adjusted for nicely. The model is
+  not able to match some peaks and troughs fully, which are possibly
+  cyclical in nature. That’s where Model 2 will come in.
 
 ### Rolling crossvalidation
 
@@ -1290,9 +1346,8 @@ wider training windows until the end of the data.
   time for more complex models, but it should be fine for linear
   regression.
 
-- We’ll also retrieve the residuals for each prediction, which will
-  represent the decomposed sales we’ll use as our target variable in the
-  second model.
+- We’ll also retrieve the residuals for each prediction to perform
+  residual diagnosis.
 
 ``` python
 # Retrieve historical forecasts and decomposed residuals for 2014-2017
@@ -1320,8 +1375,8 @@ Again, the model captures the trend & seasonality patterns nicely, but
 the errors due to cyclical effects are even more apparent in 2014 and
 2015. If we had modeled the trend non-linearly, such as with an STL
 decomposition, the trend term would likely respond strongly to these
-fluctuations, and potentially be overfit for predictions after the
-training time period.
+fluctuations, potentially causing overfitting issues for predictions
+after the training time period.
 
 ### Residuals diagnosis & stationarity
 
@@ -1356,21 +1411,22 @@ around zero, representing the truly unpredictable remainder of our
 models. This is not the case overall, so there’s room for improvement in
 our predictions.
 
-- We see residuals for 2014-2015 especially deviate more from zero. This
-  is likely due to the cyclical behavior we observed in this period. Our
-  second model will aim to account for this.
+- Residuals for 2014-2015 especially deviate from zero. This is likely
+  due to the cyclical behavior we observed in this period. Our second
+  model will aim to account for this.
 
 - The overall distribution of the residuals is not too far from a normal
   distribution around zero, but the right tail is bigger, indicating
   some values are strongly underpredicted. These are mostly from
   2014-2015.
 
-- The PACF plot shows strong autocorrelation with lag 1, which means
-  we’ll likely include a sales lag in the second model. There are also
-  small, barely significant partial autocorrelations after lag 2.
+- The PACF plot shows strong partial autocorrelation with lag 1, and a
+  weak one with lag 2, which means we’ll likely include lagged sales
+  features in the second model. There are also small, barely significant
+  partial autocorrelations after lag 2.
 
-A **stationary time series** is one that doesn’t change depending on
-time. Ideally, we’d want our residuals to be stationary to consider our
+A **stationary time series** is one free of trend and seasonality.
+Ideally, we’d want our residuals to be stationary to consider our
 modeling complete. We can test their stationarity with two statistical
 tests. First is the Kwiatkowski-Phillips-Schmidt-Shin test.
 
@@ -1459,10 +1515,11 @@ sales_decomp = pd.concat([res1, res2])
 preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.index)
 ```
 
-Now, preds_model1 are the predictions of model 1 on the entire dataset,
-after being fitted on 2013-2016. sales_decomp are the residuals of these
-predictions. We’ll fit model 2 on sales_decomp, and add preds_model1 to
-its predictions to achieve our final hybrid predictions.
+Now, preds_model1 are the fitted values of model 1 on 2013-2016, and its
+predictions for 2017. sales_decomp are the fitted residuals for
+2013-2016 and the prediction residuals for 2017. We’ll fit model 2 on
+sales_decomp, and add preds_model1 to its predictions to achieve our
+final hybrid predictions.
 
 ## Exploratory analysis 2 - Lags & covariates
 
@@ -1563,7 +1620,7 @@ from scipy.stats import pearsonr, spearmanr
 ![](ReportPart1_files/figure-commonmark/cell-62-output-1.png)
 
 As we saw in model 1’s residuals analysis, sales lag 1 makes a strong
-contribution to the partial autocorrelation, while lags 2 to 7 make weak
+contribution to the partial autocorrelation, while lags 2 to 5 make weak
 but significant contributions.
 
 Linear correlation may not always do justice to the relationship between
@@ -1592,20 +1649,19 @@ We can also consider a rolling feature, such as a moving average.
   weighted moving average makes sense. This type of moving average puts
   more weight on recent lags, and less on older lags.
 
-- A weekly period makes sense, as that was a strong seasonal period in
-  the data, and the significance of partial autocorrelations die out
-  after lag 7.
+- A 5-day period makes sense, as the significance of partial
+  autocorrelations die out after lag 5.
 
 ``` python
-# Calculate 7-day exponential moving average of sales lags
-sales_covariates["sales_ema7"] = sales_covariates["sales"].rolling(
-  window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
+# Calculate 5-day exponential moving average of sales lags
+sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
+  window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
 ```
 
 ![](ReportPart1_files/figure-commonmark/cell-65-output-1.png)
 
-We can see sales EMA7 is a good linear predictor of sales, similar to
-lag 1. Let’s compare lag 1’s correlation with sales to EMA7’s
+We can see sales EMA5 is a good linear predictor of sales, similar to
+lag 1. Let’s compare lag 1’s correlation with sales to EMA5’s
 correlation with sales.
 
 ``` python
@@ -1616,15 +1672,15 @@ pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(me
     PearsonRResult(statistic=0.790350805157687, pvalue=0.0)
 
 ``` python
-# Correlation of sales and ema7
-pearsonr(sales_covariates["sales"], sales_covariates["sales_ema7"]) 
+# Correlation of sales and ema5
+pearsonr(sales_covariates["sales"], sales_covariates["sales_ema5"]) 
 ```
 
-    PearsonRResult(statistic=0.6812765481062973, pvalue=3.882061264270767e-230)
+    PearsonRResult(statistic=0.7580111987059072, pvalue=1.7543396815e-314)
 
-Lag 1 comes out as the stronger linear predictor, but EMA7 is a good one
-too. We can include both as features, so lags 2-7 can contribute to the
-model in some way.
+Lag 1 comes out as the slightly stronger linear predictor, but EMA5 is a
+good one too. We can include both as features, so lags 2-5 can
+contribute to the model in some way.
 
 ### Oil features
 
@@ -1632,13 +1688,13 @@ The oil price change of one day is not likely to mean much by itself,
 and the effect of oil prices on the economy likely takes some time to
 manifest.
 
-- Therefore, we’ll just consider moving averages of the oil prices as
+- Therefore, we’ll just consider moving averages of the oil price as
   features.
 
 - These won’t be exponentially weighted averages, as recent oil prices
   likely require time to make their effect on sales. It’s even possible
   oil prices with a certain degree of lag are the more important
-  predictors compared to more recent oil prices.
+  predictors.
 
 ``` python
 # Calculate oil MAs
@@ -1748,10 +1804,9 @@ stores.
   to mid-August 2017), and not for the testing dataset (15 days after
   the training dataset).
 
-- We can freely consider transactions as a feature for Part 1 of this
-  analysis, but in Part 2, we’ll aim to predict the testing data and
-  make a competition submission, so we’ll only be able to consider lag
-  15 or older values of transactions as features.
+- We can freely consider transactions as a feature for part 1 of this
+  analysis, but in part 2 we’ll only be able to consider lag 15 or older
+  values of transactions as features.
 
 - Lag 15 is marked with a red dashed vertical line in the
   cross-correlation plot below.
@@ -1814,7 +1869,7 @@ transactions changes, and its weekly moving average.
 
 ### Preprocessing
 
-We repeat some preprocessing steps for Model 2.
+We repeat some preprocessing steps for model 2.
 
 ``` python
 # Drop original covariates & target
@@ -1867,7 +1922,8 @@ model.
   average models (MA)**.
 
   - An AR model of **order p** uses the linear combination of **past p
-    values** of a series as predictors, to forecast its future values.
+    values** of a series as its own predictors, to forecast its future
+    values.
 
   - A MA model of **order q** performs regression on the **past q
     forecast errors** of a series to forecast its future values. It can
@@ -1882,23 +1938,22 @@ model.
 
 - A random forest builds **an N number of decision trees**, each with
   **an M number of randomly selected predictors** out of all the
-  predictors in the data. The predictions of each tree are combined with
-  a voting system, yielding an **ensemble prediction** robust against
-  overfitting.
+  predictors in the dataset. The predictions of each tree are combined
+  with a voting system, yielding an **ensemble prediction**.
 
   - Tree-based models can perform feature selection to a degree, capture
     non-linear relationships, and discover interactions between
-    predictions. They can’t extrapolate a relationship outside the value
+    predictors. They can’t extrapolate a relationship outside the value
     ranges in the training set, so we didn’t consider them for the time
     decomposition model.
 
-  - We could also include a more capable tree-based gradient boosting
+  - We could also include a more sophisticated gradient boosting
     algorithm such as XGBoost, but these often require [extensive
     hyperparameter
     tuning](https://github.com/AhmetZamanis/LoanRequestClassification/blob/main/Report.md#xgboost)
     to perform at their best, so we will skip it for part 1 of this
-    analysis. In contrast, the random forest has few hyperparameters,
-    and the default settings often do well without needing tuning.
+    analysis. In contrast, the random forest has fewer hyperparameters,
+    and the default settings often do fine without needing tuning.
 
 ``` python
 # Import models
@@ -1909,11 +1964,11 @@ from darts.models.forecasting.random_forest import RandomForest
 
 # Specify baseline models
 model_drift = NaiveDrift()
-model_seasonal = NaiveSeasonal(K=7)
+model_seasonal = NaiveSeasonal(K=5)
 
 # Specify ARIMA model
 model_arima = ARIMA(
-  p = 7, # AR model of order 7 
+  p = 5, # AR model of order 5 
   d = 0, # No MA model
   q = 0, # No differentiation applied to target
   trend = "n", # No trend
@@ -1928,17 +1983,17 @@ model_linear2 = LinearRegressionModel(
 
 # Specify random forest model  
 model_forest = RandomForest(
-  lags = [-1, -2, -3, -4, -5, -6, -7], # Target lags that can be used
+  lags = [-1, -2, -3, -4, -5], # Target lags that can be used
   lags_future_covariates = [0], # No covariate lags
   random_state = 1923,
   n_jobs = -2 # Use all but one of the CPUs
   )
 ```
 
-As with model 1, our naive seasonal model will repeat the last 7 values
-in the training data. This was the most significant seasonality period
-before time decomposition. Now it appears to be the most significant
-period for cyclical effects.
+Similar to model 1, our naive seasonal model will repeat the last 5
+values in the training data. K=7 was the most significant seasonality
+period before time decomposition. Now it appears K=5 is the most
+significant period for autoregression.
 
 - To determine the orders of the AR and MA components in the ARIMA
   model, we look at the ACF and PACF plots of decomposed sales (see
@@ -1948,19 +2003,19 @@ period for cyclical effects.
     exponential / sinusoidal decline, and the last significant spike in
     the PACF plot is at lag p.
 
-  - Accordingly, we specify a (p = 7, d = 0, q = 0) ARIMA model. This
-    amounts to an AR(7) model, with no MA component.
+  - Accordingly, we specify a (p = 5, d = 0, q = 0) ARIMA model. This
+    amounts to an AR(5) model, with no MA component.
 
   - We specify a differencing order of 0 (d = 0), as our target is
     already decomposed of time effects, so we didn’t difference it. We
-    do not perform detrending either.
+    also do not perform detrending.
 
-- Our linear regression model will take in sales lag 1, sales EMA7, oil
+- Our linear regression model will take in sales lag 1, sales EMA5, oil
   MA28, onpromotion MA28 and transactions MA7 as predictors.
 
 - The random forest model is capable of feature selection to a degree,
   so we will feed it the same predictors as the linear regression model,
-  plus lags 2-7 which were slightly significant on their own.
+  plus lags 2-5 which were slightly significant on their own.
 
 ### Model validation: Predicting 2017 sales
 
@@ -2003,24 +2058,24 @@ perf_scores(y_val2, pred_forest, model="Random forest")
     MAPE: 15.5944
     --------
     Model: Naive seasonal
-    RMSE: 145914.2066
-    RMSLE: 0.2087
-    MAPE: 18.9599
+    RMSE: 161264.8033
+    RMSLE: 0.2189
+    MAPE: 20.5417
     --------
     Model: ARIMA
-    RMSE: 77859.477
-    RMSLE: 0.1069
-    MAPE: 8.2354
+    RMSE: 78058.7921
+    RMSLE: 0.1075
+    MAPE: 8.2821
     --------
     Model: Linear
-    RMSE: 81054.1673
-    RMSLE: 0.1107
-    MAPE: 7.7181
+    RMSE: 76222.5702
+    RMSLE: 0.1029
+    MAPE: 7.0422
     --------
     Model: Random forest
-    RMSE: 68428.7463
-    RMSLE: 0.0937
-    MAPE: 6.6161
+    RMSE: 66313.3178
+    RMSLE: 0.0929
+    MAPE: 6.6345
     --------
 
 Remember that these are hybrid predictions: Each prediction is the
@@ -2037,8 +2092,8 @@ the respective lags & covariates models.
   errors all that much. This is because our data had strong time
   effects, so getting model 1 right did most of the job. The residuals
   (decomposed sales) are small in comparison to the model 1 predictions,
-  so adding the predictions from a naive model 2 don’t impact the final
-  predictions too badly.
+  so adding the predictions from a second naive model doesn’t impact the
+  final predictions too badly.
 
 - Combining model 1 with an ARIMA model increases our errors slightly.
   However, the performance is still fairly close to the linear and
@@ -2048,27 +2103,19 @@ the respective lags & covariates models.
 - Combining model 1 with a second linear model increases our RMSE and
   RMSLE a bit, but also reduces our MAPE.
 
-  - This is likely because MAPE is a measure of relative error, while
-    RMSE and RMSLE are measures of absolute error. For example, an
-    absolute error of 2 translates to 2% MAPE if the actual value is
-    100, but it translates to 0.2% MAPE if the actual value is 1000. In
-    both cases, the absolute error is the same, but we may argue it’s
-    more “costly” for the former case.
-
   - This likely means that the model 1 + linear hybrid makes larger
-    absolute errors but for more for larger values, while Model 1 makes
-    smaller absolute errors but for more for smaller values. Which case
-    is better is subjective.
+    absolute errors, but more for larger values, while model 1 makes
+    smaller absolute errors, but more for smaller values. Which case is
+    better is subjective.
 
-  - In either case RMSLE could be preferred as it penalizes
+  - In either case, RMSLE could be preferred as it penalizes
     underpredictions more, and meeting demand can be considered our
     primary goal.
 
 - Combining model 1 with the random forest model decreases all error
   metrics considerably, and it appears to be the winning choice.
 
-Let’s see the predictions plotted against the actual values, and compare
-them with model 1 plots.
+Let’s see the predictions plotted against the actual values.
 
 ![](ReportPart1_files/figure-commonmark/cell-84-output-1.png)
 
@@ -2126,9 +2173,9 @@ perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + random forest
       0%|          | 0/1323 [00:00<?, ?it/s]
 
     Model: Linear + random forest
-    RMSE: 60491.8832
-    RMSLE: 0.0922
-    MAPE: 6.292
+    RMSE: 61002.573
+    RMSLE: 0.0944
+    MAPE: 6.5231
     --------
 
 With model 1, the overall historical forecasts performed considerably
@@ -2200,8 +2247,8 @@ print(
 ) # Null rejected = data is stationary around a constant
 ```
 
-    KPSS test p-value: 0.04035267060926879
-    ADF test p-value: 0.0
+    KPSS test p-value: 0.017435346001820506
+    ADF test p-value: 1.933857119910509e-21
 
 The stationarity tests are still conflicting:
 
@@ -2223,21 +2270,22 @@ sales, aggregated across all categories and stores, pretty well.
   effects, and random forest regression for the remainder, gave us the
   best results.
 
-- However, the second model’s relative improvement was fairly small, as
-  the first model already performed very well.
+- However, the second model’s relative improvement was not huge, as the
+  first model already performed very well.
 
 - This means the time & seasonality effects in our data were much
   stronger than any “unexpected” cyclicality, which is what we’d
   intuitively expect for supermarket sales.
 
-- Still, there was considerable cyclicality in 2014 and H2 2015, which
+- Still, there was considerable cyclicality in 2014 and H1 2015, which
   showed up as relatively large values in the residuals of model 1.
-  Applying autoregression in model 2 helped us adjust for these.
+  Applying autoregression & utilizing covariates in model 2 helped us
+  adjust for these.
 
-- Autoregression is more “reactive” than predictive: It likely won’t
-  predict a first sudden fluctuation before it happens, but that
-  fluctuation will enter the model as a predictor in the next period,
-  and allow the model to adjust for the following periods.
+- Autoregression is more “reactive” than predictive: It won’t predict an
+  initial unexpected fluctuation in advance, but that fluctuation will
+  enter the model as a predictor in the next period, and allow the model
+  to adjust predictions for the following periods.
 
 In part 2, we will attempt to make a competition submission, predicting
 the daily sales for every store & every category combination. That makes
@@ -2245,22 +2293,21 @@ the daily sales for every store & every category combination. That makes
 prediction for.
 
 - In part 1, with only one series to predict, we were able to perform
-  exploratory analysis and carefully tailor our models, especially for
-  time decomposition. It’s also generally easier to predict more
-  aggregated series, as they are less noisy: The national sales likely
-  fluctuate much less compared to sales in one store or category.
+  manual exploratory analysis and carefully tailor our models,
+  especially for time decomposition. It’s also generally easier to
+  predict more aggregated series, as they are less noisy: The national
+  sales likely fluctuate much less compared to sales in one store, one
+  category.
 
 - In part 2, we will have to come up with a strategy that will simplify
-  our work, while still yielding good predictions. The 33 product
-  categories likely have very different seasonality patterns. We’ll
-  likely rely on more “automatic” models that are able to derive time
-  effects & seasonality, and ideally model them along with
-  autocorrelation and any covariate effects in one go instead of using
-  hybrids or tailored feature sets.
+  our work, while still yielding good predictions. Some of the 33
+  product categories likely have very different seasonality patterns.
+  We’ll likely rely on more “automatic” models that are able to derive
+  time effects & seasonality.
 
 - We’ll also explore the topic of **hierarchical reconciliation**:
-  Making sure our predictions are coherent within the levels of
-  hierarchy. There are several methods to reconcile predictions in a
-  hierarchy, and it can even improve prediction accuracy.
+  Making sure our predictions are coherent within the levels of the time
+  series hierarchy. There are several methods to reconcile predictions
+  in a hierarchy, and it can even improve prediction accuracy.
 
-Any comment or suggestion is welcome.
+Any comments or suggestions are welcome.
