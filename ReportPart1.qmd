@@ -987,14 +987,14 @@ model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
 model_fft = FFT(
   required_matches = {"day", "day_of_week"}, # Try to match the days of month and days of week of the training sequence with the predictions  
   nr_freqs_to_keep = 10, # Keep 10 frequencies
-  trend = "exp" # Exponential trend
+  trend = "exp" # Exponential detrending
 )
 
 # Specify ETS model
 model_ets = ETS(
-  season_length = 7, # Weekly seasonality
+  season_length = 7, # Weekly seasonality period
   model = "AAA", # Additive trend, seasonality and remainder component
-  damped = 0.8 # Dampen the trend over time
+  damped = 0.9 # Dampen the trend over time
 )
 
 # Specify linear regression model
@@ -1005,7 +1005,13 @@ model_linear1 = LinearRegressionModel(
 
 ### Model validation: Predicting 2017 sales
 
-We'll train our models on 2013-2016 sales data, predict the sales for 2017, and score the predictions with a custom function.
+We'll train our models on 2013-2016 sales data, predict the sales for 2017, and score the predictions with a custom function. We'll use three regression performance metrics:
+
+-   **Root mean squared error (RMSE),**
+
+-   **Root mean squared log error (RMSLE),**
+
+-   **Mean absolute percentage error (MAPE).**
 
 ```{python 2017Pred1}
 #| output: false
@@ -1066,9 +1072,9 @@ We see our linear regression model performs much better than the other methods t
 
     -   For example, an absolute error of 2 translates to 2% MAPE if the actual value is 100, but it translates to 0.2% MAPE if the actual value is 1000.
 
-    -   In both cases, the absolute error is the same, but we may argue it's more "costly" for the former case.
+    -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
 
--   RMSLE stands for root mean squared log error. Log errors penalize underpredictions more strongly than overpredictions, which could be good for assessing sales predictions, as unfulfilled demand is likely more costly than overstocking. The competition is scored on RMSLE.
+-   In either case, RMSLE is likely the more important metric among these three. Log errors penalize underpredictions more strongly than overpredictions, which could be good for assessing sales predictions, as unfulfilled demand is likely more costly than overstocking. The competition is scored on RMSLE.
 
 Let's plot the predictions of our models and compare them visually with the actual values.
 
@@ -2119,8 +2125,6 @@ Remember that these are hybrid predictions: Each prediction is the combined resu
 
     -   This likely means that the model 1 + linear hybrid makes larger absolute errors, but more for larger values, while model 1 makes smaller absolute errors, but more for smaller values. Which case is better is subjective.
 
-    -   In either case, RMSLE could be preferred as it penalizes underpredictions more, and meeting demand can be considered our primary goal.
-
 -   Combining model 1 with the random forest model decreases all error metrics considerably, and it appears to be the winning choice.
 
 Let's see the predictions plotted against the actual values.
@@ -2191,7 +2195,7 @@ res_hist2 = trafo_log(ts_sales[365:]) - pred_hist2
 perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + random forest")
 ```
 
-With model 1, the overall historical forecasts performed considerably worse than the 2017 predictions. With the hybrid, the historical forecasts seem to have performed slightly better than the 2017 predictions. Again, this is partly misleading due to the way we performed time decomposition, but the improvements from accounting for cyclical effects in 2014-2015 are likely a factor too.
+With model 1, the overall historical forecasts performed considerably worse than the 2017 predictions. With the hybrid, the historical forecasts seem to have performed very close to the 2017 predictions. Again, this is partly misleading due to the way we performed time decomposition, but the improvements from accounting for cyclical effects in 2014-2015 are likely a factor too.
 
 ```{python HistForePlot2}
 #| echo: false
@@ -2256,9 +2260,9 @@ print(
 
 The stationarity tests are still conflicting:
 
--   The p-value for the KPSS test is smaller than 0.05, leading us to reject the null hypothesis of stationarity around a constant. However, the p-value is much larger than the KPSS test on model 1 residuals, so we are fairly close to stationarity.
+-   The p-value for the KPSS test is smaller than 0.05, leading us to reject the null hypothesis of stationarity around a constant. However, the p-value is larger than the KPSS test on model 1 residuals, so we are closer to stationarity.
 
--   The p-value for the ADF test is 0, rejecting the null hypothesis of the presence of an unit root. This implies the data is stationary around a constant.
+-   The p-value for the ADF test is practically 0, rejecting the null hypothesis of the presence of an unit root. This implies the data is stationary around a constant.
 
 ## Conclusion
 
