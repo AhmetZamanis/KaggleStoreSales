@@ -640,7 +640,7 @@ The sinusoidal pattern in the ACF plot is typical for strong weekly seasonality:
 
 -   Sales at T=0 are highly correlated with the sales of the previous day at T=1.
 
--   The correlation declines until T=6, which is the previous value of the next weekday from T=0, and peaks at T=7, which is the previous value of the same weekday.
+-   The correlation declines until T=6, which is the previous value of the next weekday from T=0, and spikes again at T=7, which is the previous value of the same weekday.
 
 -   The pattern repeats weekly after T=7, with declining strength.
 
@@ -1127,7 +1127,7 @@ The FFT and ETS models actually did a good job of capturing the weekly seasonali
 
 -   The naive, FFT and ETS models also couldn't account for the sharp drop in sales in January 1st, as they don't take in covariates.
 
--   In contrast, the linear model's trend and seasonality are both on point, and the January 1st drop is adjusted for nicely. The model is not able to match some peaks and troughs fully, which are possibly cyclical in nature. That's where model 2 will come in.
+-   In contrast, the linear model's trend and seasonality are both on point, and the January 1st drop is adjusted for nicely. The model is not able to match some spikes and troughs fully, which are possibly cyclical in nature. That's where model 2 will come in.
 
     -   The piecewise linear trend method allows us to respond to turns in the trend more precisely, while keeping the trend lines robust against fluctuations.
 
@@ -2087,7 +2087,6 @@ Similar to model 1, our naive seasonal model will repeat the last 5 values in th
 Let's train our models on the decomposed sales of 2013-2016, predict the values for 2017, and add these to the 2017 predictions of model 1 to retrieve our final, hybrid model predictions.
 
 ```{python 2017Pred2}
-#| output: false
 
 # Fit models on train data (pre-2017), predict validation data (2017)
 model_drift.fit(y_train2)
@@ -2130,9 +2129,9 @@ Remember that these are hybrid predictions: Each prediction is the combined resu
 
 -   Combining model 1 with an ARIMA model increases our errors slightly. However, the performance is still fairly close to the linear and random forest models, especially considering ARIMA didn't make use of any covariate series.
 
--   Combining model 1 with a second linear model improves our predictions a bit, especially the MAPE.
+-   Combining model 1 with a second linear increases our RMSE, while reducing our RMSLE and especially MAPE.
 
-    -   This means absolute errors aren't reduced as much as relative errors are.
+    -   This likely means applying model 2 reduces the tendency to underpredict, at the cost of increasing overpredictions a bit, which is preferable.
 
 -   Combining model 1 with the random forest model decreases all error metrics considerably, and it appears to be the winning choice.
 
@@ -2168,13 +2167,13 @@ plt.close("all")
 
 The performance of the 3 hybrids are similar overall, and it's hard to see big differences from the plots.
 
--   The random forest did a better job of adjusting to some peaks and troughs, likely because it is able to select features and find interactions between predictors.
+-   The random forest did a better job of adjusting to some spikes and troughs, likely because it is able to select features and find interactions between predictors.
 
 -   Still, certain large spikes are partially unaccounted for, especially the sharp recovery after January 1st, and the spikes at the start of April and May 2017. These may be due to factors not documented in our dataset. Or they may be related to commemorations for the earthquake in April 2016.
 
-### AutoARIMA model summary
+### ARIMA model summary
 
-Before carrying on with our best hybrid model, which is linear + random forest, we can view the model summary of the AutoARIMA process for some insight.
+Before carrying on with our best hybrid model, which is linear + random forest, we can view the model summary of the ARIMA model for some insight.
 
 The AutoARIMA process has chosen an ARIMA(2, 0, 1) model, which uses the last 2 lags and the last forecast error as predictors.
 
@@ -2184,9 +2183,9 @@ print(model_arima.model.summary())
 
 The AIC score is not meaningful on its own without being compared to AIC scores of other models, though smaller values (including negative) indicate a better trade-off between variance explained and model complexity.
 
--   We see that the first lag has a positive coefficient, so a higher value for lag 1 means a higher prediction for sales at T=0.
+-   The first lag has a positive coefficient, so a higher value for lag 1 means a higher prediction for sales at T=0.
 
--   Lag 2 and forecast error of lag 1 have a negative effect on the prediction. If lag 2 or the error of lag 1 increase, the prediction for T=0 is pulled back.
+-   Lag 2 and the forecast error of lag 1 have a negative effect on the prediction. If lag 2 or the error of lag 1 increase, the prediction for T=0 is pulled back.
 
 -   The p-value for the Ljung-Box test is 0.79, so the null hypothesis of residual independence is accepted. The residuals of our model are not correlated, so applying a third autoregressive model on them is not likely to improve predictions.
 
@@ -2195,6 +2194,7 @@ The AIC score is not meaningful on its own without being compared to AIC scores 
 -   The null hypothesis for the Jarque-Bera test is zero skew & zero excess kurtosis in the distribution of the tested data. With a p-value of 0, the null hypothesis is rejected, and we can see the residuals have a skew of 0.81 and kurtosis of 9.28, compared to 0 and 3 respectively for a normal distribution.
 
     -   A high kurtosis distribution can be thought of as a narrower and taller distribution compared to normal, which likely means our residuals are packed tightly around zero (or possibly a non-zero value).
+    -   The positive skew means the residuals distribution has a right tail, i.e. is skewed to the left. This likely means the model overpredicts more than it underpredicts, which is preferable.
 
 ### Backtesting / Historical forecasts
 
@@ -2270,7 +2270,7 @@ Overall, the residuals seem much closer to stationary.
 
 -   There are a few particularly large residuals, especially in 2014-2015, and at year starts.
 
--   The distribution of residuals is more centered around 0 (as the AutoARIMA summary suggested), with smaller extreme values. This time, the extreme values are well-balanced between positive and negative. It seems the model underpredicts a bit more than it overpredicts. The opposite would be more preferable.
+-   The distribution of residuals is more centered around 0, with smaller extreme values. This time, the extreme values are well-balanced between positive and negative. It seems the model overpredicts a bit more than it underpredicts (as the ARIMA summary suggested), which is preferable to the opposite.
 
 -   The ACF and PACF plots display almost no significant autocorrelation, except for a weak autocorrelation with lag 1 and 7.
 
@@ -2289,9 +2289,9 @@ print(
 
 ```
 
-The stationarity tests are no longer in conflict:
+The stationarity tests are still in conflict:
 
--   The p-value for the KPSS test is larger than 0.05 (although barely), leading us to accept the null hypothesis of stationarity around a constant.
+-   The p-value for the KPSS test is smaller than 0.05 , leading us to reject the null hypothesis of stationarity around a constant, though we are closer to stationarity compared to model 1's test results.
 
 -   The p-value for the ADF test is practically 0, rejecting the null hypothesis of the presence of an unit root. This implies the data is stationary around a constant.
 

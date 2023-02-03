@@ -63,8 +63,8 @@ Ahmet Zamanis
   - <a href="#model-validation-predicting-2017-sales-1"
     id="toc-model-validation-predicting-2017-sales-1">Model validation:
     Predicting 2017 sales</a>
-  - <a href="#autoarima-model-summary"
-    id="toc-autoarima-model-summary">AutoARIMA model summary</a>
+  - <a href="#arima-model-summary" id="toc-arima-model-summary">ARIMA model
+    summary</a>
   - <a href="#backtesting-historical-forecasts"
     id="toc-backtesting-historical-forecasts">Backtesting / Historical
     forecasts</a>
@@ -769,8 +769,8 @@ seasonality:
   at T=1.
 
 - The correlation declines until T=6, which is the previous value of the
-  next weekday from T=0, and peaks at T=7, which is the previous value
-  of the same weekday.
+  next weekday from T=0, and spikes again at T=7, which is the previous
+  value of the same weekday.
 
 - The pattern repeats weekly after T=7, with declining strength.
 
@@ -1344,7 +1344,7 @@ the predictions are similar to the actual values.
 
 - In contrast, the linear model’s trend and seasonality are both on
   point, and the January 1st drop is adjusted for nicely. The model is
-  not able to match some peaks and troughs fully, which are possibly
+  not able to match some spikes and troughs fully, which are possibly
   cyclical in nature. That’s where model 2 will come in.
 
   - The piecewise linear trend method allows us to respond to turns in
@@ -2093,6 +2093,52 @@ pred_forest = model_forest.predict(
   n = 227, future_covariates = x_val2) + ts_preds1[-227:]
 ```
 
+    Performing stepwise search to minimize aicc
+     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2642.930, Time=0.08 sec
+     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1110.919, Time=0.07 sec
+
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-1995.747, Time=0.14 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1112.924, Time=0.02 sec
+     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2653.091, Time=0.15 sec
+
+     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2672.683, Time=0.24 sec
+
+     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2673.510, Time=0.32 sec
+
+     ARIMA(5,0,0)(0,0,0)[0] intercept   : AICC=-2676.354, Time=0.44 sec
+
+     ARIMA(5,0,1)(0,0,0)[0] intercept   : AICC=-2676.526, Time=0.79 sec
+
+     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2682.069, Time=0.61 sec
+
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2686.265, Time=0.50 sec
+
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2687.907, Time=0.42 sec
+     ARIMA(1,0,1)(0,0,0)[0] intercept   : AICC=-2658.378, Time=0.18 sec
+
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2685.067, Time=0.47 sec
+
+     ARIMA(1,0,2)(0,0,0)[0] intercept   : AICC=-2681.808, Time=0.38 sec
+
+     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=inf, Time=0.57 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2689.882, Time=0.16 sec
+
+     ARIMA(1,0,1)(0,0,0)[0]             : AICC=-2660.340, Time=0.07 sec
+     ARIMA(2,0,0)(0,0,0)[0]             : AICC=-2655.053, Time=0.07 sec
+
+     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2688.270, Time=0.24 sec
+
+     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2688.375, Time=0.21 sec
+     ARIMA(1,0,0)(0,0,0)[0]             : AICC=-2644.891, Time=0.05 sec
+
+     ARIMA(1,0,2)(0,0,0)[0]             : AICC=-2683.784, Time=0.21 sec
+     ARIMA(3,0,0)(0,0,0)[0]             : AICC=-2674.653, Time=0.10 sec
+
+     ARIMA(3,0,2)(0,0,0)[0]             : AICC=inf, Time=0.34 sec
+
+    Best model:  ARIMA(2,0,1)(0,0,0)[0]          
+    Total fit time: 6.831 seconds
+
 ``` python
 # Score models' performance
 perf_scores(y_val2, pred_drift2, model="Naive drift")
@@ -2147,11 +2193,12 @@ the respective lags & covariates models.
   random forest models, especially considering ARIMA didn’t make use of
   any covariate series.
 
-- Combining model 1 with a second linear model improves our predictions
-  a bit, especially the MAPE.
+- Combining model 1 with a second linear increases our RMSE, while
+  reducing our RMSLE and especially MAPE.
 
-  - This means absolute errors aren’t reduced as much as relative errors
-    are.
+  - This likely means applying model 2 reduces the tendency to
+    underpredict, at the cost of increasing overpredictions a bit, which
+    is preferable.
 
 - Combining model 1 with the random forest model decreases all error
   metrics considerably, and it appears to be the winning choice.
@@ -2163,7 +2210,7 @@ Let’s see the predictions plotted against the actual values.
 The performance of the 3 hybrids are similar overall, and it’s hard to
 see big differences from the plots.
 
-- The random forest did a better job of adjusting to some peaks and
+- The random forest did a better job of adjusting to some spikes and
   troughs, likely because it is able to select features and find
   interactions between predictors.
 
@@ -2173,10 +2220,10 @@ see big differences from the plots.
   dataset. Or they may be related to commemorations for the earthquake
   in April 2016.
 
-### AutoARIMA model summary
+### ARIMA model summary
 
 Before carrying on with our best hybrid model, which is linear + random
-forest, we can view the model summary of the AutoARIMA process for some
+forest, we can view the model summary of the ARIMA model for some
 insight.
 
 The AutoARIMA process has chosen an ARIMA(2, 0, 1) model, which uses the
@@ -2191,7 +2238,7 @@ print(model_arima.model.summary())
     Dep. Variable:                      y   No. Observations:                 1461
     Model:               SARIMAX(2, 0, 1)   Log Likelihood                1348.955
     Date:                Fri, 03 Feb 2023   AIC                          -2689.909
-    Time:                        15:21:19   BIC                          -2668.762
+    Time:                        15:47:14   BIC                          -2668.762
     Sample:                             0   HQIC                         -2682.021
                                    - 1461                                         
     Covariance Type:                  opg                                         
@@ -2217,10 +2264,10 @@ scores of other models, though smaller values (including negative)
 indicate a better trade-off between variance explained and model
 complexity.
 
-- We see that the first lag has a positive coefficient, so a higher
-  value for lag 1 means a higher prediction for sales at T=0.
+- The first lag has a positive coefficient, so a higher value for lag 1
+  means a higher prediction for sales at T=0.
 
-- Lag 2 and forecast error of lag 1 have a negative effect on the
+- Lag 2 and the forecast error of lag 1 have a negative effect on the
   prediction. If lag 2 or the error of lag 1 increase, the prediction
   for T=0 is pulled back.
 
@@ -2244,6 +2291,9 @@ complexity.
     taller distribution compared to normal, which likely means our
     residuals are packed tightly around zero (or possibly a non-zero
     value).
+  - The positive skew means the residuals distribution has a right tail,
+    i.e. is skewed to the left. This likely means the model overpredicts
+    more than it underpredicts, which is preferable.
 
 ### Backtesting / Historical forecasts
 
@@ -2337,11 +2387,11 @@ Overall, the residuals seem much closer to stationary.
 - There are a few particularly large residuals, especially in 2014-2015,
   and at year starts.
 
-- The distribution of residuals is more centered around 0 (as the
-  AutoARIMA summary suggested), with smaller extreme values. This time,
-  the extreme values are well-balanced between positive and negative. It
-  seems the model underpredicts a bit more than it overpredicts. The
-  opposite would be more preferable.
+- The distribution of residuals is more centered around 0, with smaller
+  extreme values. This time, the extreme values are well-balanced
+  between positive and negative. It seems the model overpredicts a bit
+  more than it underpredicts (as the ARIMA summary suggested), which is
+  preferable to the opposite.
 
 - The ACF and PACF plots display almost no significant autocorrelation,
   except for a weak autocorrelation with lag 1 and 7.
@@ -2359,14 +2409,14 @@ print(
 ) # Null rejected = data is stationary around a constant
 ```
 
-    KPSS test p-value: 0.017435346001820465
-    ADF test p-value: 1.933857119910301e-21
+    KPSS test p-value: 0.017435346001820496
+    ADF test p-value: 1.9338571199099526e-21
 
-The stationarity tests are no longer in conflict:
+The stationarity tests are still in conflict:
 
-- The p-value for the KPSS test is larger than 0.05 (although barely),
-  leading us to accept the null hypothesis of stationarity around a
-  constant.
+- The p-value for the KPSS test is smaller than 0.05 , leading us to
+  reject the null hypothesis of stationarity around a constant, though
+  we are closer to stationarity compared to model 1’s test results.
 
 - The p-value for the ADF test is practically 0, rejecting the null
   hypothesis of the presence of an unit root. This implies the data is
