@@ -1067,9 +1067,7 @@ We see our linear regression model performs much better than the other methods t
 
 -   It's also notable that the naive seasonal model beats the ETS model in all metrics, while beating FFT in RMSE and RMSLE. However, FFT beats the naive seasonal model in MAPE.
 
--   The ETS model also beats FFT in RMSE and RMSLE, while having considerably higher MAPE.
-
--   This is likely because MAPE is a measure of relative error, while RMSE and RMSLE are measures of absolute error.
+-   The ETS model also beats FFT in RMSE and RMSLE, while having considerably higher MAPE. This is likely because MAPE is a measure of relative error, while RMSE and RMSLE are measures of absolute error.
 
     -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
 
@@ -2015,7 +2013,7 @@ We'll use the same baseline models as we did in model 1. We'll compare them with
 
     -   The **order d** indicates the order of differentiation previously applied to the target series.
 
-    -   The ARIMA model (at least this implementation) doesn't take in other covariates.
+    -   This implementation of the ARIMA model also takes in covariates, which will be used as linear predictors just like in linear regression.
 
     -   We'll use an [AutoARIMA](https://alkaline-ml.com/pmdarima/modules/generated/pmdarima.arima.AutoARIMA.html#pmdarima.arima.AutoARIMA.summary) process, which will derive and apply the best ARIMA parameters from the data. The best ARIMA model will be chosen by minimizing the Corrected Akaike Information Criterion (AICc), which reflects the tradeoff between variance explained by the model, and model complexity.
 
@@ -2095,8 +2093,9 @@ pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
 model_seasonal.fit(y_train2)
 pred_seasonal2 = model_seasonal.predict(n = 227) + ts_preds1[-227:]
 
-model_arima.fit(y_train2)
-pred_arima = model_arima.predict(n = 227) + ts_preds1[-227:]
+model_arima.fit(y_train2, future_covariates = x_train2)
+pred_arima = model_arima.predict(
+  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
 
 model_linear2.fit(y_train2, future_covariates = x_train2)
 pred_linear2 = model_linear2.predict(
@@ -2127,13 +2126,15 @@ Remember that these are hybrid predictions: Each prediction is the combined resu
 
 -   Combining model 1 with a baseline model doesn't increase prediction errors all that much. This is because our data had strong time effects, so getting model 1 right did most of the job.
 
--   Combining model 1 with an ARIMA model increases our errors slightly. However, the performance is still fairly close to the linear and random forest models, especially considering ARIMA didn't make use of any covariate series.
-
--   Combining model 1 with a second linear increases our RMSE, while reducing our RMSLE and especially MAPE.
+-   Combining model 1 with a second linear regression increases our RMSE, while reducing our RMSLE and especially MAPE.
 
     -   This likely means applying model 2 reduces the tendency to underpredict, at the cost of increasing overpredictions a bit, which is preferable.
 
+-   Combining model 1 with an ARIMA model reduces our errors considerably. The performance is a bit better than linear regression, likely because ARIMA has a more sophisticated usage of the past values of the target series.
+
 -   Combining model 1 with the random forest model decreases all error metrics considerably, and it appears to be the winning choice.
+
+    -   The ARIMA still yields a close performance, even though it can't capture non-linear relationships or interactions like random forest does.
 
 Let's see the predictions plotted against the actual values.
 
@@ -2175,7 +2176,7 @@ The performance of the 3 hybrids are similar overall, and it's hard to see big d
 
 Before carrying on with our best hybrid model, which is linear + random forest, we can view the model summary of the ARIMA model for some insight.
 
-The AutoARIMA process has chosen an ARIMA(2, 0, 1) model, which uses the last 2 lags and the last forecast error as predictors.
+The AutoARIMA process has chosen an ARIMA(2, 0, 2) model, which uses the last 2 lags and the last 2 forecast errors as predictors, along with our covariates. Covariates x1 through x4 refer to `sales_ema5, oil_ma28, onp_ma28 and trns_ma7` respectively.
 
 ```{python AutoARIMASummary}
 print(model_arima.model.summary())
@@ -2183,15 +2184,17 @@ print(model_arima.model.summary())
 
 The AIC score is not meaningful on its own without being compared to AIC scores of other models, though smaller values (including negative) indicate a better trade-off between variance explained and model complexity.
 
--   The first lag has a positive coefficient, so a higher value for lag 1 means a higher prediction for sales at T=0.
+-   The first lag has a positive coefficient (`ar.L1`), so a higher value for lag 1 means a higher prediction for sales at T=0.
 
--   Lag 2 and the forecast error of lag 1 have a negative effect on the prediction. If lag 2 or the error of lag 1 increase, the prediction for T=0 is pulled back.
+-   Lag 2 and the forecast errors 1 & 2 (`ma.L1, ma.L2`) have a negative effect on the prediction. If lag 2 or the forecast errors increase, the prediction for T=0 is pulled back.
 
--   The p-value for the Ljung-Box test is 0.79, so the null hypothesis of residual independence is accepted. The residuals of our model are not correlated, so applying a third autoregressive model on them is not likely to improve predictions.
+-   The oil moving average (coefficient `x2`) does not have a significant effect. The sales EMA has a considerable positive effect, while the onpromotion and transactions MAs have small but significant positive effects.
 
--   The p-value for the heteroskedasticity test is 0.88, so the residuals meet the equal variance assumption. The model makes similar errors across the entire predicted time series, which means its performance is consistent.
+-   The p-value for the Ljung-Box test is 0.92, so the null hypothesis of residual independence is accepted. The residuals of our model are not correlated, so applying a third autoregressive model on them is not likely to improve predictions.
 
--   The null hypothesis for the Jarque-Bera test is zero skew & zero excess kurtosis in the distribution of the tested data. With a p-value of 0, the null hypothesis is rejected, and we can see the residuals have a skew of 0.81 and kurtosis of 9.28, compared to 0 and 3 respectively for a normal distribution.
+-   The p-value for the heteroskedasticity test is 0.52, so the residuals meet the equal variance assumption. The model makes similar errors across the entire predicted time series, which means its performance is consistent.
+
+-   The null hypothesis for the Jarque-Bera test is zero skew & zero excess kurtosis in the distribution of the tested data. With a p-value of 0, the null hypothesis is rejected, and we can see the residuals have a skew of 0.74 and kurtosis of 9.05, compared to 0 and 3 respectively for a normal distribution.
 
     -   A high kurtosis distribution can be thought of as a narrower and taller distribution compared to normal, which likely means our residuals are packed tightly around zero (or possibly a non-zero value).
     -   The positive skew means the residuals distribution has a right tail, i.e. is skewed to the left. This likely means the model overpredicts more than it underpredicts, which is preferable.

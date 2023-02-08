@@ -1302,10 +1302,8 @@ methods tested.
   the naive seasonal model in MAPE.
 
 - The ETS model also beats FFT in RMSE and RMSLE, while having
-  considerably higher MAPE.
-
-- This is likely because MAPE is a measure of relative error, while RMSE
-  and RMSLE are measures of absolute error.
+  considerably higher MAPE. This is likely because MAPE is a measure of
+  relative error, while RMSE and RMSLE are measures of absolute error.
 
   - For example, an absolute error of 2 translates to 2% MAPE if the
     true value is 100, but it translates to 0.2% MAPE if the true value
@@ -1966,8 +1964,9 @@ model.
   - The **order d** indicates the order of differentiation previously
     applied to the target series.
 
-  - The ARIMA model (at least this implementation) doesn’t take in other
-    covariates.
+  - This implementation of the ARIMA model also takes in covariates,
+    which will be used as linear predictors just like in linear
+    regression.
 
   - We’ll use an
     [AutoARIMA](https://alkaline-ml.com/pmdarima/modules/generated/pmdarima.arima.AutoARIMA.html#pmdarima.arima.AutoARIMA.summary)
@@ -2081,8 +2080,9 @@ pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
 model_seasonal.fit(y_train2)
 pred_seasonal2 = model_seasonal.predict(n = 227) + ts_preds1[-227:]
 
-model_arima.fit(y_train2)
-pred_arima = model_arima.predict(n = 227) + ts_preds1[-227:]
+model_arima.fit(y_train2, future_covariates = x_train2)
+pred_arima = model_arima.predict(
+  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
 
 model_linear2.fit(y_train2, future_covariates = x_train2)
 pred_linear2 = model_linear2.predict(
@@ -2094,50 +2094,53 @@ pred_forest = model_forest.predict(
 ```
 
     Performing stepwise search to minimize aicc
-     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2642.930, Time=0.08 sec
-     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1110.919, Time=0.07 sec
 
-     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-1995.747, Time=0.14 sec
-     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1112.924, Time=0.02 sec
-     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2653.091, Time=0.15 sec
+     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2805.963, Time=0.25 sec
+     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-2539.978, Time=0.16 sec
 
-     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2672.683, Time=0.24 sec
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2902.368, Time=0.20 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-2541.995, Time=0.14 sec
 
-     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2673.510, Time=0.32 sec
+     ARIMA(1,0,1)(0,0,0)[0] intercept   : AICC=-2900.354, Time=0.28 sec
 
-     ARIMA(5,0,0)(0,0,0)[0] intercept   : AICC=-2676.354, Time=0.44 sec
+     ARIMA(0,0,2)(0,0,0)[0] intercept   : AICC=-2900.356, Time=0.33 sec
 
-     ARIMA(5,0,1)(0,0,0)[0] intercept   : AICC=-2676.526, Time=0.79 sec
+     ARIMA(1,0,2)(0,0,0)[0] intercept   : AICC=-2923.947, Time=0.76 sec
 
-     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2682.069, Time=0.61 sec
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2930.285, Time=0.80 sec
 
-     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2686.265, Time=0.50 sec
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2908.076, Time=0.55 sec
 
-     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2687.907, Time=0.42 sec
-     ARIMA(1,0,1)(0,0,0)[0] intercept   : AICC=-2658.378, Time=0.18 sec
+     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2925.162, Time=0.88 sec
 
-     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2685.067, Time=0.47 sec
+     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2921.878, Time=0.89 sec
 
-     ARIMA(1,0,2)(0,0,0)[0] intercept   : AICC=-2681.808, Time=0.38 sec
+     ARIMA(1,0,3)(0,0,0)[0] intercept   : AICC=-2925.349, Time=0.86 sec
 
-     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=inf, Time=0.57 sec
-     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2689.882, Time=0.16 sec
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2914.881, Time=0.79 sec
 
-     ARIMA(1,0,1)(0,0,0)[0]             : AICC=-2660.340, Time=0.07 sec
-     ARIMA(2,0,0)(0,0,0)[0]             : AICC=-2655.053, Time=0.07 sec
+     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2920.268, Time=1.00 sec
 
-     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2688.270, Time=0.24 sec
+     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2932.683, Time=0.76 sec
 
-     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2688.375, Time=0.21 sec
-     ARIMA(1,0,0)(0,0,0)[0]             : AICC=-2644.891, Time=0.05 sec
+     ARIMA(1,0,2)(0,0,0)[0]             : AICC=-2926.428, Time=0.60 sec
 
-     ARIMA(1,0,2)(0,0,0)[0]             : AICC=-2683.784, Time=0.21 sec
-     ARIMA(3,0,0)(0,0,0)[0]             : AICC=-2674.653, Time=0.10 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2910.099, Time=0.51 sec
 
-     ARIMA(3,0,2)(0,0,0)[0]             : AICC=inf, Time=0.34 sec
+     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2927.185, Time=0.81 sec
 
-    Best model:  ARIMA(2,0,1)(0,0,0)[0]          
-    Total fit time: 6.831 seconds
+     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2924.489, Time=0.83 sec
+
+     ARIMA(1,0,1)(0,0,0)[0]             : AICC=-2902.374, Time=0.24 sec
+
+     ARIMA(1,0,3)(0,0,0)[0]             : AICC=-2930.810, Time=0.78 sec
+
+     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2917.879, Time=0.76 sec
+
+     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2922.432, Time=0.91 sec
+
+    Best model:  ARIMA(2,0,2)(0,0,0)[0]          
+    Total fit time: 14.086 seconds
 
 ``` python
 # Score models' performance
@@ -2159,9 +2162,9 @@ perf_scores(y_val2, pred_forest, model="Random forest")
     MAPE: 20.5417
     --------
     Model: ARIMA
-    RMSE: 78411.9777
-    RMSLE: 0.1074
-    MAPE: 8.2202
+    RMSE: 70231.2188
+    RMSLE: 0.095
+    MAPE: 6.8247
     --------
     Model: Linear
     RMSE: 76222.5702
@@ -2188,20 +2191,24 @@ the respective lags & covariates models.
   errors all that much. This is because our data had strong time
   effects, so getting model 1 right did most of the job.
 
-- Combining model 1 with an ARIMA model increases our errors slightly.
-  However, the performance is still fairly close to the linear and
-  random forest models, especially considering ARIMA didn’t make use of
-  any covariate series.
-
-- Combining model 1 with a second linear increases our RMSE, while
-  reducing our RMSLE and especially MAPE.
+- Combining model 1 with a second linear regression increases our RMSE,
+  while reducing our RMSLE and especially MAPE.
 
   - This likely means applying model 2 reduces the tendency to
     underpredict, at the cost of increasing overpredictions a bit, which
     is preferable.
 
+- Combining model 1 with an ARIMA model reduces our errors considerably.
+  The performance is a bit better than linear regression, likely because
+  ARIMA has a more sophisticated usage of the past values of the target
+  series.
+
 - Combining model 1 with the random forest model decreases all error
   metrics considerably, and it appears to be the winning choice.
+
+  - The ARIMA still yields a close performance, even though it can’t
+    capture non-linear relationships or interactions like random forest
+    does.
 
 Let’s see the predictions plotted against the actual values.
 
@@ -2226,8 +2233,10 @@ Before carrying on with our best hybrid model, which is linear + random
 forest, we can view the model summary of the ARIMA model for some
 insight.
 
-The AutoARIMA process has chosen an ARIMA(2, 0, 1) model, which uses the
-last 2 lags and the last forecast error as predictors.
+The AutoARIMA process has chosen an ARIMA(2, 0, 2) model, which uses the
+last 2 lags and the last 2 forecast errors as predictors, along with our
+covariates. Covariates x1 through x4 refer to
+`sales_ema5, oil_ma28, onp_ma28 and trns_ma7` respectively.
 
 ``` python
 print(model_arima.model.summary())
@@ -2236,24 +2245,29 @@ print(model_arima.model.summary())
                                    SARIMAX Results                                
     ==============================================================================
     Dep. Variable:                      y   No. Observations:                 1461
-    Model:               SARIMAX(2, 0, 1)   Log Likelihood                1348.955
-    Date:                Fri, 03 Feb 2023   AIC                          -2689.909
-    Time:                        15:47:14   BIC                          -2668.762
-    Sample:                             0   HQIC                         -2682.021
+    Model:               SARIMAX(2, 0, 2)   Log Likelihood                1475.404
+    Date:                Wed, 08 Feb 2023   AIC                          -2932.807
+    Time:                        16:58:06   BIC                          -2885.225
+    Sample:                             0   HQIC                         -2915.058
                                    - 1461                                         
     Covariance Type:                  opg                                         
     ==============================================================================
                      coef    std err          z      P>|z|      [0.025      0.975]
     ------------------------------------------------------------------------------
-    ar.L1          1.5400      0.052     29.737      0.000       1.439       1.642
-    ar.L2         -0.5557      0.046    -12.106      0.000      -0.646      -0.466
-    ma.L1         -0.8430      0.046    -18.340      0.000      -0.933      -0.753
-    sigma2         0.0092      0.000     52.439      0.000       0.009       0.010
+    x1             0.1457      0.003     51.378      0.000       0.140       0.151
+    x2            -0.0006      0.002     -0.373      0.709      -0.004       0.003
+    x3             0.0040      0.001      2.808      0.005       0.001       0.007
+    x4             0.0140      0.001     12.208      0.000       0.012       0.016
+    ar.L1          0.9304      0.039     23.911      0.000       0.854       1.007
+    ar.L2         -0.1716      0.043     -4.007      0.000      -0.256      -0.088
+    ma.L1         -0.4195      0.040    -10.536      0.000      -0.498      -0.341
+    ma.L2         -0.4297      0.043     -9.899      0.000      -0.515      -0.345
+    sigma2         0.0078      0.000     48.948      0.000       0.007       0.008
     ===================================================================================
-    Ljung-Box (L1) (Q):                   0.07   Jarque-Bera (JB):              2559.33
-    Prob(Q):                              0.79   Prob(JB):                         0.00
-    Heteroskedasticity (H):               0.99   Skew:                             0.81
-    Prob(H) (two-sided):                  0.88   Kurtosis:                         9.28
+    Ljung-Box (L1) (Q):                   0.01   Jarque-Bera (JB):              2359.85
+    Prob(Q):                              0.92   Prob(JB):                         0.00
+    Heteroskedasticity (H):               1.06   Skew:                             0.74
+    Prob(H) (two-sided):                  0.52   Kurtosis:                         9.05
     ===================================================================================
 
     Warnings:
@@ -2264,19 +2278,24 @@ scores of other models, though smaller values (including negative)
 indicate a better trade-off between variance explained and model
 complexity.
 
-- The first lag has a positive coefficient, so a higher value for lag 1
-  means a higher prediction for sales at T=0.
+- The first lag has a positive coefficient (`ar.L1`), so a higher value
+  for lag 1 means a higher prediction for sales at T=0.
 
-- Lag 2 and the forecast error of lag 1 have a negative effect on the
-  prediction. If lag 2 or the error of lag 1 increase, the prediction
-  for T=0 is pulled back.
+- Lag 2 and the forecast errors 1 & 2 (`ma.L1, ma.L2`) have a negative
+  effect on the prediction. If lag 2 or the forecast errors increase,
+  the prediction for T=0 is pulled back.
 
-- The p-value for the Ljung-Box test is 0.79, so the null hypothesis of
+- The oil moving average (coefficient `x2`) does not have a significant
+  effect. The sales EMA has a considerable positive effect, while the
+  onpromotion and transactions MAs have small but significant positive
+  effects.
+
+- The p-value for the Ljung-Box test is 0.92, so the null hypothesis of
   residual independence is accepted. The residuals of our model are not
   correlated, so applying a third autoregressive model on them is not
   likely to improve predictions.
 
-- The p-value for the heteroskedasticity test is 0.88, so the residuals
+- The p-value for the heteroskedasticity test is 0.52, so the residuals
   meet the equal variance assumption. The model makes similar errors
   across the entire predicted time series, which means its performance
   is consistent.
@@ -2284,7 +2303,7 @@ complexity.
 - The null hypothesis for the Jarque-Bera test is zero skew & zero
   excess kurtosis in the distribution of the tested data. With a p-value
   of 0, the null hypothesis is rejected, and we can see the residuals
-  have a skew of 0.81 and kurtosis of 9.28, compared to 0 and 3
+  have a skew of 0.74 and kurtosis of 9.05, compared to 0 and 3
   respectively for a normal distribution.
 
   - A high kurtosis distribution can be thought of as a narrower and
