@@ -240,7 +240,7 @@ df_train["transactions"] = df_train["transactions"].interpolate(
 print(df_train)
 ```
 
-## Hierarchical time series
+## Hierarchical time series: Sales
 
 ```{python TargetDataFrames}
 
@@ -278,10 +278,87 @@ from functools import reduce
 wide_frames = [total, category, store_nbr, category_store_nbr]
 df_sales = reduce(lambda left, right: pd.merge(
   left, right, how="left", on="date"), wide_frames)
-  
+df_sales = df_sales.rename(columns = {"sales":"TOTAL"})
 del total, category, store_nbr, wide_frames, category_store_nbr
 
 # Print wide sales dataframe
 print(df_sales.iloc[0:5, [0, 1, 2, 34, 35, 88, 153]])
 print("Rows x columns: " + str(df_sales.shape))
 ```
+
+```{python TargetHierarchy}
+
+from darts import TimeSeries
+
+# Create multivariate time series with sales components
+ts_sales = TimeSeries.from_dataframe(df_sales, freq="D")
+
+# Create lists of hierarchy nodes
+categories = df_train.category.unique().tolist()
+stores = df_train.store_nbr.unique().astype(str).tolist()
+
+# Initialize empty dict
+hierarchy_target = dict()
+
+# Map category sales to total sales
+for category in categories:
+  hierarchy_target[category] = ["TOTAL"]
+
+# Map store sales to total sales
+for store in stores:
+  hierarchy_target[store] = ["TOTAL"]
+
+# Map category X store combinations to respective category sales and store sales
+from itertools import product
+for category, store in product(categories, stores):
+  hierarchy_target["{}-{}".format(category, store)] = [category, store]
+
+#map hierarchy to ts_train
+ts_sales = ts_sales.with_hierarchy(hierarchy_target)
+print(ts_sales)
+del category, store
+
+```
+
+```{python CategoryPlots}
+_ = ts_sales["BREAD/BAKERY"].plot()
+_ = ts_sales["CLEANING"].plot()
+_ = ts_sales["CELEBRATION"].plot()
+_ = ts_sales["LIQUOR,WINE,BEER"].plot()
+_ = ts_sales["SCHOOL AND OFFICE SUPPLIES"].plot()
+_ = plt.title("Sales of 5 select categories")
+plt.show()
+plt.close("all")
+```
+
+```{python StorePlots}
+_ = ts_sales["1"].plot()
+_ = ts_sales["8"].plot()
+_ = ts_sales["23"].plot()
+_ = ts_sales["42"].plot()
+_ = ts_sales["51"].plot()
+_ = plt.title("Sales of 5 select stores")
+plt.show()
+plt.close("all")
+
+```
+
+```{python CatStorePlots1}
+_ = ts_sales["BREAD/BAKERY-1"].plot()
+_ = ts_sales["BREAD/BAKERY-8"].plot()
+_ = ts_sales["BREAD/BAKERY-23"].plot()
+_ = plt.title("Sales of one category across 3 stores")
+plt.show()
+plt.close("all")
+```
+
+```{python CatStorePlots2}
+_ = ts_sales["CELEBRATION-1"].plot()
+_ = ts_sales["CELEBRATION-8"].plot()
+_ = ts_sales["CELEBRATION-23"].plot()
+_ = plt.title("Sales of one category across 3 stores")
+plt.show()
+plt.close("all")
+```
+
+## Covariate series
