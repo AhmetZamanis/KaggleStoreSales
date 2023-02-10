@@ -233,11 +233,13 @@ df_test = df.loc["2017-08-16":]
 df_train["transactions"] = df_train["transactions"].interpolate(
   "time", limit_direction = "both")
   
+# Recombine train and test
+df = pd.concat([df_train, df_test])
 ```
 
 ```{python PrintRawData}
 #| echo: false
-print(df_train)
+print(df)
 ```
 
 ## Hierarchical time series: Sales
@@ -362,3 +364,78 @@ plt.close("all")
 ```
 
 ## Covariate series
+
+### Total sales covariates
+
+```{python TotalCovars1}
+
+# Aggregate time features by mean
+total_covars1 = df.drop(
+  columns=['id', 'store_nbr', 'category', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
+  
+# Add piecewise linear trend dummies
+total_covars1["trend"] = range(1, 1701) # Linear trend dummy 1
+total_covars1["trend_knot"] = 0
+total_covars1.iloc[728:,-1] = range(0, 972) # Linear trend dummy 2
+
+# Add Fourier features for monthly seasonality
+from statsmodels.tsa.deterministic import DeterministicProcess
+dp = DeterministicProcess(
+  index = total_covars1.index,
+  constant = False,
+  order = 0, # No trend feature
+  seasonal = False, # No seasonal dummy features
+  period = 28, # 28-period seasonality (28 days, 1 month)
+  fourier = 5, # 5 Fourier pairs
+  drop = True # Drop perfectly collinear terms
+)
+total_covars1 = total_covars1.merge(dp.in_sample(), how="left", on="date")
+
+# Create Darts time series with time features
+ts_totalcovars1 = TimeSeries.from_dataframe(total_covars1, freq="D")
+```
+
+```{python TotalCovars2}
+
+# Aggregate daily covariate series
+time_covars2 = df.groupby("date").agg(
+ { "oil": "mean",
+  "onpromotion": "sum"}
+  )
+time_covars2["transactions"] = df.groupby("date") # ????????
+```
+
+### Category sales covariates
+
+### Store sales covariates
+
+### Category X store sales covariates
+
+## Modeling: Total sales
+
+## Modeling: Category sales
+
+## Modeling: Store sales
+
+## Modeling: Category X store sales
+
+## Hierarchical reconciliation
+
+```{python}
+
+Fill gaps in target and covariate series!
+
+pd.isnull(df).sum()
+
+# Select category totals
+ts_sales["AUTOMOTIVE":"SEAFOOD"]
+
+# Select one component
+ts_sales["AUTOMOTIVE":"SEAFOOD"]["AUTOMOTIVE"]
+
+# Retrieve each component as a time series
+category_sales = [ts_sales["AUTOMOTIVE":"SEAFOOD"][category] for category in categories]
+
+# Fit model on multiple time series
+fit(target = category_sales, future_covariates = category_covars)
+```
