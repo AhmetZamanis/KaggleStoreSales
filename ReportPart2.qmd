@@ -7,7 +7,6 @@ format:
 editor: visual
 jupyter: python3
 execute:
-  warning: false
   message: false
 ---
 
@@ -59,9 +58,9 @@ df_stores = df_stores.rename(columns = {
   "type":"store_type", "cluster":"store_cluster"})
 
 # Add columns from oil, stores and transactions datasets into main data
+df = df.merge(df_stores, on = "store_nbr", how = "left")
 df = df.merge(df_trans, on = ["date", "store_nbr"], how = "left")
 df = df.merge(df_oil, on = "date", how = "left")
-df = df.merge(df_stores, on = "store_nbr", how = "left")
 
 
 # Split holidays data into local, regional, national and events
@@ -229,9 +228,8 @@ df["category_store_nbr"] = df["category"].astype(str) + "-" + df["store_nbr"].as
 df_train = df.loc[:"2017-08-15"]
 df_test = df.loc["2017-08-16":]
 
-# Interpolate transactions in train
-df_train["transactions"] = df_train["transactions"].interpolate(
-  "time", limit_direction = "both")
+# Replace transactions in train with 0
+df_train["transactions"] = df_train["transactions"].fillna(0)
   
 # Recombine train and test
 df = pd.concat([df_train, df_test])
@@ -334,6 +332,7 @@ plt.close("all")
 ```
 
 ```{python StorePlots}
+#| echo = false
 _ = ts_sales["1"].plot()
 _ = ts_sales["8"].plot()
 _ = ts_sales["23"].plot()
@@ -346,6 +345,7 @@ plt.close("all")
 ```
 
 ```{python CatStorePlots1}
+#| echo = false
 _ = ts_sales["BREAD/BAKERY-1"].plot()
 _ = ts_sales["BREAD/BAKERY-8"].plot()
 _ = ts_sales["BREAD/BAKERY-23"].plot()
@@ -355,6 +355,7 @@ plt.close("all")
 ```
 
 ```{python CatStorePlots2}
+#| echo = false
 _ = ts_sales["CELEBRATION-1"].plot()
 _ = ts_sales["CELEBRATION-8"].plot()
 _ = ts_sales["CELEBRATION-23"].plot()
@@ -368,6 +369,7 @@ plt.close("all")
 ### Total sales covariates
 
 ```{python TotalCovars1}
+#| echo = false
 
 # Aggregate time features by mean
 total_covars1 = df.drop(
@@ -396,13 +398,44 @@ ts_totalcovars1 = TimeSeries.from_dataframe(total_covars1, freq="D")
 ```
 
 ```{python TotalCovars2}
+#| echo = false
 
 # Aggregate daily covariate series
-time_covars2 = df.groupby("date").agg(
+total_covars2 = df.groupby("date").agg(
  { "oil": "mean",
   "onpromotion": "sum"}
   )
-time_covars2["transactions"] = df.groupby("date") # ????????
+total_covars2["transactions"] = df.groupby(["date", "store_nbr"]).transactions.mean().groupby("date").sum()
+
+# Difference daily covariate series
+from sktime.transformations.series.difference import Differencer
+diff = Differencer(lags = 1)
+total_covars2 = diff.fit_transform(total_covars2)
+  
+# Replace covariate series with MAs
+# Oil
+total_covars2["oil_ma28"] = total_covars2["oil"].rolling(window = 28, center = False).mean()
+total_covars2["oil_ma28"] = total_covars2["oil_ma28"].interpolate(
+  method = "spline", order = 2, limit_direction = "both")
+
+# Onpromotion
+total_covars2["onp_ma28"] = total_covars2["onpromotion"].rolling(window = 28, center = False).mean()
+total_covars2["onp_ma28"] = total_covars2["onp_ma28"].interpolate(
+  method = "spline", order = 2, limit_direction = "both") 
+
+# Transactions
+total_covars2["trns_ma7"] = total_covars2["transactions"].rolling(window = 7, center = False).mean()
+total_covars2["trns_ma7"] = total_covars2["trns_ma7"].interpolate("linear", limit_direction = "backward")  
+
+# # Sales EMA
+# total_covars2["sales_ema5"] = df_sales["TOTAL"].rolling(
+#   window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+  
+# Drop original covariate series
+total_covars2 = total_covars2.drop(["oil", "onpromotion", "transactions"], axis = 1)
+
+# Replace last 15 dates' transactions MAs with NAs
+total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 ```
 
 ### Category sales covariates
@@ -413,6 +446,10 @@ time_covars2["transactions"] = df.groupby("date") # ????????
 
 ## Modeling: Total sales
 
+Remember to fill gaps in darts TS
+
+Remember to add decomposed sales ema5 to total_covars2
+
 ## Modeling: Category sales
 
 ## Modeling: Store sales
@@ -422,8 +459,6 @@ time_covars2["transactions"] = df.groupby("date") # ????????
 ## Hierarchical reconciliation
 
 ```{python}
-
-Fill gaps in target and covariate series!
 
 pd.isnull(df).sum()
 
