@@ -2,6 +2,19 @@ Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
 
 
+# Export the linear + random forest hybrid's 2017 predictions for use in part 2
+pred_forest.to_csv("./ModifiedData/2017TotalPreds.csv")
+
+# Fill gaps by interpolating missing values
+from darts.dataprocessing.transformers import MissingValuesFiller
+na_filler = MissingValuesFiller()
+ts_sales["TOTAL"] = na_filler.transform(ts_sales["TOTAL"])
+ts_timecovars = na_filler.transform(ts_timecovars)
+ts_totalcovars1 = na.filler.transform(ts_totalcovars1)
+
+
+
+
 # df_agg = df_train.groupby("date").agg(
 #   {
 #     "sales": "mean",

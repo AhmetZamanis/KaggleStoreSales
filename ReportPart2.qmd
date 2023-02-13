@@ -7,7 +7,7 @@ format:
 editor: visual
 jupyter: python3
 execute:
-  message: false
+  warning: false
 ---
 
 ## Introduction
@@ -320,6 +320,17 @@ del category, store
 
 ```
 
+```{python FillTargetGaps}
+
+# Scan gaps
+print(ts_sales.gaps())
+
+# Fill gaps
+from darts.dataprocessing.transformers import MissingValuesFiller
+na_filler = MissingValuesFiller()
+ts_sales = na_filler.transform(ts_sales)
+```
+
 ```{python CategoryPlots}
 _ = ts_sales["BREAD/BAKERY"].plot()
 _ = ts_sales["CLEANING"].plot()
@@ -366,6 +377,17 @@ plt.close("all")
 
 ## Covariate series
 
+```{python LogTrafoFuncs}
+#| echo = false
+
+# Define functions to perform log transformation and reverse it. +1 to avoid zeroes
+def trafo_log(x):
+  return x.map(lambda x: np.log(x+1))
+
+def trafo_exp(x):
+  return x.map(lambda x: np.exp(x)-1)
+```
+
 ### Total sales covariates
 
 ```{python TotalCovars1}
@@ -395,6 +417,12 @@ total_covars1 = total_covars1.merge(dp.in_sample(), how="left", on="date")
 
 # Create Darts time series with time features
 ts_totalcovars1 = TimeSeries.from_dataframe(total_covars1, freq="D")
+
+# Fill gaps in covars
+ts_totalcovars1 = na_filler.transform(ts_totalcovars1)
+
+# Retrieve covars with filled gaps
+total_covars1 = ts_totalcovars1.pd_dataframe()
 ```
 
 ```{python TotalCovars2}
@@ -427,10 +455,6 @@ total_covars2["onp_ma28"] = total_covars2["onp_ma28"].interpolate(
 total_covars2["trns_ma7"] = total_covars2["transactions"].rolling(window = 7, center = False).mean()
 total_covars2["trns_ma7"] = total_covars2["trns_ma7"].interpolate("linear", limit_direction = "backward")  
 
-# # Sales EMA
-# total_covars2["sales_ema5"] = df_sales["TOTAL"].rolling(
-#   window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
-  
 # Drop original covariate series
 total_covars2 = total_covars2.drop(["oil", "onpromotion", "transactions"], axis = 1)
 
@@ -446,9 +470,98 @@ total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 
 ## Modeling: Total sales
 
-Remember to fill gaps in darts TS
+```{python ScoringFunc}
+#| echo = false
 
-Remember to add decomposed sales ema5 to total_covars2
+# Define model scoring function
+from darts.metrics import mape, rmse, rmsle
+def perf_scores(val, pred, model="drift"):
+  
+  scores_dict = {
+    "RMSE": rmse(trafo_exp(val), trafo_exp(pred)), 
+    "RMSLE": rmse(val, pred), 
+    "MAPE": mape(trafo_exp(val), trafo_exp(pred))
+      }
+      
+  print("Model: " + model)
+  
+  for key in scores_dict:
+    print(
+      key + ": " + 
+      str(round(scores_dict[key], 4))
+       )
+  print("--------")  
+```
+
+```{python TotalSalesModel}
+#| echo = false
+
+# Perform time decomposition in Sklearn
+
+# Train-test split
+y_train_decomp, y_val_decomp = trafo_log(ts_sales["TOTAL"][:-227].pd_series()), trafo_log(ts_sales["TOTAL"][-227:].pd_series()) 
+x_train_decomp, x_val_decomp = total_covars1.iloc[:-243,], total_covars1.iloc[-243:,]
+
+# Fit & predict on 13-16, retrieve residuals
+from sklearn.linear_model import LinearRegression
+model_decomp = LinearRegression()
+model_decomp.fit(x_train_decomp, y_train_decomp)
+pred_total1 = model_decomp.predict(x_train_decomp)
+res_total1 = y_train_decomp - pred_total1
+
+# Predict on 17, retrieve residuals
+pred_total2 = model_decomp.predict(x_val_decomp)
+res_total2 = y_val_decomp - pred_total2[:-16]
+
+# Concatenate residuals to get decomposed sales
+sales_decomp = pd.concat([res_total1, res_total2])
+
+# Concatenate predictions to get model 1 predictions
+preds_total1 = pd.Series(np.concatenate((pred_total1, pred_total2)), index = total_covars1.index)
+
+
+# Add decomped sales ema5 to covars2
+total_covars2["sales_ema5"] = sales_decomp.rolling(
+  window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+
+# Make Darts TS with decomposed sales
+ts_decomp = TimeSeries.from_series(sales_decomp.rename("sales"), freq="D")
+
+# Make Darts TS with model 1 predictions
+ts_preds_total1 = TimeSeries.from_series(preds_total1.rename("sales"), freq="D")
+
+# Make Darts TS with covars2, fill gaps
+ts_totalcovars2 = TimeSeries.from_dataframe(total_covars2, freq="D")
+ts_totalcovars2 = na_filler.transform(ts_totalcovars2)
+
+# Train-validation split
+y_train_total, y_val_total = ts_decomp[:-227], trafo_log(ts_sales["TOTAL"][-227:])
+x_train_total, x_val_total = ts_totalcovars2[:-243], ts_totalcovars2[-243:-16]
+
+# Scale covariates (train-validation split only)
+from sklearn.preprocessing import StandardScaler
+from darts.dataprocessing.transformers import Scaler
+scaler = Scaler(StandardScaler())
+x_train_total = scaler.fit_transform(x_train_total)
+x_val_total = scaler.transform(x_val_total)
+
+# Model spec
+from darts.models.forecasting.random_forest import RandomForest
+model_forest = RandomForest(
+  lags = [-1, -2, -3, -4, -5], # Target lags that can be used
+  lags_future_covariates = [0], # No covariate lags
+  random_state = 1923,
+  n_jobs = -2 # Use all but one of the CPUs
+  )
+
+# Fit model & predict validation set
+model_forest.fit(y_train_total, future_covariates = x_train_total)
+pred_total = model_forest.predict(
+  n = 227, future_covariates = x_val_total) + ts_preds_total1[-243:-16]
+  
+# Score model
+perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total sales")
+```
 
 ## Modeling: Category sales
 
@@ -457,6 +570,15 @@ Remember to add decomposed sales ema5 to total_covars2
 ## Modeling: Category X store sales
 
 ## Hierarchical reconciliation
+
+```{python ReconcileTop}
+from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator as TopDown
+
+# Fit top down reconciliator on original series
+recon_top = TopDown(verbose = True)
+recon_top.fit(ts_sales)
+
+```
 
 ```{python}
 
@@ -474,3 +596,7 @@ category_sales = [ts_sales["AUTOMOTIVE":"SEAFOOD"][category] for category in cat
 # Fit model on multiple time series
 fit(target = category_sales, future_covariates = category_covars)
 ```
+
+## Competition submission
+
+Remember to reverse log and CPI transformations
