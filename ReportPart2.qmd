@@ -490,7 +490,7 @@ def perf_scores(val, pred, model="drift"):
       key + ": " + 
       str(round(scores_dict[key], 4))
        )
-  print("--------")  
+  print("--------")
 ```
 
 ```{python TotalSalesModel}
@@ -558,6 +558,7 @@ model_forest = RandomForest(
 model_forest.fit(y_train_total, future_covariates = x_train_total)
 pred_total = model_forest.predict(
   n = 227, future_covariates = x_val_total) + ts_preds_total1[-243:-16]
+
   
 # Score model
 perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total sales")
@@ -571,13 +572,70 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 
 ## Hierarchical reconciliation
 
+```{python ScoreHierFunc}
+#| echo: false
+
+from statistics import fmean, stdev
+
+# Define model scoring function for full hierarchy
+def scores_hierarchy(val, pred, subset):
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
+
+  # def measure_mape(val, pred, subset):
+  #   return mape([val[c] for c in subset], [pred[c] for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse(val, pred, subset), 
+    "RMSLE": measure_rmsle(val, pred, subset)
+    # "MAPE": measure_mape(val, pred, subset)
+      }
+  
+  for key in scores_dict:
+    print(
+      key + ": mean=" + 
+      str(round(fmean(scores_dict[key]), 4)) + 
+      ", sd=" + 
+      str(round(stdev(scores_dict[key]), 4)) + 
+      ", min=" + str(round(min(scores_dict[key]), 4)) + 
+      ", max=" + 
+      str(round(max(scores_dict[key]), 4))
+       )
+    print("--------")
+
+```
+
 ```{python ReconcileTop}
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator as TopDown
+from darts import concatenate
 
 # Fit top down reconciliator on original series
 recon_top = TopDown(verbose = True)
 recon_top.fit(ts_sales)
+```
 
+```{python TESThier1}
+# Distribute total sales forecasts to bottom levels
+test = concatenate([trafo_exp(pred_total), ts_sales["AUTOMOTIVE":][-227:]], axis = 1).with_columns_renamed("sales", "TOTAL")
+test = recon_top.transform(test.with_hierarchy(hierarchy_target))
+```
+
+```{python TESTscorehier1}
+# Score each level
+scores_hierarchy(ts_sales[-227:], test, categories)
+#
+scores_hierarchy(ts_sales[-227:], test, stores)
+#
+
+categories_stores = []
+for category, store in product(categories, stores):
+  categories_stores.append("{}-{}".format(category, store))
+  
+scores_hierarchy(ts_sales[-227:], test, categories_stores)
 ```
 
 ```{python}
