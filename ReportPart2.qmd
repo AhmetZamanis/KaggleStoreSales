@@ -477,7 +477,7 @@ common_covars["oil_ma28"] = common_covars["oil_ma28"].interpolate(
   method = "spline", order = 2, limit_direction = "both")
 
 # Print common covariates
-print(common_covars)
+print(common_covars.columns)
 ```
 
 ```{python CategoryCovars}
@@ -491,7 +491,7 @@ ts_catcovars = []
 for category in categories:
   
   # Retrieve common covariates
-  covars = common_covars
+  covars = common_covars.copy()
   
   # Retrieve differenced onpromotion, its MA
   covars["onpromotion"] = diff.fit_transform(
@@ -638,7 +638,60 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 
 ## Modeling: Category sales
 
-Scale covariates between 0-1
+```{python CategoryPreprocessing}
+
+# Create min-max scaler
+scaler_minmax = Scaler()
+
+# Train-validation split and scaling for covariates
+x_train_cat, x_val_cat = [], []
+for series in ts_catcovars:
+  
+  # Split train-val series
+  cov_train, cov_val = series[:-243], series[-243:-16]
+  
+  # Scale train-val series
+  cov_train = scaler_minmax.fit_transform(cov_train)
+  cov_val = scaler_minmax.transform(cov_val)
+  
+  # Append series
+  x_train_cat.append(cov_train)
+  x_val_cat.append(cov_val)
+  
+  # Cleanup
+  del cov_train, cov_val
+```
+
+```{python CategoryTargets}
+
+# List of category sales
+category_sales = [ts_sales["AUTOMOTIVE":"SEAFOOD"][category] for category in categories]
+
+# Train-validation split and log transform for category sales
+y_train_cat, y_val_cat = [], []
+for series in category_sales:
+  
+  # Split train-val series
+  y_train, y_val = series[:-227], series[-227:]
+  
+  # Append series
+  y_train_cat.append(y_train)
+  y_val_cat.append(y_val)
+  
+  # Cleanup
+  del y_train, y_val
+
+```
+
+```{python CategoryModelSpec}
+from darts.models.forecasting.rnn_model import RNNModel as RNN
+
+# Specify RNN model
+
+
+```
+
+Use rmsle as loss function? MAE with log transform?
 
 ## Modeling: Store sales
 
