@@ -464,6 +464,78 @@ total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 
 ### Category sales covariates
 
+```{python CommonCovars}
+
+# Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all categories).
+common_covars = total_covars1[total_covars1.columns[0:21].values.tolist()]
+
+# Add differenced oil price and its MA to common covariates. 
+common_covars["oil"] = df.groupby("date").oil.mean()
+common_covars["oil"] = diff.fit_transform(common_covars["oil"]).interpolate("time", limit_direction = "both")
+common_covars["oil_ma28"] = common_covars["oil"].rolling(window = 28, center = False).mean()
+common_covars["oil_ma28"] = common_covars["oil_ma28"].interpolate(
+  method = "spline", order = 2, limit_direction = "both")
+
+# Print common covariates
+print(common_covars)
+```
+
+```{python CategoryCovars}
+#| output: false
+
+from darts.utils.timeseries_generation import datetime_attribute_timeseries
+
+# Initialize list of category covariates
+ts_catcovars = []
+
+for category in categories:
+  
+  # Retrieve common covariates
+  covars = common_covars
+  
+  # Retrieve differenced onpromotion, its MA
+  covars["onpromotion"] = diff.fit_transform(
+    df[df["category"] == category].groupby("date").onpromotion.sum()
+    ).interpolate(
+      "time", limit_direction = "both"
+      )
+  covars["onp_ma28"] = covars["onpromotion"].rolling(
+    window = 28, center = False
+    ).mean().interpolate(
+  method = "spline", order = 2, limit_direction = "both"
+  ) 
+  
+  # Retrieve differenced transactions, its MA
+  covars["transactions"] = diff.fit_transform(
+    df[df["category"] == category].groupby(["date", "store_nbr"]).transactions.mean().groupby("date").sum()
+    ).interpolate(
+      "time", limit_direction = "both"
+      )
+  covars["trns_ma7"] = covars["transactions"].rolling(
+    window = 7, center = False
+    ).mean().interpolate(
+  "linear", limit_direction = "backward"
+  ) 
+  
+  # Create darts TS, fill gaps
+  covars = na_filler.transform(TimeSeries.from_dataframe(covars, freq = "D")) 
+  
+  # Cyclical encode day of month using datetime_attribute_timeseries
+  covars = covars.stack(
+    datetime_attribute_timeseries(
+      time_index = covars,
+      attribute = "day",
+      cyclic = True
+      )
+    )
+  
+  # Append TS to list
+  ts_catcovars.append(covars)
+  
+  # Cleanup
+  del covars
+```
+
 ### Store sales covariates
 
 ### Category X store sales covariates
@@ -565,6 +637,8 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 ```
 
 ## Modeling: Category sales
+
+Scale covariates between 0-1
 
 ## Modeling: Store sales
 
