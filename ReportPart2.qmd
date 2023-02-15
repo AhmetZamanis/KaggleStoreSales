@@ -21,6 +21,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
+import torch
 
 # Set printing options
 np.set_printoptions(suppress=True, precision=4)
@@ -809,6 +810,8 @@ Mention the negative arima predictions
 from darts.models.forecasting.dlinear import DLinearModel as DLinear
 from torchmetrics import MeanSquaredLogError
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+torch.set_float32_matmul_precision("high")
+
 
 # Create early stopper
 early_stopper = EarlyStopping(
@@ -820,7 +823,7 @@ early_stopper = EarlyStopping(
 # Specify DLinear model
 model_dlinear_cat = DLinear(
   input_chunk_length = 84,
-  output_chunk_length = 15,
+  output_chunk_length = 16,
   kernel_size = 28,
   torch_metrics = MeanSquaredLogError(),
   batch_size = 16,
@@ -831,9 +834,7 @@ model_dlinear_cat = DLinear(
   pl_trainer_kwargs = {
     "callbacks": [early_stopper],
     "accelerator": "gpu",
-    "devices": 1,
-    "auto_select_gpus": True
-  },
+    "devices": [0]},
   show_warnings = True
 )
 
@@ -849,9 +850,17 @@ model_dlinear_cat.fit(
   series = y_train_cat,
   future_covariates = [x[dlinear_covars] for x in x_train_cat],
   val_series = y_val_cat,
-  val_future_covariates = [x[dlinear_covars] for x in x_val_cat]
+  val_future_covariates = [x[dlinear_covars] for x in x_val_cat],
+  verbose = True,
+  num_loader_workers = 20
 )
 ```
+
+Fix sanity check issue, maybe change chunk sizes and covariates
+
+Read more about the warning output
+
+Cast data to 32bit
 
 ```{python CategoryModelSpecRNN}
 from darts.models.forecasting.rnn_model import RNNModel as RNN
