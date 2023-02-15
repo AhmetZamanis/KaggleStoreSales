@@ -20,6 +20,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tqdm import tqdm
 
 # Set printing options
 np.set_printoptions(suppress=True, precision=4)
@@ -638,6 +639,45 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 
 ## Modeling: Category sales
 
+```{python HierarchicalScoreFunc}
+#| echo: false
+
+# Define model scoring function for full hierarchy
+def scores_hierarchy(val, pred, subset, model):
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
+
+  # def measure_mape(val, pred, subset):
+  #   return mape([val[c] for c in subset], [pred[c] for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse(val, pred, subset), 
+    "RMSLE": measure_rmsle(val, pred, subset)
+    # "MAPE": measure_mape(val, pred, subset)
+      }
+      
+  print("Model=" + model)    
+  
+  for key in scores_dict:
+    print(
+      key + ": mean=" + 
+      str(round(np.nanmean(scores_dict[key]), 2)) + 
+      ", sd=" + 
+      str(round(np.nanstd(scores_dict[key]), 2)) + 
+      ", min=" + str(round(min(scores_dict[key]), 2)) + 
+      ", max=" + 
+      str(round(max(scores_dict[key]), 2))
+       )
+       
+  print("--------")
+
+
+```
+
 ```{python CategoryPreprocessing}
 
 # Create min-max scaler
@@ -667,7 +707,7 @@ for series in ts_catcovars:
 # List of category sales
 category_sales = [ts_sales["AUTOMOTIVE":"SEAFOOD"][category] for category in categories]
 
-# Train-validation split and log transform for category sales
+# Train-validation split for category sales
 y_train_cat, y_val_cat = [], []
 for series in category_sales:
   
@@ -683,7 +723,87 @@ for series in category_sales:
 
 ```
 
-```{python CategoryModelSpec}
+```{python CategoryBaselineSpec}
+
+# Import baseline models
+from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
+from darts.models.forecasting.auto_arima import AutoARIMA
+
+# Specify baseline models
+
+# Naive
+model_drift = NaiveDrift()
+model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
+
+# AutoARIMA
+model_arima_cat = AutoARIMA(
+  start_p = 0,
+  max_p = 7,
+  start_q = 0,
+  max_q = 7,
+  seasonal = False, # Don't include seasonal orders
+  information_criterion = 'aicc', # Minimize AICc to choose best model
+  trace = False # Don't print tuning iterations
+)
+```
+
+```{python CategoryFitVal}
+
+# Fit & validate baseline models
+
+# Naive
+model_drift.fit(ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227])
+pred_drift_cat = model_drift.predict(n = 227)
+
+model_seasonal.fit(ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227])
+pred_seasonal_cat = model_seasonal.predict(n = 227)
+
+
+# AutoARIMA
+arima_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# First fit & validate the first category to initialize series
+model_arima_cat.fit(
+  y_train_cat[0], 
+  future_covariates = x_train_cat[0][arima_covars])
+  
+pred_arima_cat = model_arima_cat.predict(
+  n=227,
+  future_covariates = x_val_cat[0][arima_covars])
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_cat))):
+  
+  # Fit on training data
+  model_arima_cat.fit(
+  y_train_cat[i], 
+  future_covariates = x_train_cat[i][arima_covars])
+  
+  # Predict validation data
+  pred = model_arima_cat.predict(
+  n=227,
+  future_covariates = x_val_cat[i][arima_covars])
+  
+  # Stack predictions to multivariate series
+  pred_arima_cat = pred_arima_cat.stack(pred)
+```
+
+```{python CategoryScoreBaselines}
+
+print("Category sales prediction scores, baseline models")
+print("--------")
+
+# Naive
+scores_hierarchy(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], pred_drift_cat, categories, "Naive drift")
+
+scores_hierarchy(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], pred_seasonal_cat, categories, "Naive seasonal")
+
+# AutoARIMA
+scores_hierarchy(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], pred_arima_cat, categories, "AutoARIMA")
+
+```
+
+```{python CategoryModelSpecRNN}
 from darts.models.forecasting.rnn_model import RNNModel as RNN
 
 # Specify RNN model
@@ -693,48 +813,13 @@ from darts.models.forecasting.rnn_model import RNNModel as RNN
 
 Use rmsle as loss function? MAE with log transform?
 
+Use an activation that forces \>=0 predictions?
+
 ## Modeling: Store sales
 
 ## Modeling: Category X store sales
 
 ## Hierarchical reconciliation
-
-```{python ScoreHierFunc}
-#| echo: false
-
-from statistics import fmean, stdev
-
-# Define model scoring function for full hierarchy
-def scores_hierarchy(val, pred, subset):
-  
-  def measure_rmse(val, pred, subset):
-    return rmse([val[c] for c in subset], [pred[c] for c in subset])
-
-  def measure_rmsle(val, pred, subset):
-    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
-
-  # def measure_mape(val, pred, subset):
-  #   return mape([val[c] for c in subset], [pred[c] for c in subset])
-
-  scores_dict = {
-    "RMSE": measure_rmse(val, pred, subset), 
-    "RMSLE": measure_rmsle(val, pred, subset)
-    # "MAPE": measure_mape(val, pred, subset)
-      }
-  
-  for key in scores_dict:
-    print(
-      key + ": mean=" + 
-      str(round(fmean(scores_dict[key]), 4)) + 
-      ", sd=" + 
-      str(round(stdev(scores_dict[key]), 4)) + 
-      ", min=" + str(round(min(scores_dict[key]), 4)) + 
-      ", max=" + 
-      str(round(max(scores_dict[key]), 4))
-       )
-    print("--------")
-
-```
 
 ```{python ReconcileTop}
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator as TopDown

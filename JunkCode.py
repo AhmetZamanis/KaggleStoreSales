@@ -2,6 +2,43 @@ Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
 
 
+from statistics import fmean, stdev
+
+# Define model scoring function for full hierarchy
+def scores_hierarchy(val, pred, subset, model):
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
+
+  # def measure_mape(val, pred, subset):
+  #   return mape([val[c] for c in subset], [pred[c] for c in subset])
+
+  scores_dict = {
+    "RMSE": measure_rmse(val, pred, subset), 
+    "RMSLE": measure_rmsle(val, pred, subset)
+    # "MAPE": measure_mape(val, pred, subset)
+      }
+      
+  print("Model=" + model)    
+  
+  for key in scores_dict:
+    print(
+      key + ": mean=" + 
+      str(round(fmean(scores_dict[key]), 2)) + 
+      ", sd=" + 
+      str(round(stdev(scores_dict[key]), 2)) + 
+      ", min=" + str(round(min(scores_dict[key]), 2)) + 
+      ", max=" + 
+      str(round(max(scores_dict[key]), 2))
+       )
+       
+  print("--------")
+
+
+
 # Export the linear + random forest hybrid's 2017 predictions for use in part 2
 pred_forest.to_csv("./ModifiedData/2017TotalPreds.csv")
 
