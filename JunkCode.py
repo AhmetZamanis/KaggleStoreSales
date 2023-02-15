@@ -1,5 +1,10 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+import torch
+torch.cuda.is_available()
+
+from pytorch_lightning.accelerators import find_usable_cuda_devices
+find_usable_cuda_devices(2)
 
 
 from statistics import fmean, stdev

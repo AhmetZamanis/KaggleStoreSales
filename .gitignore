@@ -172,5 +172,6 @@ vignettes/*.pdf
 .csv
 OriginalData/
 ModifiedData/
+darts_logs/
 
 /.quarto/
