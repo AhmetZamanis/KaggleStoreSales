@@ -641,7 +641,6 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 ## Modeling: Category sales
 
 ```{python HierarchicalScoreFunc}
-#| echo: false
 
 # Define model scoring function for full hierarchy
 def scores_hierarchy(val, pred, subset, model):
@@ -650,15 +649,11 @@ def scores_hierarchy(val, pred, subset, model):
     return rmse([val[c] for c in subset], [pred[c] for c in subset])
 
   def measure_rmsle(val, pred, subset):
-    return rmsle([val[c] for c in subset], [pred[c] for c in subset])
-
-  # def measure_mape(val, pred, subset):
-  #   return mape([val[c] for c in subset], [pred[c] for c in subset])
+    return rmsle([(val[c] + 0.0001) for c in subset], [pred[c] for c in subset])
 
   scores_dict = {
     "RMSE": measure_rmse(val, pred, subset), 
     "RMSLE": measure_rmsle(val, pred, subset)
-    # "MAPE": measure_mape(val, pred, subset)
       }
       
   print("Model=" + model)    
@@ -685,7 +680,7 @@ def scores_hierarchy(val, pred, subset, model):
 scaler_minmax = Scaler()
 
 # Train-validation split and scaling for covariates
-x_train_cat, x_val_cat = [], []
+x_cat = []
 for series in ts_catcovars:
   
   # Split train-val series
@@ -695,9 +690,15 @@ for series in ts_catcovars:
   cov_train = scaler_minmax.fit_transform(cov_train)
   cov_val = scaler_minmax.transform(cov_val)
   
-  # Append series
-  x_train_cat.append(cov_train)
-  x_val_cat.append(cov_val)
+  # Cast series to 32-bits for performance gains
+  cov_train = cov_train.astype(np.float32)
+  cov_val = cov_val.astype(np.float32)
+  
+  # Rejoin series
+  cov_train = cov_train.append(cov_val)
+  
+  # Append series to list
+  x_cat.append(cov_train)
   
   # Cleanup
   del cov_train, cov_val
@@ -714,6 +715,10 @@ for series in category_sales:
   
   # Split train-val series
   y_train, y_val = series[:-227], series[-227:]
+  
+  # Cast series to 32-bits for performance gains
+  y_train = y_train.astype(np.float32)
+  y_val = y_val.astype(np.float32)
   
   # Append series
   y_train_cat.append(y_train)
@@ -795,23 +800,40 @@ print("Category sales prediction scores, baseline models")
 print("--------")
 
 # Naive
-scores_hierarchy(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], pred_drift_cat, categories, "Naive drift")
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], 
+  pred_drift_cat,
+  categories, 
+  "Naive drift"
+  )
 
-scores_hierarchy(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], pred_seasonal_cat, categories, "Naive seasonal")
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], 
+  pred_seasonal_cat,
+  categories, 
+  "Naive seasonal"
+  )
 
 # AutoARIMA
-scores_hierarchy(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], pred_arima_cat, categories, "AutoARIMA")
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], 
+  pred_arima_cat,
+  categories, 
+  "AutoARIMA"
+  )
 
 ```
 
 Mention the negative arima predictions
 
-```{python CategoryModelSpecDLinear}
-from darts.models.forecasting.dlinear import DLinearModel as DLinear
+```{python SetupTorch}
 from torchmetrics import MeanSquaredLogError
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-torch.set_float32_matmul_precision("high")
+from pytorch_lightning.callbacks import ModelSummary
+from pytorch_lightning.callbacks import RichProgressBar
 
+torch.set_float32_matmul_precision("high")
+torch.set_printoptions(sci_mode = False)
 
 # Create early stopper
 early_stopper = EarlyStopping(
@@ -820,13 +842,19 @@ early_stopper = EarlyStopping(
   patience = 5
 )
 
+progress_bar = RichProgressBar()
+```
+
+```{python CategoryModelSpecDLinear}
+from darts.models.forecasting.dlinear import DLinearModel as DLinear
+
 # Specify DLinear model
 model_dlinear_cat = DLinear(
-  input_chunk_length = 84,
-  output_chunk_length = 16,
+  input_chunk_length = 28,
+  output_chunk_length = 15,
   kernel_size = 28,
-  torch_metrics = MeanSquaredLogError(),
-  batch_size = 16,
+  # torch_metrics = MeanSquaredLogError(),
+  batch_size = 32,
   n_epochs = 100,
   model_name = "DLinearCat1",
   save_checkpoints = True,
@@ -834,10 +862,10 @@ model_dlinear_cat = DLinear(
   pl_trainer_kwargs = {
     "callbacks": [early_stopper],
     "accelerator": "gpu",
-    "devices": [0]},
+    "devices": [0]
+    },
   show_warnings = True
 )
-
 ```
 
 ```{python CategoryDLinearFitVal}
@@ -848,11 +876,11 @@ dlinear_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1'
 # Fit & validate d-linear model
 model_dlinear_cat.fit(
   series = y_train_cat,
-  future_covariates = [x[dlinear_covars] for x in x_train_cat],
+  future_covariates = [x[dlinear_covars] for x in x_cat],
   val_series = y_val_cat,
-  val_future_covariates = [x[dlinear_covars] for x in x_val_cat],
-  verbose = True,
-  num_loader_workers = 20
+  val_future_covariates = [x[dlinear_covars] for x in x_cat],
+  verbose = True
+  #num_loader_workers = 10,
 )
 ```
 
@@ -860,15 +888,61 @@ Fix sanity check issue, maybe change chunk sizes and covariates
 
 Read more about the warning output
 
-Cast data to 32bit
-
 ```{python CategoryModelSpecRNN}
 from darts.models.forecasting.rnn_model import RNNModel as RNN
 
 # Specify RNN model
-
+model_rnn_cat = RNN(
+  model = "LSTM",
+  input_chunk_length = 30,
+  training_length = 45,
+  # torch_metrics = MeanSquaredLogError(),
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "RNNCat1",
+  save_checkpoints = True,
+  random_state = 1923,
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar],
+    "accelerator": "gpu",
+    "devices": [0]
+    },
+  show_warnings = True
+)
 
 ```
+
+```{python CategoryRNNFitVal}
+#| output: false
+#| warning: false
+#| include: false
+
+# RNN covariates
+rnn_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'trend', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos']
+
+# Fit & validate RNN model
+model_rnn_cat.fit(
+  series = y_train_cat,
+  future_covariates = [x[rnn_covars] for x in x_cat],
+  val_series = y_val_cat,
+  val_future_covariates = [x[rnn_covars] for x in x_cat],
+  verbose = True
+  #num_loader_workers = 20
+)
+
+```
+
+num_loader_workers causes training / sanity check to get stuck. it works without num_loader_workers, but uses single CPU core for validation data loader and possibly validation epoch
+
+default progress bar prevents RNN checkpoint saving, it works with rich progress bar, but it doesn't print epochs
+
+default progress bar prints epochs but freezes rstudio after a while
+
+Dlinear doesn't train because "tensor a doesn't match tensor b". tensor a is input chunk, tensor b is 1 smaller than that
+
+msle as metric doesn't work
+
+can't suppress scientific notation with torch_setoptions
 
 Use rmsle as loss function? MAE with log transform?
 

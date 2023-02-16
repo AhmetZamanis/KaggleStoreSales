@@ -1,5 +1,39 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+jupyter nbextension enable --py widgetsnbextension
+pip uninstall ipywidgets
+
+# Create min-max scaler
+scaler_minmax = Scaler()
+
+# Train-validation split and scaling for covariates
+x_train_cat, x_val_cat = [], []
+for series in ts_catcovars:
+  
+  # Split train-val series
+  cov_train, cov_val = series[:-243], series[-243:-16]
+  
+  # Scale train-val series
+  cov_train = scaler_minmax.fit_transform(cov_train)
+  cov_val = scaler_minmax.transform(cov_val)
+  
+  # Cast series to 32-bits for performance gains
+  cov_train = cov_train.astype(np.float32)
+  cov_val = cov_val.astype(np.float32)
+  
+  # Append series
+  x_train_cat.append(cov_train)
+  x_val_cat.append(cov_val)
+  
+  # Cleanup
+  del cov_train, cov_val
+
+
+
+
+"accelerator": "gpu",
+    "devices": [0]
+
 import torch
 torch.cuda.is_available()
 
