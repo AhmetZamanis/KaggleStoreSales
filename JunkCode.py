@@ -1,5 +1,8 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+
+ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227]
+
 jupyter nbextension enable --py widgetsnbextension
 pip uninstall ipywidgets
 
