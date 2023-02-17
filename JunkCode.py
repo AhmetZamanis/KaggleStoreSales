@@ -1,6 +1,11 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
 
+static_covariates = pd.DataFrame(
+        data = {"category": category},
+        index = [1]
+        )
+
 ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227]
 
 jupyter nbextension enable --py widgetsnbextension
