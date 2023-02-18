@@ -31,7 +31,6 @@ pd.set_option('display.max_columns', None)
 plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams["figure.autolayout"] = True
-#sns.set_theme(context="paper")
 ```
 
 ## Data preparation
@@ -201,12 +200,6 @@ df["cyber_monday"] = ((df["event"] == 1) & (df.index.isin(["2014-12-01", "2015-1
 
 df = df.drop("event", axis=1)
 
-# # Holiday-event leads
-# df["local_lead1"] = df["local_holiday"].shift(-1).fillna(0).astype(int)
-# df["regional_lead1"] = df["regional_holiday"].shift(-1).fillna(0).astype(int)
-# df["national_lead1"] = df["national_holiday"].shift(-1).fillna(0).astype(int)
-# df["diamadre_lead1"] = df["dia_madre"].shift(-1).fillna(0).astype(int)
-
 # Days of week dummies
 df["tuesday"] = (df.index.dayofweek == 1).astype(int)
 df["wednesday"] = (df.index.dayofweek == 2).astype(int)
@@ -215,13 +208,6 @@ df["friday"] = (df.index.dayofweek == 4).astype(int)
 df["saturday"] = (df.index.dayofweek == 5).astype(int)
 df["sunday"] = (df.index.dayofweek == 6).astype(int)
 
-# # Difference covariates
-# from sktime.transformations.series.difference import Differencer
-# trafo_diff = Differencer(lags=1)
-# df["oil"] = trafo_diff.fit_transform(df["oil"].values)
-# df["onpromotion"] = trafo_diff.fit_transform(df["onpromotion"].values)
-# df["transactions"] = trafo_diff.fit_transform(df["transactions"].values)
-
 # Add category X store_nbr column for Darts hierarchy
 df["category_store_nbr"] = df["category"].astype(str) + "-" + df["store_nbr"].astype(str)
 
@@ -229,7 +215,7 @@ df["category_store_nbr"] = df["category"].astype(str) + "-" + df["store_nbr"].as
 df_train = df.loc[:"2017-08-15"]
 df_test = df.loc["2017-08-16":]
 
-# Replace transactions in train with 0
+# Replace transactions NAs in train with 0
 df_train["transactions"] = df_train["transactions"].fillna(0)
   
 # Recombine train and test
@@ -238,7 +224,7 @@ df = pd.concat([df_train, df_test])
 
 ```{python PrintRawData}
 #| echo: false
-print(df)
+print(df.head(2))
 ```
 
 ## Hierarchical time series: Sales
@@ -290,6 +276,7 @@ print("Rows x columns: " + str(df_sales.shape))
 ```{python TargetHierarchy}
 
 from darts import TimeSeries
+from itertools import product
 
 # Create multivariate time series with sales components
 ts_sales = TimeSeries.from_dataframe(df_sales, freq="D")
@@ -310,7 +297,6 @@ for store in stores:
   hierarchy_target[store] = ["TOTAL"]
 
 # Map category X store combinations to respective category sales and store sales
-from itertools import product
 for category, store in product(categories, stores):
   hierarchy_target["{}-{}".format(category, store)] = [category, store]
 
@@ -549,7 +535,7 @@ for category in categories:
 #| echo = false
 
 # Define model scoring function
-from darts.metrics import mape, rmse, rmsle
+from darts.metrics import rmse, rmsle, mape
 def perf_scores(val, pred, model="drift"):
   
   scores_dict = {
@@ -686,7 +672,7 @@ def scores_hierarchy(val, pred, subset, model):
 
 ### Preprocessing
 
-```{python CategoryPreprocessing}
+```{python CategoryCovars}
 
 # Create min-max scaler
 scaler_minmax = Scaler()
@@ -846,151 +832,6 @@ for i in tqdm(range(1, len(y_train_cat))):
 
 Mention the negative arima predictions
 
-### PyTorch models
-
-```{python SetupTorch}
-# import torch
-# from torchmetrics import MeanSquaredLogError
-# from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-# from pytorch_lightning.callbacks import RichProgressBar
-# import tensorboard
-# 
-# torch.set_float32_matmul_precision("high")
-# torch.set_printoptions(sci_mode = False)
-# 
-# # Create early stopper
-# early_stopper = EarlyStopping(
-#   monitor = "val_loss",
-#   min_delta = 1887397.187,
-#   patience = 5
-# )
-# 
-# progress_bar = RichProgressBar()
-```
-
-#### D-Linear
-
-```{python CategoryModelSpecDLinear}
-# from darts.models.forecasting.dlinear import DLinearModel as DLinear
-# 
-# # Specify DLinear model
-# model_dlinear_cat = DLinear(
-#   input_chunk_length = 180,
-#   output_chunk_length = 1,
-#   kernel_size = 25,
-#   batch_size = 32,
-#   n_epochs = 500,
-#   model_name = "DLinearCat2",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   random_state = 1923,
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     },
-#   show_warnings = True,
-#   force_reset = True
-# )
-```
-
-```{python CategoryDLinearFit}
-#| output: false
-#| warning: false
-#| include: false
-
-# # D-linear covariates
-# dlinear_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos']
-# 
-# # Fit & validate d-linear model
-# model_dlinear_cat.fit(
-#   series = y_train_cat,
-#   future_covariates = [x[dlinear_covars] for x in x_cat],
-#   val_series = y_val_cat,
-#   val_future_covariates = [x[dlinear_covars] for x in x_cat],
-#   verbose = True
-# )
-```
-
-```{python CategoryDLinearVal}
-
-# # Predict validation data with RNN model
-# pred_dlinear_cat_list = model_dlinear_cat.predict(
-#   n = 227,
-#   series = y_train_cat,
-#   future_covariates = [x[dlinear_covars] for x in x_cat]
-#   )
-#   
-# # Stack predictions to get multivariate series
-# pred_dlinear_cat = pred_dlinear_cat_list[0].stack(pred_dlinear_cat_list[1])
-# for pred in pred_dlinear_cat_list[2:]:
-#   pred_dlinear_cat = pred_dlinear_cat.stack(pred)
-```
-
-#### RNN
-
-```{python CategoryModelSpecRNN}
-# from darts.models.forecasting.rnn_model import RNNModel as RNN
-# 
-# # Specify RNN model
-# model_rnn_cat = RNN(
-#   model = "LSTM",
-#   input_chunk_length = 180,
-#   training_length = 195,
-#   batch_size = 32,
-#   n_epochs = 500,
-#   n_rnn_layers = 2,
-#   hidden_dim = 32,
-#   dropout = 0.2,
-#   model_name = "RNNCat2",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   random_state = 1923,
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     },
-#   show_warnings = True,
-#   force_reset = True
-# )
-
-```
-
-```{python CategoryRNNFit}
-#| output: false
-#| warning: false
-#| include: false
-
-# # RNN covariates
-# rnn_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'trend', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos']
-# 
-# # Fit RNN model
-# model_rnn_cat.fit(
-#   series = y_train_cat,
-#   future_covariates = [x[rnn_covars] for x in x_cat],
-#   val_series = y_val_cat,
-#   val_future_covariates = [x[rnn_covars] for x in x_cat],
-#   verbose = True
-# )
-
-```
-
-```{python CategoryRNNVal}
-
-# # Predict validation data with RNN model
-# pred_rnn_cat_list = model_rnn_cat.predict(
-#   n = 227,
-#   series = y_train_cat,
-#   future_covariates = [x[rnn_covars] for x in x_cat]
-#   )
-#   
-# # Stack predictions to get multivariate series
-# pred_rnn_cat = pred_rnn_cat_list[0].stack(pred_rnn_cat_list[1])
-# for pred in pred_rnn_cat_list[2:]:
-#   pred_rnn_cat = pred_rnn_cat.stack(pred)
-```
-
 ### Model scores
 
 ```{python CategoryScore}
@@ -1000,7 +841,6 @@ print("--------")
 
 # Naive
 scores_hierarchy(
-  #scaler_minmax.transform(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:]),
   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
   pred_drift_cat,
   categories, 
@@ -1021,45 +861,7 @@ scores_hierarchy(
   categories,
   "AutoARIMA"
   )
-
-# # D-linear
-# scores_hierarchy(
-#   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
-#   pred_dlinear_cat,
-#   categories,
-#   "D-linear"
-#   )
-
-## RNN
-# scores_hierarchy(
-#   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], 
-#   pred_rnn_cat,
-#   categories, 
-#   "RNN"
-#   )
 ```
-
-**Errors:**
-
-num_loader_workers causes training / sanity check to get stuck. it works without num_loader_workers, but uses single CPU core for data loader and accuracy calculation. It's possible this is because of jupyter notebook
-
-default progress bar prevents RNN checkpoint saving, it works with rich progress bar, but it doesn't print epochs default progress bar prints epochs but freezes rstudio after a while.
-
-Dlinear sometimes doesn't train because "tensor a doesn't match tensor b". tensor a is input chunk, tensor b is 1 smaller than that.
-
-Overwriting a darts NN model with a new model name seems to cause the same pickle issue as default progress bar.
-
-can't suppress scientific notation with torch_setoptions
-
-**Params:**
-
-RNN loss is computed on output sequences of training length - input_chunk_length. Try longer input lengths
-
-Use an activation that forces \>=0 predictions?
-
-Change learning rate / use adaptive rate / different optimizer?
-
-Set much smaller early stop value?
 
 ## Modeling: Store sales
 
