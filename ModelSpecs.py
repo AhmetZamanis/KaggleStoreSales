@@ -1,3 +1,30 @@
+# XGBOOST
+
+# Category global
+
+# Fit XGB model
+model_xgb_cat.fit(
+  [decomp_cat["AUTOMOTIVE":"SEAFOOD"][category] for category in categories],
+  future_covariates = [x[xgb_covars] for x in x_cat]
+)
+
+# Predict validation data for each category
+pred_xgb_cat_list = model_xgb_cat.predict(
+  n = 227,
+  series = [decomp_cat["AUTOMOTIVE":"SEAFOOD"][category] for category in categories],
+  future_covariates = [x[xgb_covars] for x in x_cat]
+  )
+
+# Stack predictions to get multivariate series
+pred_xgb_cat = pred_xgb_cat_list[0].stack(pred_xgb_cat_list[1])
+for pred in pred_xgb_cat_list[2:]:
+  pred_xgb_cat = pred_xgb_cat.stack(pred)
+
+
+
+
+
+
 # D-LINEAR
 
 # 1

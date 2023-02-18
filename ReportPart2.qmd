@@ -517,6 +517,15 @@ for category in categories:
       cyclic = True
       )
     )
+    
+   # Cyclical encode month using datetime_attribute_timeseries
+  covars = covars.stack(
+    datetime_attribute_timeseries(
+      time_index = covars,
+      attribute = "month",
+      cyclic = True
+      )
+    ) 
   
   # Append TS to list
   ts_catcovars.append(covars)
@@ -652,30 +661,29 @@ def scores_hierarchy(val, pred, subset, model):
     "RMSLE": measure_rmsle(val, pred, subset)
       }
       
-  print("Model=" + model)    
+  print("Model = " + model)    
   
   for key in scores_dict:
     print(
-      key + ": mean=" + 
+      key + ": mean = " + 
       str(round(np.nanmean(scores_dict[key]), 2)) + 
-      ", sd=" + 
+      ", sd = " + 
       str(round(np.nanstd(scores_dict[key]), 2)) + 
-      ", min=" + str(round(min(scores_dict[key]), 2)) + 
-      ", max=" + 
+      ", min = " + str(round(min(scores_dict[key]), 2)) + 
+      ", max = " + 
       str(round(max(scores_dict[key]), 2))
        )
        
   print("--------")
 
-
+ 
 ```
 
 ```{python NegRemover}
 
 # Define function to replace negative predictions with zeroes
 def trafo_zero(x):
-  a = x[x < 0]
-  return x
+  return x.map(lambda x: np.clip(x, a_min = 0, a_max = None))
 ```
 
 ### Preprocessing
@@ -790,7 +798,7 @@ scores_hierarchy(
   )
 ```
 
-### Univariate: AutoARIMA
+### AutoARIMA
 
 ```{python CategoryArimaSpec}
 from darts.models.forecasting.auto_arima import AutoARIMA
@@ -810,7 +818,7 @@ model_arima_cat = AutoARIMA(
 ```{python CategoryArimaFitVal}
 
 # AutoARIMA
-arima_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos']
+arima_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', "month_sin", "month_cos"]
 
 # First fit & validate the first category to initialize series
 model_arima_cat.fit(
@@ -836,9 +844,12 @@ for i in tqdm(range(1, len(y_train_cat))):
 
   # Stack predictions to multivariate series
   pred_arima_cat = pred_arima_cat.stack(pred)
+  
+  # Cleanup
+  del pred
 ```
 
-### Multivariate, hybrid: Linear + XGBoost
+### Hybrid models
 
 #### Time decomposition with linear regression
 
@@ -856,7 +867,7 @@ model_linear_cat = LinearRegressionModel(
 ```{python CatLinearFitVal}
 
 # Time covariates
-linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos']
+linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 # First fit & validate the first category to initialize series
 model_linear_cat.fit(
@@ -886,28 +897,33 @@ for i in tqdm(range(1, len(y_train_cat))):
 
   # Stack predictions to multivariate series
   pred_linear_cat = pred_linear_cat.stack(pred)
-
-# Score decomposition model predictions
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
-  pred_linear_cat,
-  categories,
-  "Linear"
-  )
 ```
+
+trend & seasonal terms only:
+
+    Model=Linear
+    MAE: mean=2621.4, sd=4923.58, min=5.03, max=19160.13
+    MSE: mean=70499625.75, sd=212692761.21, min=34.44, max=994111456.04
+    RMSE: mean=3806.15, sd=7484.17, min=5.87, max=31529.53
+    RMSLE: mean=0.49, sd=0.25, min=0.3, max=1.2x
+
+\+ calendar features
+
+    Model=Linear
+    MAE: mean=2490.91, sd=4729.51, min=4.91, max=18161.36
+    MSE: mean=53358370.35, sd=157023502.31, min=33.11, max=682423288.06
+    RMSE: mean=3328.76, sd=6502.13, min=5.75, max=26123.23
+    RMSLE: mean=0.43, sd=0.23, min=0.2, max=1.28
 
 ```{python CatLinearResids}
 
 # Retrieve 2014 > residuals from linear decomposition model
 
-# First retrieve residuals for first category to initialize series
-res_linear_cat = model_linear_cat.residuals(
-  y_train_cat[0],
-  future_covariates = x_cat[0][linear_covars]
-  )
+# Initialize list of linear model residuals
+res_linear_cat = []
 
 # Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_cat))):
+for i in tqdm(range(0, len(y_train_cat))):
 
   # Retrieve residuals
   res = model_linear_cat.residuals(
@@ -915,17 +931,71 @@ for i in tqdm(range(1, len(y_train_cat))):
   future_covariates = x_cat[i][linear_covars]
   )
   
-  # Stack residuals to multivariate series
-  res_linear_cat = res_linear_cat.stack(res)
+  # Drop residuals before 2014
+  res = res.split_after(pd.Timestamp("2013-12-31"))[1]
+  
+  # Append residuals to list
+  res_linear_cat.append(res)
+  
+  #Cleanup
+  del res
 ```
 
-```{python CatLinearResidsSplit}
+#### Random forest on decomposed sales
 
-# Drop residuals before 2014
-decomp_cat = res_linear_cat.split_after(pd.Timestamp("2013-12-31"))[1]
+```{python CatRFSpec}
+
+# Specify random forest model
+model_rf_cat = RandomForest(
+  lags = [-1, -2, -3, -4, -5, -6, -7],
+  lags_future_covariates = [0],
+  output_chunk_length = 15,
+  oob_score = True,
+  random_state = 1923,
+  n_jobs = 20
+)
 ```
 
-#### XGBoost on decomposed residuals
+```{python CatRFFitVal}
+
+# RF covariates
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# First fit & validate the first category to initialize series
+model_rf_cat.fit(
+  res_linear_cat[0],
+  future_covariates = x_cat[0][rf_covars]
+  )
+
+pred_rf_cat = model_rf_cat.predict(
+  n=227,
+  future_covariates = x_cat[0][rf_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(res_linear_cat))):
+
+  # Fit on training data
+  model_rf_cat.fit(
+  res_linear_cat[i],
+  future_covariates = x_cat[i][rf_covars]
+  )
+
+  # Predict validation data
+  pred = model_rf_cat.predict(
+  n=227,
+  future_covariates = x_cat[i][rf_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_rf_cat = pred_rf_cat.stack(pred)
+
+  # Cleanup
+  del pred
+
+```
+
+#### XGBoost on decomposed sales
 
 ```{python CatXGBSpec}
 from darts.models.forecasting.xgboost import XGBModel
@@ -938,42 +1008,45 @@ model_xgb_cat = XGBModel(
   random_state = 1923,
   nthread = 20
 )
-
 ```
 
 ```{python CatXGBFitVal}
 
 # XGB covariates
-xgb_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2','ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+xgb_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
 
-# Fit XGB model
+# First fit & validate the first category to initialize series
 model_xgb_cat.fit(
-  [decomp_cat["AUTOMOTIVE":"SEAFOOD"][category] for category in categories],
-  future_covariates = [x[xgb_covars] for x in x_cat]
-)
-
-# Predict validation data for each category
-pred_xgb_cat_list = model_xgb_cat.predict(
-  n = 227,
-  series = [decomp_cat["AUTOMOTIVE":"SEAFOOD"][category] for category in categories],
-  future_covariates = [x[xgb_covars] for x in x_cat]
+  res_linear_cat[0],
+  future_covariates = x_cat[0][xgb_covars]
   )
 
-# Stack predictions to get multivariate series
-pred_xgb_cat = pred_xgb_cat_list[0].stack(pred_xgb_cat_list[1])
-for pred in pred_xgb_cat_list[2:]:
+pred_xgb_cat = model_xgb_cat.predict(
+  n=227,
+  future_covariates = x_cat[0][xgb_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(res_linear_cat))):
+
+  # Fit on training data
+  model_xgb_cat.fit(
+  res_linear_cat[i],
+  future_covariates = x_cat[i][xgb_covars]
+  )
+
+  # Predict validation data
+  pred = model_xgb_cat.predict(
+  n=227,
+  future_covariates = x_cat[i][xgb_covars]
+  )
+
+  # Stack predictions to multivariate series
   pred_xgb_cat = pred_xgb_cat.stack(pred)
 
-```
+  # Cleanup
+  del pred
 
-```{python HybridXGBPreds}
-# Score hybrid linear + XGB model predictions
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
-  (pred_linear_cat + pred_xgb_cat).map(lambda x: np.clip(x, a_min = 0, a_max = None)),
-  categories,
-  "Linear + XGBoost"
-  )
 ```
 
 ### Model scores
@@ -986,7 +1059,7 @@ print("--------")
 # Naive
 scores_hierarchy(
   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
-  pred_drift_cat,
+  trafo_zero(pred_drift_cat),
   categories, 
   "Naive drift"
   )
@@ -1001,11 +1074,76 @@ scores_hierarchy(
 # AutoARIMA
 scores_hierarchy(
   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
-  pred_arima_cat.map(lambda x: np.clip(x, a_min = 0, a_max = None)),
+  trafo_zero(pred_arima_cat),
   categories,
   "AutoARIMA"
   )
+
+# Linear 
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  trafo_zero(pred_linear_cat),
+  categories,
+  "Linear"
+  )
+
+# Linear + RF
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  trafo_zero(pred_linear_cat + pred_rf_cat),
+  categories,
+  "Linear + Random forest"
+  )  
+  
+# Linear + XGB
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  trafo_zero(pred_linear_cat + pred_xgb_cat),
+  categories,
+  "Linear + XGBoost"
+  )
+  
+  
 ```
+
+    Model=AutoARIMA (all features)
+    MAE: mean=3177.22, sd=5938.97, min=3.59, max=24151.07
+    MSE: mean=65090234.22, sd=174104280.35, min=22.94, max=817507351.93
+    RMSE: mean=3825.76, sd=7103.09, min=4.79, max=28592.09
+    RMSLE: mean=0.52, sd=0.61, min=0.2, max=3.67
+    --------
+
+    Model = Linear (time features only)
+    MAE: mean=2490.68, sd=4729.57, min=4.91, max=18161.36
+    MSE: mean=53357646.8, sd=157023733.27, min=33.11, max=682423288.06
+    RMSE: mean=3328.56, sd=6502.18, min=5.75, max=26123.23
+    RMSLE: mean=0.46, sd=0.27, min=0.2, max=1.28
+
+    Model = Linear + Random forest
+    MAE: mean=2949.54, sd=5760.42, min=6.22, max=23345.68
+    MSE: mean=67404319.58, sd=199819874.33, min=51.01, max=927516253.58
+    RMSE: mean=3729.04, sd=7314.27, min=7.14, max=30455.15
+    RMSLE: mean=0.5, sd=0.4, min=0.16, max=1.9
+    --------
+
+    Model = Linear + XGBoost untuned
+    MAE: mean=3060.46, sd=5984.15, min=6.35, max=24577.0
+    MSE: mean=76354996.81, sd=223252746.14, min=54.88, max=1061127656.54
+    RMSE: mean=3989.13, sd=7774.43, min=7.41, max=32574.95
+    RMSLE: mean=0.53, sd=0.47, min=0.19, max=1.89
+    --------
+
+The residuals retrieved from darts are likely reducing performance of hybrid models.
+
+Remaining options:
+
+-   STL decomposition of entire series in darts (will have to extrapolate trend & seasonality for test predictions)
+
+-   Linear decomposition in sklearn, or historical_forecasts with retrain=False? Open github issue?
+
+-   Decomp + ARIMA hybrid (time consuming, likely won't do much better)
+
+-   Tune XGBoost (likely not very time consuming, likely won't do much better if at all)
 
 ## Modeling: Store sales
 
