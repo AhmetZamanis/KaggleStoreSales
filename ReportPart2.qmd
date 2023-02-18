@@ -782,7 +782,7 @@ scores_hierarchy(
   )
 ```
 
-### AutoARIMA
+### Univariate: AutoARIMA
 
 ```{python CategoryArimaSpec}
 from darts.models.forecasting.auto_arima import AutoARIMA
@@ -831,6 +831,89 @@ for i in tqdm(range(1, len(y_train_cat))):
 ```
 
 Mention the negative arima predictions
+
+### Multivariate, hybrid: Linear + XGBoost
+
+#### Time decomposition with linear regression
+
+```{python CatLinearSpec}
+from darts.models.forecasting.linear_regression_model import LinearRegressionModel
+
+# Specify linear regression model
+model_linear_cat = LinearRegressionModel(
+  lags_future_covariates = [0], # Don't create any covariate lags
+  output_chunk_length = 15
+)
+
+```
+
+```{python CatLinearFitVal}
+
+# Time covariates
+linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos']
+
+# First fit & validate the first category to initialize series
+model_linear_cat.fit(
+  y_train_cat[0],
+  future_covariates = x_cat[0][linear_covars])
+
+pred_linear_cat = model_linear_cat.predict(
+  n=227,
+  future_covariates = x_cat[0][linear_covars])
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_cat))):
+
+  # Fit on training data
+  model_linear_cat.fit(
+  y_train_cat[i],
+  future_covariates = x_cat[i][linear_covars])
+
+  # Predict validation data
+  pred = model_linear_cat.predict(
+  n=227,
+  future_covariates = x_cat[i][linear_covars])
+
+  # Stack predictions to multivariate series
+  pred_linear_cat = pred_linear_cat.stack(pred)
+
+# Score decomposition model predictions
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  pred_linear_cat,
+  categories,
+  "Linear"
+  )
+```
+
+```{python CatLinearResids}
+
+# Retrieve 2014 > residuals from linear decomposition model
+
+# First retrieve residuals for first category to initialize series
+res_linear_cat = model_linear_cat.residuals(
+  y_train_cat[0],
+  future_covariates = x_cat[0][linear_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_cat))):
+
+  # Retrieve residuals
+  res = model_linear_cat.residuals(
+  y_train_cat[i],
+  future_covariates = x_cat[i][linear_covars]
+  )
+  
+  # Stack residuals to multivariate series
+  res_linear_cat = res_linear_cat.stack(res)
+```
+
+#### XGBoost on decomposed residuals
+
+```{python CatXGBSpec}
+
+```
 
 ### Model scores
 
