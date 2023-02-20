@@ -537,12 +537,6 @@ for category in categories:
 ### Store sales covariates
 
 ```{python StoreCovars}
-from darts.dataprocessing.transformers.static_covariates_transformer import StaticCovariatesTransformer
-from sklearn.preprocessing import OrdinalEncoder
-
-# Create encoder for static covariates
-trafo_static = StaticCovariatesTransformer()
-
 
 # Initialize list of category covariates
 store_covars = []
@@ -576,14 +570,8 @@ for store in [int(store) for store in stores]:
   "linear", limit_direction = "backward"
   )
   
-  # Retrieve static covariates as column: covariate, index: store
-
   # Create darts TS, fill gaps
-  covars = TimeSeries.from_dataframe(
-    covars,
-    static_covariates = static_covars,
-    freq = "D"
-    ) 
+  covars = TimeSeries.from_dataframe(covars, freq = "D") 
   
   # Cyclical encode day of month using datetime_attribute_timeseries
   covars = covars.stack(
@@ -602,15 +590,22 @@ for store in [int(store) for store in stores]:
       cyclic = True
       )
     ) 
-  
-  # One hot encode static covariates
-  covars = trafo_static.fit_transform(covars)
     
   # Append TS to list
   store_covars.append(covars)
   
   # # Cleanup
   # del covars
+```
+
+```{python StoreStaticCovars}
+
+# Create dataframe where column=static covariate and index=store nbr
+store_static = df[["store_nbr", "city", "state", "store_type", "store_cluster"]].reset_index().drop("date", axis=1).drop_duplicates().set_index("store_nbr")
+store_static["store_cluster"] = store_static["store_cluster"].astype(str)
+
+# Encode static covariates
+store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
 ```
 
 ### Category X store sales covariates
@@ -1254,7 +1249,100 @@ Try to tune XGB with optuna?
 
 ## Modeling: Store sales
 
-Try same approach as category, + consider global models for decomposed store sales
+### Preprocessing
+
+```{python StoreCovars}
+
+# Train-validation split and scaling for covariates
+x_store = []
+for series in store_covars:
+  
+  # Split train-val series
+  cov_train, cov_val = series[:-243], series[-243:-16]
+  
+  # Scale train-val series
+  cov_train = scaler_minmax.fit_transform(cov_train)
+  cov_val = scaler_minmax.transform(cov_val)
+  
+  # Cast series to 32-bits for performance gains
+  cov_train = cov_train.astype(np.float32)
+  cov_val = cov_val.astype(np.float32)
+  
+  # Rejoin series
+  cov_train = cov_train.append(cov_val)
+  
+  # Append series to list
+  x_store.append(cov_train)
+  
+  # Cleanup
+  del cov_train, cov_val
+
+```
+
+```{python StoreTargets}
+
+# List of store sales
+store_sales = [ts_sales[store] for store in stores]
+
+# Train-validation split for store sales
+y_train_store, y_val_store = [], []
+for series in store_sales:
+  
+  # Add static covariates to series
+  series = series.with_static_covariates(
+    store_static[store_static.index == int(series.components[0])]
+  )
+  
+  # Split train-val series
+  y_train, y_val = series[:-227], series[-227:]
+  
+  # # Scale train-val series
+  # y_train = scaler_minmax.fit_transform(y_train)
+  # y_val = scaler_minmax.transform(y_val)
+  
+  # Cast series to 32-bits for performance gains
+  y_train = y_train.astype(np.float32)
+  y_val = y_val.astype(np.float32)
+  
+  # Append series
+  y_train_store.append(y_train)
+  y_val_store.append(y_val)
+  
+  # Cleanup
+  del y_train, y_val
+```
+
+### Baseline models
+
+```{python StoreBaselineFitVal}
+
+# Fit & validate baseline models
+
+# Naive drift
+model_drift.fit(ts_sales[stores][:-227])
+pred_drift_store = model_drift.predict(n = 227)
+
+# Naive seasonal
+model_seasonal.fit(ts_sales[stores][:-227])
+pred_seasonal_store = model_seasonal.predict(n = 227)
+
+print("Category sales prediction scores, baseline models")
+print("--------")
+
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  pred_drift_store,
+  stores, 
+  "Naive drift"
+  )
+
+scores_hierarchy(
+  ts_sales[stores][-227:], 
+  pred_seasonal_store,
+  stores, 
+  "Naive seasonal"
+  )
+```
 
 ## Modeling: Category X store sales
 
