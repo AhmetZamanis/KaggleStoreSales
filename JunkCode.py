@@ -10,6 +10,8 @@ store_covars = TimeSeries.from_group_dataframe(
 )
 
 
+
+
 from sklearn.preprocessing import OrdinalEncoder
 
 # Create encoder for static covariates
