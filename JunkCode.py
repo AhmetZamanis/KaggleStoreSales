@@ -1,5 +1,18 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+# Create grouped Darts TS
+store_covars = TimeSeries.from_group_dataframe(
+  df.drop(["id", "category", "category_store_nbr"], axis=1),
+  group_cols = "store_nbr",
+  static_cols = ["city", "state", "store_type", "store_cluster"],
+  fill_missing_dates = True,
+  freq = "D"
+)
+
+
+
+
+
 {python CategoryArimaSpec}
 from darts.models.forecasting.auto_arima import AutoARIMA
 

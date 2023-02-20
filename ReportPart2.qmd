@@ -536,6 +536,83 @@ for category in categories:
 
 ### Store sales covariates
 
+```{python StoreCovars}
+from darts.dataprocessing.transformers.static_covariates_transformer import StaticCovariatesTransformer
+from sklearn.preprocessing import OrdinalEncoder
+
+# Create encoder for static covariates
+trafo_static = StaticCovariatesTransformer()
+
+
+# Initialize list of category covariates
+store_covars = []
+
+for store in [int(store) for store in stores]:
+  
+  # Retrieve common covariates
+  covars = common_covars.copy()
+  
+  # Retrieve differenced onpromotion, its MA
+  covars["onpromotion"] = diff.fit_transform(
+    df[df["store_nbr"] == store].groupby("date").onpromotion.sum()
+    ).interpolate(
+      "time", limit_direction = "both"
+      )
+  covars["onp_ma28"] = covars["onpromotion"].rolling(
+    window = 28, center = False
+    ).mean().interpolate(
+  method = "spline", order = 2, limit_direction = "both"
+  ) 
+  
+  # Retrieve differenced transactions, its MA
+  covars["transactions"] = diff.fit_transform(
+    df[df["store_nbr"] == store].groupby("date").transactions.sum().interpolate(
+      "time", limit_direction = "both"
+      )
+    )
+  covars["trns_ma7"] = covars["transactions"].rolling(
+    window = 7, center = False
+    ).mean().interpolate(
+  "linear", limit_direction = "backward"
+  )
+  
+  # Retrieve static covariates as column: covariate, index: store
+
+  # Create darts TS, fill gaps
+  covars = TimeSeries.from_dataframe(
+    covars,
+    static_covariates = static_covars,
+    freq = "D"
+    ) 
+  
+  # Cyclical encode day of month using datetime_attribute_timeseries
+  covars = covars.stack(
+    datetime_attribute_timeseries(
+      time_index = covars,
+      attribute = "day",
+      cyclic = True
+      )
+    )
+    
+   # Cyclical encode month using datetime_attribute_timeseries
+  covars = covars.stack(
+    datetime_attribute_timeseries(
+      time_index = covars,
+      attribute = "month",
+      cyclic = True
+      )
+    ) 
+  
+  # One hot encode static covariates
+  covars = trafo_static.fit_transform(covars)
+    
+  # Append TS to list
+  store_covars.append(covars)
+  
+  # # Cleanup
+  # del covars
+```
+
 ### Category X store sales covariates
 
 ## Modeling: Total sales
@@ -1173,7 +1250,7 @@ scores_hierarchy(
   
 ```
 
-Try to tune XGB with optuna
+Try to tune XGB with optuna?
 
 ## Modeling: Store sales
 
