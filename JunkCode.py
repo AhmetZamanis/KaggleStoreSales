@@ -1,5 +1,63 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+{python CategoryArimaSpec}
+from darts.models.forecasting.auto_arima import AutoARIMA
+
+# AutoARIMA
+model_arima_cat = AutoARIMA(
+  start_p = 0,
+  max_p = 7,
+  start_q = 0,
+  max_q = 7,
+  seasonal = False, # Don't include seasonal orders
+  information_criterion = 'aicc', # Minimize AICc to choose best model
+  trace = False # Don't print tuning iterations
+  )
+
+
+{python CategoryArimaFitVal}
+
+# AutoARIMA
+arima_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', "month_sin", "month_cos"]
+
+# First fit & validate the first category to initialize series
+model_arima_cat.fit(
+  y_train_cat[0],
+  future_covariates = x_cat[0][arima_covars])
+
+pred_arima_cat = model_arima_cat.predict(
+  n=227,
+  future_covariates = x_cat[0][arima_covars])
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_cat))):
+
+  # Fit on training data
+  model_arima_cat.fit(
+  y_train_cat[i],
+  future_covariates = x_cat[i][arima_covars])
+
+  # Predict validation data
+  pred = model_arima_cat.predict(
+  n=227,
+  future_covariates = x_cat[i][arima_covars])
+
+  # Stack predictions to multivariate series
+  pred_arima_cat = pred_arima_cat.stack(pred)
+  
+  # Cleanup
+  del pred
+
+
+# AutoARIMA
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  trafo_zero(pred_arima_cat),
+  categories,
+  "AutoARIMA"
+  )
+
+
 
 static_covariates = pd.DataFrame(
         data = {"category": category},
