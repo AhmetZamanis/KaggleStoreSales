@@ -38,6 +38,35 @@ model_arima_cat = AutoARIMA(
 
 {python CategoryArimaFitVal}
 
+
+# {python CatLinearResids}
+# 
+# # Retrieve 2014 > residuals from linear decomposition model
+# 
+# # Initialize list of linear model residuals
+# res_linear_cat = []
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(0, len(y_train_cat))):
+# 
+#   # Retrieve residuals
+#   res = model_linear_cat.residuals(
+#   y_train_cat[i],
+#   future_covariates = x_cat[i][linear_covars]
+#   )
+#   
+#   # Drop residuals before 2014
+#   res = res.split_after(pd.Timestamp("2013-12-31"))[1]
+#   
+#   # Append residuals to list
+#   res_linear_cat.append(res)
+#   
+#   #Cleanup
+#   del res
+
+
+
+
 # AutoARIMA
 arima_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', "month_sin", "month_cos"]
 

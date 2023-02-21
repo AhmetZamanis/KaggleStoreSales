@@ -710,59 +710,15 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 
 ### Linear + XGBoost hybrid, grid search tuning
 
-```{python TotalSalesXGB}
-from darts.models.forecasting.xgboost import XGBModel
+`{# {python TotalSalesXGB} # from darts.models.forecasting.xgboost import XGBModel #  # # Hyperparameter search space # xgb_params = { #   "lags": [[-1, -2, -3, -4, -5]], #   "lags_future_covariates": [[0]], #   "n_jobs": [-2], #   "learning_rate": [0.1, 0.2, 0.3], #   "max_depth": [4, 6, 8], #   "min_child_weight": [1, 4, 8], #   "gamma": [0, 0.05, 0.1], #   "subsample": [0.6, 0.8, 1], #   "colsample_bytree": [0.6, 0.8, 1], #   "n_estimators": [100, 250, 500] # } #  # # Decomposed validation series # y_val_total_decomp = y_val_total - ts_preds_total1[-243:-16] #  # # Full covariates series # x_total = x_train_total.append(x_val_total) #  # # Grid search # model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch( #   parameters = xgb_params, #   series = y_train_total, #   # forecast_horizon = 15, #   # start = 0.75, #   # stride = 15, #   future_covariates = x_total, #   val_series = y_val_total_decomp, #   metric = rmse # )`
 
-# Hyperparameter search space
-xgb_params = {
-  "lags": [[-1, -2, -3, -4, -5]],
-  "lags_future_covariates": [[0]],
-  "n_jobs": [-2],
-  "learning_rate": [0.1, 0.2, 0.3],
-  "max_depth": [4, 6, 8],
-  "min_child_weight": [1, 4, 8],
-  "gamma": [0, 0.05, 0.1],
-  "subsample": [0.6, 0.8, 1],
-  "colsample_bytree": [0.6, 0.8, 1],
-  "n_estimators": [100, 250, 500]
-}
-
-# Decomposed validation series
-y_val_total_decomp = y_val_total - ts_preds_total1[-243:-16]
-
-# Full covariates series
-x_total = x_train_total.append(x_val_total)
-
-# Grid search
-model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch(
-  parameters = xgb_params,
-  series = y_train_total,
-  # forecast_horizon = 15,
-  # start = 0.75,
-  # stride = 15,
-  future_covariates = x_total,
-  val_series = y_val_total_decomp,
-  metric = rmse
-)
-```
-
-grid search runtime: 9-10mins
-grid search best tune and score:
+grid search runtime: 9-10mins grid search best tune and score:
 
     {'lags': [-1, -2, -3, -4, -5], 'lags_future_covariates': [0], 'n_jobs': -2, 'learning_rate': 0.1, 'max_depth': 6, 'min_child_weight': 1, 'gamma': 0.1, 'subsample': 1, 'colsample_bytree': 1, 'n_estimators': 500}
 
     0.0895999112054749 rmsle
 
-```{python TotalSalesXGBScore}
-
-# Fit model & predict validation set
-model_xgb.fit(y_train_total, future_covariates = x_total)
-pred_total = model_xgb.predict(
-  n = 227, future_covariates = x_total) + ts_preds_total1[-243:-16]
-
-# Score model
-perf_scores(y_val_total, pred_total, model="Linear + XGB hybrid, total sales")
-```
+`{# {python TotalSalesXGBScore} #  # # Fit model & predict validation set # model_xgb.fit(y_train_total, future_covariates = x_total) # pred_total = model_xgb.predict( #   n = 227, future_covariates = x_total) + ts_preds_total1[-243:-16] #  # # Score model # perf_scores(y_val_total, pred_total, model="Linear + XGB hybrid, total sales")`
 
 ## Modeling: Category sales
 
@@ -850,7 +806,7 @@ for series in ts_catcovars:
 ```{python CategoryTargets}
 
 # List of category sales
-category_sales = [ts_sales["AUTOMOTIVE":"SEAFOOD"][category] for category in categories]
+category_sales = [ts_sales[categories][category] for category in categories]
 
 # Train-validation split for category sales
 y_train_cat, y_val_cat = [], []
@@ -895,12 +851,12 @@ model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
 # Naive
 model_drift.fit(
   #scaler_minmax.fit_transform(ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227])
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227]
+  ts_sales[categories][:-227]
   )
 pred_drift_cat = model_drift.predict(n = 227)
 
 model_seasonal.fit(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227]
+  ts_sales[categories][:-227]
 )
 pred_seasonal_cat = model_seasonal.predict(n = 227)
 ```
@@ -913,14 +869,14 @@ print("--------")
 # Naive
 scores_hierarchy(
   #scaler_minmax.transform(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:]),
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  ts_sales[categories][-227:],
   pred_drift_cat,
   categories, 
   "Naive drift"
   )
 
 scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], 
+  ts_sales[categories][-227:], 
   pred_seasonal_cat,
   categories, 
   "Naive seasonal"
@@ -976,32 +932,6 @@ for i in tqdm(range(1, len(y_train_cat))):
 
   # Stack predictions to multivariate series
   pred_linear_cat = pred_linear_cat.stack(pred)
-```
-
-```{python CatLinearResids}
-
-# Retrieve 2014 > residuals from linear decomposition model
-
-# Initialize list of linear model residuals
-res_linear_cat = []
-
-# Then loop over all categories except first
-for i in tqdm(range(0, len(y_train_cat))):
-
-  # Retrieve residuals
-  res = model_linear_cat.residuals(
-  y_train_cat[i],
-  future_covariates = x_cat[i][linear_covars]
-  )
-  
-  # Drop residuals before 2014
-  res = res.split_after(pd.Timestamp("2013-12-31"))[1]
-  
-  # Append residuals to list
-  res_linear_cat.append(res)
-  
-  #Cleanup
-  del res
 ```
 
 #### STL decomposition
@@ -1108,92 +1038,91 @@ for i in tqdm(range(1, len(decomp_cat))):
 #### XGBoost on decomposed sales
 
 ```{python CatXGBSpec}
-from darts.models.forecasting.xgboost import XGBModel
 
-# Specify XGBoost model
-model_xgb_cat = XGBModel(
-  lags = [-1, -2, -3, -4, -5, -6, -7],
-  lags_future_covariates = [0],
-  output_chunk_length = 15,
-  random_state = 1923,
-  nthread = 20
-)
+# # Specify XGBoost model
+# model_xgb_cat = XGBModel(
+#   lags = [-1, -2, -3, -4, -5, -6, -7],
+#   lags_future_covariates = [0],
+#   output_chunk_length = 15,
+#   random_state = 1923,
+#   nthread = 20
+# )
 ```
 
 ```{python CatXGBFitVal}
 #| warning: false
 #| message: false
 
-# XGB covariates
-xgb_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
-
-# XGB parameter ranges
-xgb_params = {
-  "lags" = [-1, -2, -3, -4, -5, -6, -7],
-  "lags_future_covariates" = [0],
-  "output_chunk_length" = [15],
-  "random_state" = [1923],
-  "learning_rate": [0.1, 0.15, 0.2, 0.25, 0.3],
-  "max_depth": [2, 4, 6],
-  "min_child_weight": [1, 4, 8],
-  "gamma": [0, 0.05, 0.1],
-  "subsample": [0.6, 0.8, 1],
-  "colsample_bytree": [0.6, 0.8, 1],
-  "n_estimators": [5000],
-  "early_stopping_rounds": [10]
-}
-
-
-# First fit, tune & predict on the first category to initialize series
-
-# Tune
-xgb_cat_tune = XGBModel.gridsearch(
-  parameters = xgb_params,
-  series = decomp_cat[0],
-  future_covariates = x_cat[0][xgb_covars],
-  forecast_horizon = 15,
-  stride = 15,
-  start = 0.5,
-  metric = rmsle(),
-  n_jobs = 20
-)
-
-
-# Fit
-model_xgb_cat.fit(
-  decomp_cat[0],
-  future_covariates = x_cat[0][xgb_covars]
-  )
-
-
-# Predict
-pred_xgb_cat = model_xgb_cat.predict(
-  n=227,
-  future_covariates = x_cat[0][xgb_covars]
-  )
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(decomp_cat))):
-
-  # Fit on training data
-  model_xgb_cat.fit(
-  decomp_cat[i],
-  future_covariates = x_cat[i][xgb_covars]
-  )
-  
-  # Tune
-
-  # Predict validation data
-  pred = model_xgb_cat.predict(
-  n=227,
-  future_covariates = x_cat[i][xgb_covars]
-  )
-
-  # Stack predictions to multivariate series
-  pred_xgb_cat = pred_xgb_cat.stack(pred)
-
-  # Cleanup
-  del pred
+# # XGB covariates
+# xgb_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+# 
+# # XGB parameter ranges
+# xgb_params = {
+#   "lags" = [-1, -2, -3, -4, -5, -6, -7],
+#   "lags_future_covariates" = [0],
+#   "output_chunk_length" = [15],
+#   "random_state" = [1923],
+#   "learning_rate": [0.1, 0.15, 0.2, 0.25, 0.3],
+#   "max_depth": [2, 4, 6],
+#   "min_child_weight": [1, 4, 8],
+#   "gamma": [0, 0.05, 0.1],
+#   "subsample": [0.6, 0.8, 1],
+#   "colsample_bytree": [0.6, 0.8, 1],
+#   "n_estimators": [5000],
+#   "early_stopping_rounds": [10]
+# }
+# 
+# 
+# # First fit, tune & predict on the first category to initialize series
+# 
+# # Tune
+# xgb_cat_tune = XGBModel.gridsearch(
+#   parameters = xgb_params,
+#   series = decomp_cat[0],
+#   future_covariates = x_cat[0][xgb_covars],
+#   forecast_horizon = 15,
+#   stride = 15,
+#   start = 0.5,
+#   metric = rmsle(),
+#   n_jobs = 20
+# )
+# 
+# 
+# # Fit
+# model_xgb_cat.fit(
+#   decomp_cat[0],
+#   future_covariates = x_cat[0][xgb_covars]
+#   )
+# 
+# 
+# # Predict
+# pred_xgb_cat = model_xgb_cat.predict(
+#   n=227,
+#   future_covariates = x_cat[0][xgb_covars]
+#   )
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(1, len(decomp_cat))):
+# 
+#   # Fit on training data
+#   model_xgb_cat.fit(
+#   decomp_cat[i],
+#   future_covariates = x_cat[i][xgb_covars]
+#   )
+#   
+#   # Tune
+# 
+#   # Predict validation data
+#   pred = model_xgb_cat.predict(
+#   n=227,
+#   future_covariates = x_cat[i][xgb_covars]
+#   )
+# 
+#   # Stack predictions to multivariate series
+#   pred_xgb_cat = pred_xgb_cat.stack(pred)
+# 
+#   # Cleanup
+#   del pred
 
 ```
 
@@ -1235,13 +1164,13 @@ scores_hierarchy(
   "Linear + Random forest"
   )  
   
-# Linear + XGBoost
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
-  trafo_zero(pred_linear_cat + pred_xgb_cat),
-  categories,
-  "Linear + XGBoost"
-  )
+# # Linear + XGBoost
+# scores_hierarchy(
+#   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+#   trafo_zero(pred_linear_cat + pred_xgb_cat),
+#   categories,
+#   "Linear + XGBoost"
+#   )
   
 ```
 
@@ -1344,7 +1273,9 @@ scores_hierarchy(
   )
 ```
 
-### Linear regression for time effects
+### Hybrid models
+
+#### Linear regression for time effects
 
 ```{python StoreLinearFitVal}
 #| output: false
@@ -1383,6 +1314,101 @@ for i in tqdm(range(1, len(y_train_store))):
 
   # Stack predictions to multivariate series
   pred_linear_store = pred_linear_store.stack(pred)
+```
+
+#### STL decomposition
+
+```{python StoreSTLDecomp}
+
+# Perform STL decomposition on training data
+stl_store = []
+decomp_store = []
+for series in y_train_store:
+  
+  # Perform STL decomposition
+  stl = decomposition(
+    series,
+    model = ModelMode.ADDITIVE,
+    method = "STL",
+    robust = True
+  )
+  
+  # Remove trend & seasonality from series
+  series = remove_from_series(
+    series,
+    (stl[0] + stl[1]),
+    ModelMode.ADDITIVE
+  )
+  
+  # Append to lists
+  stl_store.append(stl)
+  decomp_store.append(series)
+  
+  # Cleanup
+  del stl, series
+```
+
+```{python StoreSTLPlot}
+
+stl_store[8][0].plot()
+stl_store[8][1].plot()
+plt.show()
+plt.close("all")
+
+decomp_store[8].plot()
+plt.show()
+plt.close("all")
+```
+
+#### Random forest on decomposed sales
+
+```{python StoreRFFitVal}
+
+# Model spec
+model_rf_store = RandomForest(
+  lags = [-1, -2, -3, -4, -5, -6, -7],
+  lags_future_covariates = [0],
+  output_chunk_length = 15,
+  oob_score = True,
+  random_state = 1923,
+  n_jobs = -2
+)
+
+# RF covariates
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# First fit & validate the first category to initialize series
+model_rf_store.fit(
+  decomp_store[0],
+  future_covariates = x_store[0][rf_covars]
+  )
+
+pred_rf_store = model_rf_store.predict(
+  n=227,
+  future_covariates = x_store[0][rf_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(decomp_store))):
+
+  # Fit on training data
+  model_rf_store.fit(
+  decomp_store[i],
+  future_covariates = x_store[i][rf_covars]
+  )
+
+  # Predict validation data
+  pred = model_rf_store.predict(
+  n=227,
+  future_covariates = x_store[i][rf_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_rf_store = pred_rf_store.stack(pred)
+
+  # Cleanup
+  del pred
+
 
 ```
 
@@ -1417,8 +1443,6 @@ scores_hierarchy(
   )
 
 ```
-
-Best linear model: trend + seasonality + calendar feats
 
 ## Modeling: Category X store sales
 
