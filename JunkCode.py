@@ -1,5 +1,55 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+print(np.isnan(series1.values()).sum())
+
+
+{python StoreRFLinear}
+
+# Model spec
+model_rf_store_global = model_rf_store
+
+# Time covariates
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# First fit on all stores & predict the first store to initialize series
+model_rf_store_global.fit(
+  y_train_store,
+  future_covariates = [x[rf_covars] for x in x_store]
+  )
+
+pred_rf_store_global = model_rf_store_global.predict(
+  n=227,
+  series = y_train_store[0],
+  future_covariates = x_store[0][rf_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_val_store))):
+
+  # Predict validation data
+  pred = model_rf_store_global.predict(
+  n=227,
+  series = y_train_store[i],
+  future_covariates = x_store[i][rf_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_rf_store_global = pred_rf_store_global.stack(pred)
+
+  # Cleanup
+  del pred
+
+
+# Random forest (global) 
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  trafo_zero(pred_linear_store + pred_rf_store_global),
+  stores,
+  "Linear + global RF"
+  )
+
+
+
 # Create grouped Darts TS
 store_covars = TimeSeries.from_group_dataframe(
   df.drop(["id", "category", "category_store_nbr"], axis=1),

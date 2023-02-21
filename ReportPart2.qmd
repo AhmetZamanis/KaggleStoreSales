@@ -571,7 +571,9 @@ for store in [int(store) for store in stores]:
   )
   
   # Create darts TS, fill gaps
-  covars = TimeSeries.from_dataframe(covars, freq = "D") 
+  covars = na_filler.transform(
+    TimeSeries.from_dataframe(covars, freq = "D")
+    )
   
   # Cyclical encode day of month using datetime_attribute_timeseries
   covars = covars.stack(
@@ -589,7 +591,7 @@ for store in [int(store) for store in stores]:
       attribute = "month",
       cyclic = True
       )
-    ) 
+    )
     
   # Append TS to list
   store_covars.append(covars)
@@ -1436,51 +1438,9 @@ for i in tqdm(range(1, len(decomp_store))):
   # Cleanup
   del pred
 
-
 ```
-
-Fix / wait for fix on the all the input array dimensions for the concatenation axis must match exactly error in RANDOM FOREST
 
 ### Global models
-
-#### Random forest on decomposed sales
-
-```{python StoreRFLinear}
-
-# Model spec
-model_rf_store_global = model_rf_store
-
-# Time covariates
-rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
-
-# First fit on all stores & predict the first store to initialize series
-model_rf_store_global.fit(
-  y_train_store,
-  future_covariates = [x[rf_covars] for x in x_store]
-  )
-
-pred_rf_store_global = model_rf_store_global.predict(
-  n=227,
-  series = y_train_store[0],
-  future_covariates = x_store[0][rf_covars]
-  )
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_val_store))):
-
-  # Predict validation data
-  pred = model_rf_store_global.predict(
-  n=227,
-  series = y_train_store[i],
-  future_covariates = x_store[i][rf_covars]
-  )
-
-  # Stack predictions to multivariate series
-  pred_rf_store_global = pred_rf_store_global.stack(pred)
-
-  # Cleanup
-  del pred
-```
 
 #### RNN on decomposed sales
 
@@ -1496,7 +1456,7 @@ torch.set_printoptions(sci_mode = False)
 # Create early stopper
 early_stopper = EarlyStopping(
   monitor = "val_loss",
-  min_delta = 114104.9223,
+  min_delta = 117586.3246,
   patience = 5
 )
 
@@ -1506,7 +1466,7 @@ progress_bar = RichProgressBar()
 
 ```{python StoreDecompValid}
 
-# Retrieve validation store sales minus linear model predictions
+# Retrieve decomped validation sets as validation sets minus linear model predictions
 pred_linear_store_list = [pred_linear_store[store] for store in stores]
 decomp_store_val = []
 
@@ -1567,31 +1527,47 @@ model_rnn_store.fit(
 
 ```
 
+```{python StoreRNNValid}
+
+# Predict validation data with RNN
+pred_rnn_store_list = model_rnn_store.predict(
+  n = 227,
+  series = y_train_store,
+  future_covariates = [x[rnn_covars] for x in x_store]
+  )
+
+# Stack predictions to get multivariate series
+pred_rnn_store = pred_rnn_store_list[0].stack(pred_rnn_store_list[1])
+for pred in pred_rnn_store_list[2:]:
+  pred_rnn_store = pred_rnn_store.stack(pred)
+  del pred
+```
+
 #### D-linear
 
 ```{python StoreDLinearSpec}
 from darts.models.forecasting.dlinear import DLinearModel as DLinear
 
-# Specify DLinear model
-model_dlinear_store = DLinear(
-  input_chunk_length = 90,
-  output_chunk_length = 15,
-  kernel_size = 27,
-  batch_size = 32,
-  n_epochs = 500,
-  model_name = "DLinearStore1",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  random_state = 1923,
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar],
-    "gradient_clip_val": 0.5,
-    "accelerator": "gpu",
-    "devices": [0]
-    },
-  show_warnings = True,
-  force_reset = True
-)
+# # Specify DLinear model
+# model_dlinear_store = DLinear(
+#   input_chunk_length = 90,
+#   output_chunk_length = 15,
+#   kernel_size = 27,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   model_name = "DLinearStore1",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   random_state = 1923,
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar],
+#     "gradient_clip_val": 0.5,
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     },
+#   show_warnings = True,
+#   force_reset = True
+# )
 ```
 
 ```{python StoreDLinearFit}
@@ -1599,20 +1575,35 @@ model_dlinear_store = DLinear(
 #| warning: false
 #| include: false
 
-# D-linear covariates: All except trend
-dlinear_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
-
-# Fit & validate d-linear model
-model_dlinear_store.fit(
-  series = y_train_store,
-  future_covariates = [x[dlinear_covars] for x in x_store],
-  val_series = y_val_store,
-  val_future_covariates = [x[dlinear_covars] for x in x_store],
-  verbose = True
-)
+# # D-linear covariates: All except trend
+# dlinear_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
+# 
+# # Fit d-linear model
+# model_dlinear_store.fit(
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store],
+#   val_series = y_val_store,
+#   val_future_covariates = [x[dlinear_covars] for x in x_store],
+#   verbose = True
+# )
 ```
 
-FIX THE NAN LOSS ERROR!
+```{python StoreDLinearValid}
+
+# # Predict validation data with D-Linear
+# pred_dlinear_store_list = model_dlinear_store.predict(
+#   n = 227,
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store]
+#   )
+# 
+# # Stack predictions to get multivariate series
+# pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
+# for pred in pred_dlinear_store_list[2:]:
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+#   del pred
+
+```
 
 ### Model scores
 
@@ -1644,7 +1635,70 @@ scores_hierarchy(
   "Linear"
   )
 
+# Random forest 
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  trafo_zero(pred_linear_store + pred_rf_store),
+  stores,
+  "Linear + RF"
+  )
+
+# RNN global 
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  trafo_zero(pred_linear_store + pred_rnn_store),
+  stores,
+  "RNN (global)"
+  )    
+
+# # D-linear global 
+# scores_hierarchy(
+#   ts_sales[stores][-227:],
+#   trafo_zero(pred_dlinear_store),
+#   stores,
+#   "D-linear (global)"
+#   )  
+
 ```
+
+    Store sales prediction scores
+    --------
+    Model = Naive drift
+    MAE: mean = 6363.13, sd = 3694.66, min = 1156.91, max = 21050.07
+    MSE: mean = 64192549.51, sd = 76134854.1, min = 2097909.98, max = 457287381.6
+    RMSE: mean = 7013.42, sd = 3873.57, min = 1448.42, max = 21384.28
+    RMSLE: mean = 0.95, sd = 0.86, min = 0.62, max = 7.07
+    --------
+    Model = Naive seasonal
+    MAE: mean = 3966.55, sd = 2940.74, min = 1012.22, max = 14603.02
+    MSE: mean = 33918822.51, sd = 50677321.75, min = 1744277.29, max = 234667386.71
+    RMSE: mean = 4777.28, sd = 3331.13, min = 1320.71, max = 15318.86
+    RMSLE: mean = 0.84, sd = 0.86, min = 0.63, max = 7.07
+    --------
+    Model = Linear
+    MAE: mean = 2002.82, sd = 1504.09, min = 585.77, max = 9609.55
+    MSE: mean = 11410492.23, sd = 25843486.45, min = 596159.8, max = 186283233.07
+    RMSE: mean = 2684.66, sd = 2050.14, min = 772.11, max = 13648.56
+    RMSLE: mean = 0.72, sd = 0.88, min = 0.23, max = 7.07
+    --------
+    Model = Linear + RF (STL decomped)
+    MAE: mean = 2103.61, sd = 1540.66, min = 577.5, max = 9609.55
+    MSE: mean = 11758632.46, sd = 25904173.41, min = 569031.59, max = 186283233.07
+    RMSE: mean = 2749.23, sd = 2049.48, min = 754.34, max = 13648.56
+    RMSLE: mean = 0.59, sd = 0.91, min = 0.11, max = 7.07
+    --------
+    Model = RNN (STL decomped, global)
+    MAE: mean = 2008.33, sd = 1498.65, min = 579.57, max = 9575.43
+    MSE: mean = 11402095.54, sd = 25638472.35, min = 590154.86, max = 184616098.11
+    RMSE: mean = 2688.82, sd = 2042.63, min = 768.22, max = 13587.35
+    RMSLE: mean = 0.69, sd = 0.59, min = 0.23, max = 4.95
+    --------
+    Model = D-linear (global)
+    MAE: mean = 4280.72, sd = 13577.98, min = 832.71, max = 102655.97
+    MSE: mean = 720356988.79, sd = 5147081658.91, min = 1292235.24, max = 38191501850.13
+    RMSE: mean = 6760.91, sd = 25973.97, min = 1136.77, max = 195426.46
+    RMSLE: mean = 0.75, sd = 0.45, min = 0.61, max = 4.03
+    --------
 
 ## Modeling: Category X store sales
 
