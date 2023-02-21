@@ -712,7 +712,42 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 
 ### Linear + XGBoost hybrid, grid search tuning
 
-`{# {python TotalSalesXGB} # from darts.models.forecasting.xgboost import XGBModel #  # # Hyperparameter search space # xgb_params = { #   "lags": [[-1, -2, -3, -4, -5]], #   "lags_future_covariates": [[0]], #   "n_jobs": [-2], #   "learning_rate": [0.1, 0.2, 0.3], #   "max_depth": [4, 6, 8], #   "min_child_weight": [1, 4, 8], #   "gamma": [0, 0.05, 0.1], #   "subsample": [0.6, 0.8, 1], #   "colsample_bytree": [0.6, 0.8, 1], #   "n_estimators": [100, 250, 500] # } #  # # Decomposed validation series # y_val_total_decomp = y_val_total - ts_preds_total1[-243:-16] #  # # Full covariates series # x_total = x_train_total.append(x_val_total) #  # # Grid search # model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch( #   parameters = xgb_params, #   series = y_train_total, #   # forecast_horizon = 15, #   # start = 0.75, #   # stride = 15, #   future_covariates = x_total, #   val_series = y_val_total_decomp, #   metric = rmse # )`
+```{python TotalSalesXGB}
+# from darts.models.forecasting.xgboost import XGBModel 
+# 
+# #  Hyperparameter search space 
+# xgb_params = {
+#   "lags": [[-1, -2, -3, -4, -5]],
+#   "lags_future_covariates": [[0]],
+#   "n_jobs": [-2],
+#   "learning_rate": [0.1, 0.2, 0.3],
+#   "max_depth": [4, 6, 8],
+#   "min_child_weight": [1, 4, 8],
+#   "gamma": [0, 0.05, 0.1],
+#   "subsample": [0.6, 0.8, 1],
+#   "colsample_bytree": [0.6, 0.8, 1],
+#   "n_estimators": [100, 250, 500]
+#   }
+# 
+# # Decomposed validation series 
+# y_val_total_decomp = y_val_total - ts_preds_total1[-243:-16] 
+# 
+# # Full covariates series 
+# x_total = x_train_total.append(x_val_total)  
+# 
+# # Grid search 
+# model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch( 
+#   parameters = xgb_params,  
+#   series = y_train_total, 
+#   forecast_horizon = 15, 
+#   start = 0.75,  
+#   stride = 15, 
+#   future_covariates = x_total,  
+#   val_series = y_val_total_decomp,  
+#   metric = rmse 
+# )
+
+```
 
 grid search runtime: 9-10mins grid search best tune and score:
 
@@ -720,7 +755,18 @@ grid search runtime: 9-10mins grid search best tune and score:
 
     0.0895999112054749 rmsle
 
-`{# {python TotalSalesXGBScore} #  # # Fit model & predict validation set # model_xgb.fit(y_train_total, future_covariates = x_total) # pred_total = model_xgb.predict( #   n = 227, future_covariates = x_total) + ts_preds_total1[-243:-16] #  # # Score model # perf_scores(y_val_total, pred_total, model="Linear + XGB hybrid, total sales")`
+```{python TotalSalesXGBScore}
+
+# # Fit model & predict validation set 
+# model_xgb.fit(y_train_total, future_covariates = x_total) 
+# pred_total = model_xgb.predict(
+#   n = 227, 
+#   future_covariates = x_total) + ts_preds_total1[-243:-16] 
+#   
+# # Score model 
+# perf_scores(y_val_total, pred_total, model="Linear + XGB hybrid, total sales")
+
+```
 
 ## Modeling: Category sales
 
@@ -1456,10 +1502,11 @@ torch.set_printoptions(sci_mode = False)
 # Create early stopper
 early_stopper = EarlyStopping(
   monitor = "val_loss",
-  min_delta = 117586.3246,
+  min_delta = 5690.3159,
   patience = 5
 )
 
+# Progress bar
 progress_bar = RichProgressBar()
 
 ```
@@ -1487,12 +1534,12 @@ model_rnn_store = RNN(
   model = "LSTM",
   input_chunk_length = 90,
   training_length = 105,
-  batch_size = 32,
+  batch_size = 64,
   n_epochs = 500,
   n_rnn_layers = 2,
   hidden_dim = 32,
   dropout = 0.2,
-  model_name = "RNNStore1",
+  model_name = "RNNStore2",
   log_tensorboard = True,
   save_checkpoints = True,
   random_state = 1923,
@@ -1501,6 +1548,12 @@ model_rnn_store = RNN(
     "accelerator": "gpu",
     "devices": [0]
     },
+  lr_scheduler_cls = torch.optim.lr_scheduler.CyclicLR()
+  lr_scheduler_kwargs = {
+    "base_lr": 0.001,
+    "max_lr": 0.05,
+    
+  }
   show_warnings = True,
   force_reset = True
 )
@@ -1529,45 +1582,53 @@ model_rnn_store.fit(
 
 ```{python StoreRNNValid}
 
-# Predict validation data with RNN
-pred_rnn_store_list = model_rnn_store.predict(
-  n = 227,
-  series = y_train_store,
-  future_covariates = [x[rnn_covars] for x in x_store]
+# First fit & validate the first store to initialize series
+pred_rnn_store = model_rnn_store.predict(
+  n=227,
+  series = y_train_store[0],
+  future_covariates = x_store[0][rnn_covars]
   )
 
-# Stack predictions to get multivariate series
-pred_rnn_store = pred_rnn_store_list[0].stack(pred_rnn_store_list[1])
-for pred in pred_rnn_store_list[2:]:
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Predict validation data
+  pred = model_rnn_store.predict(
+  n=227,
+  series = y_train_store[i],
+  future_covariates = x_store[i][rnn_covars]
+  )
+
+  # Stack predictions to multivariate series
   pred_rnn_store = pred_rnn_store.stack(pred)
+  
   del pred
 ```
 
-#### D-linear
+#### D-linear for time effects
 
 ```{python StoreDLinearSpec}
 from darts.models.forecasting.dlinear import DLinearModel as DLinear
 
-# # Specify DLinear model
-# model_dlinear_store = DLinear(
-#   input_chunk_length = 90,
-#   output_chunk_length = 15,
-#   kernel_size = 27,
-#   batch_size = 32,
-#   n_epochs = 500,
-#   model_name = "DLinearStore1",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   random_state = 1923,
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar],
-#     "gradient_clip_val": 0.5,
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     },
-#   show_warnings = True,
-#   force_reset = True
-# )
+# Specify DLinear model
+model_dlinear_store = DLinear(
+  input_chunk_length = 90,
+  output_chunk_length = 15,
+  kernel_size = 27,
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "DLinearStore2",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  random_state = 1923,
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar],
+    "accelerator": "gpu",
+    "devices": [0]
+    },
+  show_warnings = True,
+  force_reset = True
+)
 ```
 
 ```{python StoreDLinearFit}
@@ -1575,33 +1636,59 @@ from darts.models.forecasting.dlinear import DLinearModel as DLinear
 #| warning: false
 #| include: false
 
-# # D-linear covariates: All except trend
-# dlinear_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
-# 
-# # Fit d-linear model
-# model_dlinear_store.fit(
-#   series = y_train_store,
-#   future_covariates = [x[dlinear_covars] for x in x_store],
-#   val_series = y_val_store,
-#   val_future_covariates = [x[dlinear_covars] for x in x_store],
-#   verbose = True
-# )
+# D-linear covariates: All except trend
+dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+# Fit d-linear model
+model_dlinear_store.fit(
+  series = y_train_store,
+  future_covariates = [x[dlinear_covars] for x in x_store],
+  val_series = y_val_store,
+  val_future_covariates = [x[dlinear_covars] for x in x_store],
+  verbose = True
+)
 ```
 
 ```{python StoreDLinearValid}
 
-# # Predict validation data with D-Linear
-# pred_dlinear_store_list = model_dlinear_store.predict(
-#   n = 227,
-#   series = y_train_store,
-#   future_covariates = [x[dlinear_covars] for x in x_store]
-#   )
-# 
-# # Stack predictions to get multivariate series
-# pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
-# for pred in pred_dlinear_store_list[2:]:
-#   pred_dlinear_store = pred_dlinear_store.stack(pred)
-#   del pred
+# Predict validation data with D-Linear
+pred_dlinear_store_list = model_dlinear_store.predict(
+  n = 227,
+  series = y_train_store,
+  future_covariates = [x[dlinear_covars] for x in x_store]
+  )
+
+# Stack predictions to get multivariate series
+pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
+for pred in pred_dlinear_store_list[2:]:
+  pred_dlinear_store = pred_dlinear_store.stack(pred)
+  del pred
+
+```
+
+```{python}
+
+# First fit & validate the first store to initialize series
+pred_dlinear_store = model_dlinear_store.predict(
+  n=227,
+  series = y_train_store[0],
+  future_covariates = x_store[0][dlinear_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Predict validation data
+  pred = model_dlinear_store.predict(
+  n=227,
+  series = y_train_store[i],
+  future_covariates = x_store[i][dlinear_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_dlinear_store = pred_dlinear_store.stack(pred)
+
+  del pred
 
 ```
 
@@ -1643,23 +1730,37 @@ scores_hierarchy(
   "Linear + RF"
   )
 
-# RNN global 
+# RNN global
 scores_hierarchy(
   ts_sales[stores][-227:],
   trafo_zero(pred_linear_store + pred_rnn_store),
   stores,
-  "RNN (global)"
-  )    
+  "Linear + RNN (global)"
+  )
 
-# # D-linear global 
-# scores_hierarchy(
-#   ts_sales[stores][-227:],
-#   trafo_zero(pred_dlinear_store),
-#   stores,
-#   "D-linear (global)"
-#   )  
+# D-linear global
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  trafo_zero(pred_dlinear_store),
+  stores,
+  "D-linear (global)"
+  )
+
+# D-linear + RNN global
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  trafo_zero(pred_dlinear_store + pred_rnn_store),
+  stores,
+  "D-linear (global) + RNN (global)"
+  )
 
 ```
+
+Why doesn't Dlinear val loss (6.5m) match with dlinear prediction score (19.4m)?
+
+-   Because validation is one score from one flattened validation set. Prediction is average of 54 different validation sets so the average gets skewed.
+
+<!-- -->
 
     Store sales prediction scores
     --------
@@ -1681,23 +1782,29 @@ scores_hierarchy(
     RMSE: mean = 2684.66, sd = 2050.14, min = 772.11, max = 13648.56
     RMSLE: mean = 0.72, sd = 0.88, min = 0.23, max = 7.07
     --------
-    Model = Linear + RF (STL decomped)
+    Model = Linear + RF
     MAE: mean = 2103.61, sd = 1540.66, min = 577.5, max = 9609.55
     MSE: mean = 11758632.46, sd = 25904173.41, min = 569031.59, max = 186283233.07
     RMSE: mean = 2749.23, sd = 2049.48, min = 754.34, max = 13648.56
     RMSLE: mean = 0.59, sd = 0.91, min = 0.11, max = 7.07
     --------
-    Model = RNN (STL decomped, global)
+    Model = Linear + RNN (global)
     MAE: mean = 2008.33, sd = 1498.65, min = 579.57, max = 9575.43
     MSE: mean = 11402095.54, sd = 25638472.35, min = 590154.86, max = 184616098.11
     RMSE: mean = 2688.82, sd = 2042.63, min = 768.22, max = 13587.35
     RMSLE: mean = 0.69, sd = 0.59, min = 0.23, max = 4.95
     --------
     Model = D-linear (global)
-    MAE: mean = 4280.72, sd = 13577.98, min = 832.71, max = 102655.97
-    MSE: mean = 720356988.79, sd = 5147081658.91, min = 1292235.24, max = 38191501850.13
-    RMSE: mean = 6760.91, sd = 25973.97, min = 1136.77, max = 195426.46
-    RMSLE: mean = 0.75, sd = 0.45, min = 0.61, max = 4.03
+    MAE: mean = 2899.19, sd = 1863.69, min = 888.22, max = 9557.04
+    MSE: mean = 19424505.91, sd = 30125865.27, min = 1374606.52, max = 183539618.23
+    RMSE: mean = 3682.08, sd = 2422.15, min = 1172.44, max = 13547.68
+    RMSLE: mean = 0.76, sd = 0.49, min = 0.6, max = 4.34
+    --------
+    Model = D-linear (global) + RNN (global)
+    MAE: mean = 2918.89, sd = 1855.89, min = 893.44, max = 9522.03
+    MSE: mean = 19570486.82, sd = 29983195.08, min = 1415213.83, max = 181886586.25
+    RMSE: mean = 3707.05, sd = 2414.18, min = 1189.63, max = 13486.53
+    RMSLE: mean = 0.77, sd = 0.48, min = 0.61, max = 4.24
     --------
 
 ## Modeling: Category X store sales
