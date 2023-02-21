@@ -1174,6 +1174,33 @@ scores_hierarchy(
   
 ```
 
+    Category sales prediction scores
+    --------
+    Model = Naive drift
+    MAE: mean = 9198.75, sd = 17750.08, min = 3.84, max = 67076.19
+    MSE: mean = 486367393.42, sd = 1361201937.41, min = 22.88, max = 5703870251.1
+    RMSE: mean = 10119.45, sd = 19595.0, min = 4.78, max = 75523.97
+    RMSLE: mean = 0.72, sd = 0.54, min = 0.34, max = 2.45
+    --------
+    Model = Naive seasonal
+    MAE: mean = 5313.53, sd = 10042.0, min = 6.47, max = 43993.57
+    MSE: mean = 188739718.7, sd = 559681015.48, min = 71.08, max = 2938535402.64
+    RMSE: mean = 6431.06, sd = 12140.07, min = 8.43, max = 54208.26
+    RMSLE: mean = 0.62, sd = 0.45, min = 0.32, max = 1.89
+    --------
+    Model = Linear
+    MAE: mean = 2490.68, sd = 4729.57, min = 4.91, max = 18161.36
+    MSE: mean = 53357646.8, sd = 157023733.27, min = 33.11, max = 682423288.06
+    RMSE: mean = 3328.56, sd = 6502.18, min = 5.75, max = 26123.23
+    RMSLE: mean = 0.46, sd = 0.27, min = 0.2, max = 1.28
+    --------
+    Model = Linear + Random forest
+    MAE: mean = 2689.02, sd = 5158.25, min = 4.97, max = 21686.3
+    MSE: mean = 58245076.48, sd = 176222421.86, min = 33.96, max = 849969897.75
+    RMSE: mean = 3483.65, sd = 6790.38, min = 5.83, max = 29154.24
+    RMSLE: mean = 0.44, sd = 0.28, min = 0.15, max = 1.31
+    --------
+
 Try to tune XGB with optuna?
 
 ## Modeling: Store sales
@@ -1411,6 +1438,181 @@ for i in tqdm(range(1, len(decomp_store))):
 
 
 ```
+
+Fix / wait for fix on the all the input array dimensions for the concatenation axis must match exactly error in RANDOM FOREST
+
+### Global models
+
+#### Random forest on decomposed sales
+
+```{python StoreRFLinear}
+
+# Model spec
+model_rf_store_global = model_rf_store
+
+# Time covariates
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# First fit on all stores & predict the first store to initialize series
+model_rf_store_global.fit(
+  y_train_store,
+  future_covariates = [x[rf_covars] for x in x_store]
+  )
+
+pred_rf_store_global = model_rf_store_global.predict(
+  n=227,
+  series = y_train_store[0],
+  future_covariates = x_store[0][rf_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_val_store))):
+
+  # Predict validation data
+  pred = model_rf_store_global.predict(
+  n=227,
+  series = y_train_store[i],
+  future_covariates = x_store[i][rf_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_rf_store_global = pred_rf_store_global.stack(pred)
+
+  # Cleanup
+  del pred
+```
+
+#### RNN on decomposed sales
+
+```{python InitTorch}
+import torch
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks import RichProgressBar
+import tensorboard
+
+torch.set_float32_matmul_precision("high")
+torch.set_printoptions(sci_mode = False)
+
+# Create early stopper
+early_stopper = EarlyStopping(
+  monitor = "val_loss",
+  min_delta = 114104.9223,
+  patience = 5
+)
+
+progress_bar = RichProgressBar()
+
+```
+
+```{python StoreDecompValid}
+
+# Retrieve validation store sales minus linear model predictions
+pred_linear_store_list = [pred_linear_store[store] for store in stores]
+decomp_store_val = []
+
+for i in (range(0, len(pred_linear_store_list))):
+  
+  decomped = y_val_store[i] - pred_linear_store_list[i]
+  
+  decomp_store_val.append(decomped)
+  
+  del decomped
+```
+
+```{python StoreRNNSpec}
+from darts.models.forecasting.rnn_model import RNNModel as RNN
+
+# Specify RNN model
+model_rnn_store = RNN(
+  model = "LSTM",
+  input_chunk_length = 90,
+  training_length = 105,
+  batch_size = 32,
+  n_epochs = 500,
+  n_rnn_layers = 2,
+  hidden_dim = 32,
+  dropout = 0.2,
+  model_name = "RNNStore1",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  random_state = 1923,
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar],
+    "accelerator": "gpu",
+    "devices": [0]
+    },
+  show_warnings = True,
+  force_reset = True
+)
+
+```
+
+```{python StoreRNNFit}
+#| output: false
+#| warning: false
+#| include: false
+
+# RNN covariates
+rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# Fit RNN model
+model_rnn_store.fit(
+  series = decomp_store,
+  future_covariates = [x[rnn_covars] for x in x_store],
+  val_series = decomp_store_val,
+  val_future_covariates = [x[rnn_covars] for x in x_store],
+  verbose = True
+)
+
+
+```
+
+#### D-linear
+
+```{python StoreDLinearSpec}
+from darts.models.forecasting.dlinear import DLinearModel as DLinear
+
+# Specify DLinear model
+model_dlinear_store = DLinear(
+  input_chunk_length = 90,
+  output_chunk_length = 15,
+  kernel_size = 27,
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "DLinearStore1",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  random_state = 1923,
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar],
+    "gradient_clip_val": 0.5,
+    "accelerator": "gpu",
+    "devices": [0]
+    },
+  show_warnings = True,
+  force_reset = True
+)
+```
+
+```{python StoreDLinearFit}
+#| output: false
+#| warning: false
+#| include: false
+
+# D-linear covariates: All except trend
+dlinear_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
+
+# Fit & validate d-linear model
+model_dlinear_store.fit(
+  series = y_train_store,
+  future_covariates = [x[dlinear_covars] for x in x_store],
+  val_series = y_val_store,
+  val_future_covariates = [x[dlinear_covars] for x in x_store],
+  verbose = True
+)
+```
+
+FIX THE NAN LOSS ERROR!
 
 ### Model scores
 
