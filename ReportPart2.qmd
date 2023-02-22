@@ -810,7 +810,6 @@ def scores_hierarchy(val, pred, subset, model):
        
   print("--------")
 
- 
 ```
 
 ```{python NegRemover}
@@ -1358,8 +1357,11 @@ scores_hierarchy(
 # Model spec
 model_linear_store = model_linear_cat
 
-# Time covariates
-linear_covars = ["trend",'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# # Time covariates (trend + seasonality + calendar)
+# linear_covars = ["trend",'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+# Time covariates (trend only)
+linear_covars = ["trend"]
 
 # First fit & validate the first store to initialize series
 model_linear_store.fit(
@@ -1395,40 +1397,63 @@ for i in tqdm(range(1, len(y_train_store))):
 
 ```{python StoreSTLDecomp}
 
-# Perform STL decomposition on training data
-stl_store = []
+# # Perform STL decomposition on training data
+# stl_store = []
+# decomp_store = []
+# for series in y_train_store:
+#   
+#   # Perform STL decomposition
+#   stl = decomposition(
+#     series,
+#     model = ModelMode.ADDITIVE,
+#     method = "STL",
+#     robust = True
+#   )
+#   
+#   # Remove trend & seasonality from series
+#   series = remove_from_series(
+#     series,
+#     (stl[0] + stl[1]),
+#     ModelMode.ADDITIVE
+#   )
+#   
+#   # Append to lists
+#   stl_store.append(stl)
+#   decomp_store.append(series)
+#   
+#   # Cleanup
+#   del stl, series
+```
+
+```{python StoreSTLDetrend}
+from darts.utils.statistics import remove_trend
+
+# Perform STL detrending from training data
 decomp_store = []
 for series in y_train_store:
-  
-  # Perform STL decomposition
-  stl = decomposition(
-    series,
+
+  # Remove trend from series
+  series = remove_trend(
+    ts = series,
     model = ModelMode.ADDITIVE,
     method = "STL",
+    trend = 29,
     robust = True
   )
-  
-  # Remove trend & seasonality from series
-  series = remove_from_series(
-    series,
-    (stl[0] + stl[1]),
-    ModelMode.ADDITIVE
-  )
-  
-  # Append to lists
-  stl_store.append(stl)
+
+  # Append to list
   decomp_store.append(series)
-  
+
   # Cleanup
-  del stl, series
+  del series
 ```
 
 ```{python StoreSTLPlot}
 
-stl_store[8][0].plot()
-stl_store[8][1].plot()
-plt.show()
-plt.close("all")
+# stl_store[8][0].plot()
+# stl_store[8][1].plot()
+# plt.show()
+# plt.close("all")
 
 decomp_store[8].plot()
 plt.show()
@@ -1449,8 +1474,11 @@ model_rf_store = RandomForest(
   n_jobs = -2
 )
 
-# RF covariates
-rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+# # RF covariates (cyclical only)
+# rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# RF covariates (seasonal + calendar + cyclical)
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 # First fit & validate the first category to initialize series
 model_rf_store.fit(
@@ -1548,12 +1576,6 @@ model_rnn_store = RNN(
     "accelerator": "gpu",
     "devices": [0]
     },
-  lr_scheduler_cls = torch.optim.lr_scheduler.CyclicLR()
-  lr_scheduler_kwargs = {
-    "base_lr": 0.001,
-    "max_lr": 0.05,
-    
-  }
   show_warnings = True,
   force_reset = True
 )
@@ -1565,8 +1587,12 @@ model_rnn_store = RNN(
 #| warning: false
 #| include: false
 
-# RNN covariates
-rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+# # RNN covariates (cyclical only)
+# rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# RNN covariates (seasonal + calendar + cyclical)
+rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
 
 # Fit RNN model
 model_rnn_store.fit(
@@ -1576,8 +1602,6 @@ model_rnn_store.fit(
   val_future_covariates = [x[rnn_covars] for x in x_store],
   verbose = True
 )
-
-
 ```
 
 ```{python StoreRNNValid}
@@ -1608,27 +1632,27 @@ for i in tqdm(range(1, len(y_train_store))):
 #### D-linear for time effects
 
 ```{python StoreDLinearSpec}
-from darts.models.forecasting.dlinear import DLinearModel as DLinear
-
-# Specify DLinear model
-model_dlinear_store = DLinear(
-  input_chunk_length = 90,
-  output_chunk_length = 15,
-  kernel_size = 27,
-  batch_size = 32,
-  n_epochs = 500,
-  model_name = "DLinearStore2",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  random_state = 1923,
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar],
-    "accelerator": "gpu",
-    "devices": [0]
-    },
-  show_warnings = True,
-  force_reset = True
-)
+# from darts.models.forecasting.dlinear import DLinearModel as DLinear
+# 
+# # Specify DLinear model
+# model_dlinear_store = DLinear(
+#   input_chunk_length = 90,
+#   output_chunk_length = 15,
+#   kernel_size = 27,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   model_name = "DLinearStore2",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   random_state = 1923,
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     },
+#   show_warnings = True,
+#   force_reset = True
+# )
 ```
 
 ```{python StoreDLinearFit}
@@ -1636,59 +1660,59 @@ model_dlinear_store = DLinear(
 #| warning: false
 #| include: false
 
-# D-linear covariates: All except trend
-dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-# Fit d-linear model
-model_dlinear_store.fit(
-  series = y_train_store,
-  future_covariates = [x[dlinear_covars] for x in x_store],
-  val_series = y_val_store,
-  val_future_covariates = [x[dlinear_covars] for x in x_store],
-  verbose = True
-)
+# # D-linear covariates (trend + season + calendar)
+# dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# 
+# # Fit d-linear model
+# model_dlinear_store.fit(
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store],
+#   val_series = y_val_store,
+#   val_future_covariates = [x[dlinear_covars] for x in x_store],
+#   verbose = True
+# )
 ```
 
 ```{python StoreDLinearValid}
 
-# Predict validation data with D-Linear
-pred_dlinear_store_list = model_dlinear_store.predict(
-  n = 227,
-  series = y_train_store,
-  future_covariates = [x[dlinear_covars] for x in x_store]
-  )
-
-# Stack predictions to get multivariate series
-pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
-for pred in pred_dlinear_store_list[2:]:
-  pred_dlinear_store = pred_dlinear_store.stack(pred)
-  del pred
+# # Predict validation data with D-Linear
+# pred_dlinear_store_list = model_dlinear_store.predict(
+#   n = 227,
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store]
+#   )
+# 
+# # Stack predictions to get multivariate series
+# pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
+# for pred in pred_dlinear_store_list[2:]:
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+#   del pred
 
 ```
 
 ```{python}
 
-# First fit & validate the first store to initialize series
-pred_dlinear_store = model_dlinear_store.predict(
-  n=227,
-  series = y_train_store[0],
-  future_covariates = x_store[0][dlinear_covars]
-  )
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_store))):
-
-  # Predict validation data
-  pred = model_dlinear_store.predict(
-  n=227,
-  series = y_train_store[i],
-  future_covariates = x_store[i][dlinear_covars]
-  )
-
-  # Stack predictions to multivariate series
-  pred_dlinear_store = pred_dlinear_store.stack(pred)
-
-  del pred
+# # First fit & validate the first store to initialize series
+# pred_dlinear_store = model_dlinear_store.predict(
+#   n=227,
+#   series = y_train_store[0],
+#   future_covariates = x_store[0][dlinear_covars]
+#   )
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(1, len(y_train_store))):
+# 
+#   # Predict validation data
+#   pred = model_dlinear_store.predict(
+#   n=227,
+#   series = y_train_store[i],
+#   future_covariates = x_store[i][dlinear_covars]
+#   )
+# 
+#   # Stack predictions to multivariate series
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+# 
+#   del pred
 
 ```
 
@@ -1722,7 +1746,7 @@ scores_hierarchy(
   "Linear"
   )
 
-# Random forest 
+# Linear + Random forest 
 scores_hierarchy(
   ts_sales[stores][-227:],
   trafo_zero(pred_linear_store + pred_rf_store),
@@ -1730,7 +1754,7 @@ scores_hierarchy(
   "Linear + RF"
   )
 
-# RNN global
+# Linear + RNN global
 scores_hierarchy(
   ts_sales[stores][-227:],
   trafo_zero(pred_linear_store + pred_rnn_store),
@@ -1738,21 +1762,21 @@ scores_hierarchy(
   "Linear + RNN (global)"
   )
 
-# D-linear global
-scores_hierarchy(
-  ts_sales[stores][-227:],
-  trafo_zero(pred_dlinear_store),
-  stores,
-  "D-linear (global)"
-  )
-
-# D-linear + RNN global
-scores_hierarchy(
-  ts_sales[stores][-227:],
-  trafo_zero(pred_dlinear_store + pred_rnn_store),
-  stores,
-  "D-linear (global) + RNN (global)"
-  )
+# # D-linear global
+# scores_hierarchy(
+#   ts_sales[stores][-227:],
+#   trafo_zero(pred_dlinear_store),
+#   stores,
+#   "D-linear (global)"
+#   )
+# 
+# # D-linear + RNN global
+# scores_hierarchy(
+#   ts_sales[stores][-227:],
+#   trafo_zero(pred_dlinear_store + pred_rnn_store),
+#   stores,
+#   "D-linear (global) + RNN (global)"
+#   )
 
 ```
 
@@ -1760,8 +1784,9 @@ Why doesn't Dlinear val loss (6.5m) match with dlinear prediction score (19.4m)?
 
 -   Because validation is one score from one flattened validation set. Prediction is average of 54 different validation sets so the average gets skewed.
 
+```{=html}
 <!-- -->
-
+```
     Store sales prediction scores
     --------
     Model = Naive drift
@@ -1805,6 +1830,25 @@ Why doesn't Dlinear val loss (6.5m) match with dlinear prediction score (19.4m)?
     MSE: mean = 19570486.82, sd = 29983195.08, min = 1415213.83, max = 181886586.25
     RMSE: mean = 3707.05, sd = 2414.18, min = 1189.63, max = 13486.53
     RMSLE: mean = 0.77, sd = 0.48, min = 0.61, max = 4.24
+    --------
+
+    Model = Linear (trend only)
+    MAE: mean = 3131.3, sd = 2347.77, min = 752.36, max = 10208.38
+    MSE: mean = 23417424.1, sd = 37249525.55, min = 1074358.28, max = 186283233.07
+    RMSE: mean = 3905.48, sd = 2857.39, min = 1036.51, max = 13648.56
+    RMSLE: mean = 0.79, sd = 0.86, min = 0.38, max = 7.07
+    --------
+    Model = Linear (trend only) + RF (only trend removed, all covars except trend)
+    MAE: mean = 2312.4, sd = 1696.02, min = 635.87, max = 9609.55
+    MSE: mean = 14055413.6, sd = 27619496.76, min = 815966.5, max = 186283233.07
+    RMSE: mean = 3017.0, sd = 2225.56, min = 903.31, max = 13648.56
+    RMSLE: mean = 0.77, sd = 0.87, min = 0.3, max = 7.07
+    --------
+    Model = Linear + RNN (global, only trend removed, all covars except trend)
+    MAE: mean = 3161.25, sd = 2299.0, min = 893.75, max = 10149.53
+    MSE: mean = 23440051.16, sd = 36149416.73, min = 1472506.43, max = 174243039.23
+    RMSE: mean = 3953.56, sd = 2794.54, min = 1213.47, max = 13200.12
+    RMSLE: mean = 0.76, sd = 0.63, min = 0.4, max = 5.34
     --------
 
 ## Modeling: Category X store sales
