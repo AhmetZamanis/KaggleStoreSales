@@ -1,3 +1,25 @@
+
+
+
+Category sales prediction scores with separate linear model and STL + second model
+--------
+Model = Linear
+MAE: mean = 2490.68, sd = 4729.57, min = 4.91, max = 18161.36
+MSE: mean = 53357646.8, sd = 157023733.27, min = 33.11, max = 682423288.06
+RMSE: mean = 3328.56, sd = 6502.18, min = 5.75, max = 26123.23
+RMSLE: mean = 0.46, sd = 0.27, min = 0.2, max = 1.28
+--------
+Model = Linear + Random forest
+MAE: mean = 2689.02, sd = 5158.25, min = 4.97, max = 21686.3
+MSE: mean = 58245076.48, sd = 176222421.86, min = 33.96, max = 849969897.75
+RMSE: mean = 3483.65, sd = 6790.38, min = 5.83, max = 29154.24
+RMSLE: mean = 0.44, sd = 0.28, min = 0.15, max = 1.31
+--------
+
+
+
+
+
 trend & seasonal terms only:
 
 Model=Linear
