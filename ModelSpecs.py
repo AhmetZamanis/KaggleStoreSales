@@ -1,3 +1,70 @@
+Store sales prediction scores
+--------
+Model = Naive drift
+MAE: mean = 6363.13, sd = 3694.66, min = 1156.91, max = 21050.07
+MSE: mean = 64192549.51, sd = 76134854.1, min = 2097909.98, max = 457287381.6
+RMSE: mean = 7013.42, sd = 3873.57, min = 1448.42, max = 21384.28
+RMSLE: mean = 0.95, sd = 0.86, min = 0.62, max = 7.07
+--------
+Model = Naive seasonal
+MAE: mean = 3966.55, sd = 2940.74, min = 1012.22, max = 14603.02
+MSE: mean = 33918822.51, sd = 50677321.75, min = 1744277.29, max = 234667386.71
+RMSE: mean = 4777.28, sd = 3331.13, min = 1320.71, max = 15318.86
+RMSLE: mean = 0.84, sd = 0.86, min = 0.63, max = 7.07
+--------
+Model = Linear
+MAE: mean = 2002.82, sd = 1504.09, min = 585.77, max = 9609.55
+MSE: mean = 11410492.23, sd = 25843486.45, min = 596159.8, max = 186283233.07
+RMSE: mean = 2684.66, sd = 2050.14, min = 772.11, max = 13648.56
+RMSLE: mean = 0.72, sd = 0.88, min = 0.23, max = 7.07
+--------
+Model = Linear + RF
+MAE: mean = 2103.61, sd = 1540.66, min = 577.5, max = 9609.55
+MSE: mean = 11758632.46, sd = 25904173.41, min = 569031.59, max = 186283233.07
+RMSE: mean = 2749.23, sd = 2049.48, min = 754.34, max = 13648.56
+RMSLE: mean = 0.59, sd = 0.91, min = 0.11, max = 7.07
+--------
+Model = Linear + RNN (global)
+MAE: mean = 2008.33, sd = 1498.65, min = 579.57, max = 9575.43
+MSE: mean = 11402095.54, sd = 25638472.35, min = 590154.86, max = 184616098.11
+RMSE: mean = 2688.82, sd = 2042.63, min = 768.22, max = 13587.35
+RMSLE: mean = 0.69, sd = 0.59, min = 0.23, max = 4.95
+--------
+Model = D-linear (global)
+MAE: mean = 2899.19, sd = 1863.69, min = 888.22, max = 9557.04
+MSE: mean = 19424505.91, sd = 30125865.27, min = 1374606.52, max = 183539618.23
+RMSE: mean = 3682.08, sd = 2422.15, min = 1172.44, max = 13547.68
+RMSLE: mean = 0.76, sd = 0.49, min = 0.6, max = 4.34
+--------
+Model = D-linear (global) + RNN (global)
+MAE: mean = 2918.89, sd = 1855.89, min = 893.44, max = 9522.03
+MSE: mean = 19570486.82, sd = 29983195.08, min = 1415213.83, max = 181886586.25
+RMSE: mean = 3707.05, sd = 2414.18, min = 1189.63, max = 13486.53
+RMSLE: mean = 0.77, sd = 0.48, min = 0.61, max = 4.24
+--------
+
+Model = Linear (trend only)
+MAE: mean = 3131.3, sd = 2347.77, min = 752.36, max = 10208.38
+MSE: mean = 23417424.1, sd = 37249525.55, min = 1074358.28, max = 186283233.07
+RMSE: mean = 3905.48, sd = 2857.39, min = 1036.51, max = 13648.56
+RMSLE: mean = 0.79, sd = 0.86, min = 0.38, max = 7.07
+--------
+Model = Linear (trend only) + RF (only trend removed, all covars except trend)
+MAE: mean = 2312.4, sd = 1696.02, min = 635.87, max = 9609.55
+MSE: mean = 14055413.6, sd = 27619496.76, min = 815966.5, max = 186283233.07
+RMSE: mean = 3017.0, sd = 2225.56, min = 903.31, max = 13648.56
+RMSLE: mean = 0.77, sd = 0.87, min = 0.3, max = 7.07
+--------
+Model = Linear + RNN (global, only trend removed, all covars except trend)
+MAE: mean = 3161.25, sd = 2299.0, min = 893.75, max = 10149.53
+MSE: mean = 23440051.16, sd = 36149416.73, min = 1472506.43, max = 174243039.23
+RMSE: mean = 3953.56, sd = 2794.54, min = 1213.47, max = 13200.12
+RMSLE: mean = 0.76, sd = 0.63, min = 0.4, max = 5.34
+--------
+
+
+
+
 
 
 

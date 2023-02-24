@@ -9,6 +9,101 @@ print(np.isnan(series1.values()).sum())
     
   }
 
+
+
+
+{python StoreDLinearSpec}
+# from darts.models.forecasting.dlinear import DLinearModel as DLinear
+# 
+# # Specify DLinear model
+# model_dlinear_store = DLinear(
+#   input_chunk_length = 90,
+#   output_chunk_length = 15,
+#   kernel_size = 27,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   model_name = "DLinearStore2",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   random_state = 1923,
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     },
+#   show_warnings = True,
+#   force_reset = True
+# )
+
+
+
+{python StoreDLinearFit}
+#| output: false
+#| warning: false
+#| include: false
+
+# # D-linear covariates (trend + season + calendar)
+# dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# 
+# # Fit d-linear model
+# model_dlinear_store.fit(
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store],
+#   val_series = y_val_store,
+#   val_future_covariates = [x[dlinear_covars] for x in x_store],
+#   verbose = True
+# )
+
+
+
+
+{python StoreDLinearValid}
+
+# # Predict validation data with D-Linear
+# pred_dlinear_store_list = model_dlinear_store.predict(
+#   n = 227,
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store]
+#   )
+# 
+# # Stack predictions to get multivariate series
+# pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
+# for pred in pred_dlinear_store_list[2:]:
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+#   del pred
+
+
+
+
+
+
+{python}
+
+# # First fit & validate the first store to initialize series
+# pred_dlinear_store = model_dlinear_store.predict(
+#   n=227,
+#   series = y_train_store[0],
+#   future_covariates = x_store[0][dlinear_covars]
+#   )
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(1, len(y_train_store))):
+# 
+#   # Predict validation data
+#   pred = model_dlinear_store.predict(
+#   n=227,
+#   series = y_train_store[i],
+#   future_covariates = x_store[i][dlinear_covars]
+#   )
+# 
+#   # Stack predictions to multivariate series
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+# 
+#   del pred
+
+
+
+
 {python StoreRFLinear}
 
 # Model spec
@@ -44,6 +139,14 @@ for i in tqdm(range(1, len(y_val_store))):
 
   # Cleanup
   del pred
+
+
+
+
+
+
+
+
 
 
 # Random forest (global) 
