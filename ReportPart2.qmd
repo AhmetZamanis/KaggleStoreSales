@@ -861,23 +861,22 @@ def scores_plot(val, preds_dict, subset):
     data = scores_df_all,
     x = "MAE",
     hue = "Model",
-    ax = ax[0,0]
+    ax = ax[0,0],
+    legend = False
   )
-  _ =  ax[0,0].legend(title = "Models", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
   
   _ = sns.kdeplot(
     data = scores_df_all,
     x = "MSE",
     hue = "Model",
-    ax = ax[0,1], 
-    legend = False
+    ax = ax[0,1]
   )
   
   _ = sns.kdeplot(
     data = scores_df_all,
     x = "RMSE",
     hue = "Model",
-    ax = ax[1,0],
+    ax = ax[1,0], 
     legend = False
   )
   
@@ -1309,8 +1308,8 @@ scores_hierarchy(
 ```{python CategoryScorePlot}
 
 cat_preds_dict = {
-  "Naive drift": trafo_zero(pred_drift_cat),
-  "Naive seasonal": trafo_zero(pred_seasonal_cat),
+  # "Naive drift": trafo_zero(pred_drift_cat),
+  # "Naive seasonal": trafo_zero(pred_seasonal_cat),
   "Linear": trafo_zero(pred_linear_cat),
   "Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
   "Linear + Random forest": trafo_zero(pred_linear_cat + pred_rf_cat)
@@ -1327,40 +1326,41 @@ scores_plot(
 
     Category sales prediction scores (STL: 7 freq, 7 seasonal, 365 trend, robust)
     --------
-    Model = Linear
+    Model = Linear (trend + seasonality features)
     MAE: mean = 3046.03, sd = 6534.27, min = 4.16, max = 28588.28
     MSE: mean = 98286888.96, sd = 292192049.04, min = 24.87, max = 1212049616.12
     RMSE: mean = 4267.58, sd = 8948.44, min = 4.99, max = 34814.5
     RMSLE: mean = 0.49, sd = 0.28, min = 0.22, max = 1.4
     --------
-    Model = Linear + AutoARIMA
+    Model = Linear + AutoARIMA (calendar + cyclical features)
     MAE: mean = 5959.81, sd = 16077.21, min = 4.38, max = 86022.96
     MSE: mean = 324237512.48, sd = 1344769719.96, min = 27.08, max = 7676345316.24
     RMSE: mean = 6611.52, sd = 16748.89, min = 5.2, max = 87614.76
     RMSLE: mean = 0.53, sd = 0.36, min = 0.2, max = 1.86
     --------
-    Model = Linear + Random forest
+    Model = Linear + Random forest (calendar + cyclical features)
     MAE: mean = 5370.76, sd = 15105.83, min = 5.27, max = 84914.55
     MSE: mean = 309365404.75, sd = 1305675223.25, min = 37.2, max = 7563237010.71
     RMSE: mean = 6538.93, sd = 16328.13, min = 6.1, max = 86966.87
     RMSLE: mean = 0.54, sd = 0.35, min = 0.26, max = 1.81
     --------
 
+
     Category sales prediction scores (STL: 7 freq, 7 seasonal, 85 trend, robust)
     --------
-    Model = Linear
+    Model = Linear (trend + seasonality features)
     MAE: mean = 2639.5, sd = 5292.82, min = 4.6, max = 21243.23
     MSE: mean = 81261537.6, sd = 250978792.24, min = 29.46, max = 1212390953.88
     RMSE: mean = 3923.55, sd = 8115.87, min = 5.43, max = 34819.4
     RMSLE: mean = 0.48, sd = 0.25, min = 0.23, max = 1.29
     --------
-    Model = Linear + AutoARIMA
+    Model = Linear + AutoARIMA (calendar + cyclical features)
     MAE: mean = 2926.01, sd = 6253.96, min = 4.83, max = 25884.62
     MSE: mean = 88461466.49, sd = 272291133.42, min = 31.89, max = 1218547823.09
     RMSE: mean = 3954.99, sd = 8533.44, min = 5.65, max = 34907.7
     RMSLE: mean = 0.46, sd = 0.33, min = 0.19, max = 1.8
     --------
-    Model = Linear + Random forest
+    Model = Linear + Random forest (calendar + cyclical features)
     MAE: mean = 3023.34, sd = 6120.32, min = 4.91, max = 24538.09
     MSE: mean = 93857560.67, sd = 278523809.53, min = 33.6, max = 1253212175.1
     RMSE: mean = 4296.76, sd = 8683.05, min = 5.8, max = 35400.74
@@ -1487,7 +1487,7 @@ for series in y_train_store:
     method = "STL",
     freq = 7, # N. of obs in each seasonality cycle (12 for monthly CO2 data with yearly seasonality cycle)
     seasonal = 7, # Size of seasonal smoother (last n lags)
-    trend = 85, # Size of trend smoother (last n lags)
+    trend = 365, # Size of trend smoother (last n lags)
     robust = True
   )
   
@@ -1746,7 +1746,7 @@ model_rnn_store = RNN(
   n_rnn_layers = 2,
   hidden_dim = 32,
   dropout = 0.1,
-  model_name = "RNNStore4",
+  model_name = "RNNStore X",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
@@ -1783,6 +1783,15 @@ model_rnn_store.fit(
   verbose = True
 )
 ```
+
+```{python StoreRNNLoad}
+
+# Load a previously trained RNN model
+model_rnn_store = model_rnn_store.load_from_checkpoint("RNNStore3", best = True)
+
+```
+
+The first time you fit a NN model may not be returning the best checkpoint
 
 ```{python StoreRNNValid}
 
@@ -1865,6 +1874,25 @@ scores_hierarchy(
   
 ```
 
+```{python StoreScorePlot}
+
+store_preds_dict = {
+  # "Naive drift": trafo_zero(pred_drift_store),
+  # "Naive seasonal": trafo_zero(pred_seasonal_store),
+  "Linear": trafo_zero(pred_linear_store),
+  "Linear + AutoARIMA": trafo_zero(pred_linear_store + pred_arima_store),
+  "Linear + Random forest": trafo_zero(pred_linear_store + pred_rf_store),
+  "Linear + RNN": trafo_zero(pred_linear_store + pred_rnn_store)
+}
+
+
+scores_plot(
+  ts_sales[stores][-227:],
+  store_preds_dict,
+  stores
+)
+```
+
     Store sales prediction scores (STL = 85 trend, 7 period, 7 season, robust)
     --------
     Model = Linear (trend + seasonality feats)
@@ -1892,7 +1920,10 @@ scores_hierarchy(
     RMSLE: mean = 0.9, sd = 0.69, min = 0.51, max = 5.86
     --------
 
-    Store sales prediction scores (STL = 365 trend, 7 period, 7 season, robust)
+
+
+
+    Store sales prediction scores (STL: 365 trend, 7 period, 7 season, robust)
     --------
     Model = Linear (trend + seasonality feats)
     MAE: mean = 2072.68, sd = 1556.98, min = 621.88, max = 9609.55
@@ -1913,10 +1944,10 @@ scores_hierarchy(
     RMSLE: mean = 0.79, sd = 0.88, min = 0.3, max = 7.07
     --------
     Model = Linear + RNN (global) (calendar + cyclicality feats)
-    MAE: mean = 2584.41, sd = 1456.56, min = 841.51, max = 9403.14
-    MSE: mean = 15414369.68, sd = 26127776.44, min = 1203581.25, max = 178508470.25
-    RMSE: mean = 3340.91, sd = 2062.21, min = 1097.08, max = 13360.71
-    RMSLE: mean = 0.78, sd = 0.73, min = 0.29, max = 6.05
+    MAE: mean = 2629.96, sd = 1390.25, min = 762.26, max = 8993.99
+    MSE: mean = 15303460.93, sd = 24028177.44, min = 1126629.43, max = 163453843.88
+    RMSE: mean = 3380.1, sd = 1969.36, min = 1061.43, max = 12784.91
+    RMSLE: mean = 0.73, sd = 0.36, min = 0.34, max = 3.31
     --------
 
 ## Modeling: All bottom level series
