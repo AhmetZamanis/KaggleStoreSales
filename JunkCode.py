@@ -2,11 +2,14 @@ Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
 print(np.isnan(series1.values()).sum())
 
-  lr_scheduler_cls = torch.optim.lr_scheduler.CyclicLR()
+lr_scheduler_cls = torch.optim.lr_scheduler.CyclicLR,
   lr_scheduler_kwargs = {
     "base_lr": 0.001,
-    "max_lr": 0.05,
-    
+    "max_lr": 0.01,
+    "step_size_up": 100,
+    "mode": "exp_range",
+    "gamma": 0.8,
+    "cycle_momentum": False
   }
 
 

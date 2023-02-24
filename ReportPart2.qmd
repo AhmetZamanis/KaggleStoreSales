@@ -696,6 +696,7 @@ from darts.models.forecasting.random_forest import RandomForest
 model_forest = RandomForest(
   lags = [-1, -2, -3, -4, -5], # Target lags that can be used
   lags_future_covariates = [0], # No covariate lags
+  n_estimators = 500, # Build 500 trees
   random_state = 1923,
   n_jobs = -2 # Use all but one of the CPUs
   )
@@ -1223,19 +1224,28 @@ scores_hierarchy(
 
 ```
 
+    Category sales prediction scores (STL: 7 freq, 7 seasonal, 365 trend, robust)
+    --------
+    Model = Linear
+    MAE: mean = 3046.03, sd = 6534.27, min = 4.16, max = 28588.28
+    MSE: mean = 98286888.96, sd = 292192049.04, min = 24.87, max = 1212049616.12
+    RMSE: mean = 4267.58, sd = 8948.44, min = 4.99, max = 34814.5
+    RMSLE: mean = 0.49, sd = 0.28, min = 0.22, max = 1.4
+    --------
+    Model = Linear + AutoARIMA
+    MAE: mean = 5959.81, sd = 16077.21, min = 4.38, max = 86022.96
+    MSE: mean = 324237512.48, sd = 1344769719.96, min = 27.08, max = 7676345316.24
+    RMSE: mean = 6611.52, sd = 16748.89, min = 5.2, max = 87614.76
+    RMSLE: mean = 0.53, sd = 0.36, min = 0.2, max = 1.86
+    --------
+    Model = Linear + Random forest
+    MAE: mean = 5370.76, sd = 15105.83, min = 5.27, max = 84914.55
+    MSE: mean = 309365404.75, sd = 1305675223.25, min = 37.2, max = 7563237010.71
+    RMSE: mean = 6538.93, sd = 16328.13, min = 6.1, max = 86966.87
+    RMSLE: mean = 0.54, sd = 0.35, min = 0.26, max = 1.81
+    --------
+
     Category sales prediction scores (STL: 7 freq, 7 seasonal, 85 trend, robust)
-    --------
-    Model = Naive drift
-    MAE: mean = 9198.75, sd = 17750.08, min = 3.84, max = 67076.19
-    MSE: mean = 486367393.42, sd = 1361201937.41, min = 22.88, max = 5703870251.1
-    RMSE: mean = 10119.45, sd = 19595.0, min = 4.78, max = 75523.97
-    RMSLE: mean = 0.72, sd = 0.54, min = 0.34, max = 2.45
-    --------
-    Model = Naive seasonal
-    MAE: mean = 5313.53, sd = 10042.0, min = 6.47, max = 43993.57
-    MSE: mean = 188739718.7, sd = 559681015.48, min = 71.08, max = 2938535402.64
-    RMSE: mean = 6431.06, sd = 12140.07, min = 8.43, max = 54208.26
-    RMSLE: mean = 0.62, sd = 0.45, min = 0.32, max = 1.89
     --------
     Model = Linear
     MAE: mean = 2639.5, sd = 5292.82, min = 4.6, max = 21243.23
@@ -1376,7 +1386,7 @@ for series in y_train_store:
     method = "STL",
     freq = 7, # N. of obs in each seasonality cycle (12 for monthly CO2 data with yearly seasonality cycle)
     seasonal = 7, # Size of seasonal smoother (last n lags)
-    trend = 365, # Size of trend smoother (last n lags)
+    trend = 85, # Size of trend smoother (last n lags)
     robust = True
   )
   
@@ -1585,7 +1595,7 @@ del pred, i
 ```{python InitTorch}
 import torch
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import RichProgressBar
+from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
 import tensorboard
 
 torch.set_float32_matmul_precision("high")
@@ -1595,11 +1605,14 @@ torch.set_printoptions(sci_mode = False)
 early_stopper = EarlyStopping(
   monitor = "val_loss",
   min_delta = 5800, # 1% of min. MSE of best model so far
-  patience = 5
+  patience = 10
 )
 
 # Progress bar
 progress_bar = RichProgressBar()
+
+# Rich model summary
+model_summary = RichModelSummary(max_depth = -1)
 
 ```
 
@@ -1632,22 +1645,16 @@ model_rnn_store = RNN(
   n_rnn_layers = 2,
   hidden_dim = 32,
   dropout = 0.1,
-  lr_scheduler_cls = torch.optim.lr_scheduler.CyclicLR,
-  lr_scheduler_kwargs = {
-    "base_lr": 0.001,
-    "max_lr": 0.01,
-    "step_size_up": 100,
-    "mode": "exp_range",
-    "gamma": 0.8,
-    "cycle_momentum": False
-  },
-  model_name = "RNNStore3",
+  model_name = "RNNStore4",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
   force_reset = True,
+  optimizer_kwargs = {"lr": 0.005},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
   pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar],
+    "callbacks": [early_stopper, progress_bar, model_summary],
     "accelerator": "gpu",
     "devices": [0]
     }
@@ -1731,7 +1738,7 @@ scores_hierarchy(
   "Linear"
   )
 
-# Linear + AutoARIMA 
+# Linear + AutoARIMA
 scores_hierarchy(
   ts_sales[stores][-227:],
   trafo_zero(pred_linear_store + pred_arima_store),
@@ -1754,21 +1761,37 @@ scores_hierarchy(
   stores,
   "Linear + RNN (global)"
   )
+  
 ```
 
+    Store sales prediction scores (STL = 85 trend, 7 period, 7 season, robust)
+    --------
+    Model = Linear (trend + seasonality feats)
+    MAE: mean = 2046.32, sd = 1539.36, min = 613.24, max = 9609.55
+    MSE: mean = 13563682.38, sd = 26863817.51, min = 898487.02, max = 186283233.07
+    RMSE: mean = 2962.48, sd = 2188.01, min = 947.89, max = 13648.56
+    RMSLE: mean = 0.78, sd = 0.87, min = 0.36, max = 7.07
+    --------
+    Model = Linear + AutoARIMA (calendar + cyclicality feats)
+    MAE: mean = 2124.35, sd = 1614.63, min = 557.05, max = 9609.55
+    MSE: mean = 12206346.55, sd = 25945482.03, min = 594005.27, max = 186283214.04
+    RMSE: mean = 2785.3, sd = 2109.14, min = 770.72, max = 13648.56
+    RMSLE: mean = 0.72, sd = 0.88, min = 0.2, max = 7.07
+    --------
+    Model = Linear + RF (calendar + cyclicality feats)
+    MAE: mean = 2092.38, sd = 1538.2, min = 573.96, max = 9609.55
+    MSE: mean = 13005342.68, sd = 26391260.62, min = 645534.17, max = 186283233.07
+    RMSE: mean = 2911.87, sd = 2127.53, min = 803.45, max = 13648.56
+    RMSLE: mean = 0.76, sd = 0.87, min = 0.32, max = 7.07
+    --------
+    Model = Linear + RNN (global) (calendar + cyclicality feats)
+    MAE: mean = 5485.38, sd = 1284.81, min = 3229.92, max = 10135.01
+    MSE: mean = 38436688.17, sd = 23497295.9, min = 13121037.03, max = 146031353.86
+    RMSE: mean = 5992.42, sd = 1589.83, min = 3622.3, max = 12084.34
+    RMSLE: mean = 0.9, sd = 0.69, min = 0.51, max = 5.86
+    --------
+
     Store sales prediction scores (STL = 365 trend, 7 period, 7 season, robust)
-    --------
-    Model = Naive drift
-    MAE: mean = 6363.13, sd = 3694.66, min = 1156.91, max = 21050.07
-    MSE: mean = 64192549.51, sd = 76134854.1, min = 2097909.98, max = 457287381.6
-    RMSE: mean = 7013.42, sd = 3873.57, min = 1448.42, max = 21384.28
-    RMSLE: mean = 0.95, sd = 0.86, min = 0.62, max = 7.07
-    --------
-    Model = Naive seasonal
-    MAE: mean = 3966.55, sd = 2940.74, min = 1012.22, max = 14603.02
-    MSE: mean = 33918822.51, sd = 50677321.75, min = 1744277.29, max = 234667386.71
-    RMSE: mean = 4777.28, sd = 3331.13, min = 1320.71, max = 15318.86
-    RMSLE: mean = 0.84, sd = 0.86, min = 0.63, max = 7.07
     --------
     Model = Linear (trend + seasonality feats)
     MAE: mean = 2072.68, sd = 1556.98, min = 621.88, max = 9609.55
@@ -1787,6 +1810,12 @@ scores_hierarchy(
     MSE: mean = 15169178.78, sd = 28198825.95, min = 677384.54, max = 186283233.07
     RMSE: mean = 3130.16, sd = 2317.6, min = 823.03, max = 13648.56
     RMSLE: mean = 0.79, sd = 0.88, min = 0.3, max = 7.07
+    --------
+    Model = Linear + RNN (global) (calendar + cyclicality feats)
+    MAE: mean = 2584.41, sd = 1456.56, min = 841.51, max = 9403.14
+    MSE: mean = 15414369.68, sd = 26127776.44, min = 1203581.25, max = 178508470.25
+    RMSE: mean = 3340.91, sd = 2062.21, min = 1097.08, max = 13360.71
+    RMSLE: mean = 0.78, sd = 0.73, min = 0.29, max = 6.05
     --------
 
 ## Modeling: All bottom level series
