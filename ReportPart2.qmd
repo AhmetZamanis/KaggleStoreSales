@@ -813,6 +813,88 @@ def scores_hierarchy(val, pred, subset, model):
 
 ```
 
+```{python HierarchicalPlotFunc}
+
+# Define model score plotting function for full hierarchy
+def scores_plot(val, preds_dict, subset):
+  
+  # Scoring functions
+  def measure_mae(val, pred, subset):
+    return mae([val[c] for c in subset], [pred[c] for c in subset])
+  
+  def measure_mse(val, pred, subset):
+    return mse([val[c] for c in subset], [pred[c] for c in subset])
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([(val[c]) for c in subset], [pred[c] for c in subset])
+  
+  scores_df_all = []
+  for key in preds_dict:
+    
+    # Dict of scores for 1 model
+    scores_dict = {
+      "MAE": measure_mae(val, preds_dict[key], subset),
+      "MSE": measure_mse(val, preds_dict[key], subset),
+      "RMSE": measure_rmse(val, preds_dict[key], subset), 
+      "RMSLE": measure_rmsle(val, preds_dict[key], subset),
+      "Model": key
+      }
+    
+    # df of scores for 1 model
+    scores_df = pd.DataFrame(
+      data = scores_dict
+    )
+    
+    # Append to list of score df's
+    scores_df_all.append(scores_df)
+  
+  # Combine all models' score dfs
+  scores_df_all = pd.concat(scores_df_all)
+  
+  # Create fig. of 4 kdeplots, one for each metric, grouped by model
+  fig, ax = plt.subplots(2, 2)
+  
+  _ = sns.kdeplot(
+    data = scores_df_all,
+    x = "MAE",
+    hue = "Model",
+    ax = ax[0,0]
+  )
+  _ =  ax[0,0].legend(title = "Models", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+  
+  _ = sns.kdeplot(
+    data = scores_df_all,
+    x = "MSE",
+    hue = "Model",
+    ax = ax[0,1], 
+    legend = False
+  )
+  
+  _ = sns.kdeplot(
+    data = scores_df_all,
+    x = "RMSE",
+    hue = "Model",
+    ax = ax[1,0],
+    legend = False
+  )
+  
+  _ = sns.kdeplot(
+    data = scores_df_all,
+    x = "RMSLE",
+    hue = "Model",
+    ax = ax[1,1],
+    legend = False
+  )
+  
+  # Display and close
+  plt.show()
+  plt.close("all")
+
+```
+
 ```{python NegRemover}
 # Define function to replace negative predictions with zeroes
 def trafo_zero(x):
@@ -1221,6 +1303,25 @@ scores_hierarchy(
   "Linear + Random forest"
   )  
   
+
+```
+
+```{python CategoryScorePlot}
+
+cat_preds_dict = {
+  "Naive drift": trafo_zero(pred_drift_cat),
+  "Naive seasonal": trafo_zero(pred_seasonal_cat),
+  "Linear": trafo_zero(pred_linear_cat),
+  "Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
+  "Linear + Random forest": trafo_zero(pred_linear_cat + pred_rf_cat)
+}
+
+
+scores_plot(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  cat_preds_dict,
+  categories
+)
 
 ```
 
