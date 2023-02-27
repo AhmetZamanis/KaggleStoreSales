@@ -1079,7 +1079,7 @@ for series in y_train_cat:
     method = "STL",
     freq = 7, # N. of obs in each seasonality cycle (12 for monthly CO2 data with yearly seasonality cycle)
     seasonal = 7, # Size of seasonal smoother (last n lags)
-    trend = 85, # Size of trend smoother (last n lags)
+    trend = 365, # Size of trend smoother (last n lags)
     robust = True
   )
   
@@ -1367,7 +1367,7 @@ scores_hierarchy(
 cat_preds_dict = {
   # "Naive drift": trafo_zero(pred_drift_cat),
   # "Naive seasonal": trafo_zero(pred_seasonal_cat),
-  # "ETS": trafo_zero(pred_ets_cat),
+  "ETS": trafo_zero(pred_ets_cat),
   "Linear": trafo_zero(pred_linear_cat),
   "Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
   "Linear + Random forest": trafo_zero(pred_linear_cat + pred_rf_cat)
@@ -1633,37 +1633,29 @@ del pred, i
 
 ```{python StoreARIMAFitVal}
 
-# Retrieve model spec
-model_arima_store = model_arima_cat
-
-# # AutoARIMA covars (cyclical only)
-# arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
-
-# AutoARIMA covars (cyclical + calendar)
-arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-
 # First fit & validate the first category to initialize series
-model_arima_store.fit(
+model_arima.fit(
   remainder_store[0],
   future_covariates = x_store[0][arima_covars])
   
-pred_arima_store = model_arima_store.predict(
-  n=227,
+pred_arima_store = model_arima.predict(
+  n=15,
   future_covariates = x_store[0][arima_covars])
   
 # Then loop over all categories except first
 for i in tqdm(range(1, len(y_train_store))):
   
   # Fit on training data
-  model_arima_store.fit(
-  remainder_store[i],
-  future_covariates = x_store[i][arima_covars])
+  model_arima.fit(
+    remainder_store[i],
+    future_covariates = x_store[i][arima_covars]
+    )
   
   # Predict validation data
-  pred = model_arima_store.predict(
-  n=227,
-  future_covariates = x_store[i][arima_covars])
+  pred = model_arima.predict(
+    n=15,
+    future_covariates = x_store[i][arima_covars]
+    )
   
   # Stack predictions to multivariate series
   pred_arima_store = pred_arima_store.stack(pred)
@@ -1677,31 +1669,14 @@ Mention: AutoARIMA caught a completely constant input series, returned an ARMA (
 
 ```{python StoreRFFitVal}
 
-# Model spec
-model_rf_store = RandomForest(
-  lags = [-1, -2, -3, -4, -5, -6, -7],
-  lags_future_covariates = [0],
-  output_chunk_length = 15,
-  n_estimators = 500,
-  oob_score = True,
-  random_state = 1923,
-  n_jobs = -2
-)
-
-# # RF covariates (cyclical only)
-# rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
-
-# RF covariates (calendar + cyclical)
-rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
 # First fit & validate the first category to initialize series
-model_rf_store.fit(
+model_rf.fit(
   remainder_store[0],
   future_covariates = x_store[0][rf_covars]
   )
 
-pred_rf_store = model_rf_store.predict(
-  n=227,
+pred_rf_store = model_rf.predict(
+  n=15,
   future_covariates = x_store[0][rf_covars]
   )
 
@@ -1709,15 +1684,15 @@ pred_rf_store = model_rf_store.predict(
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  model_rf_store.fit(
-  remainder_store[i],
-  future_covariates = x_store[i][rf_covars]
+  model_rf.fit(
+    remainder_store[i],
+    future_covariates = x_store[i][rf_covars]
   )
 
   # Predict validation data
-  pred = model_rf_store.predict(
-  n=227,
-  future_covariates = x_store[i][rf_covars]
+  pred = model_rf.predict(
+    n=15,
+    future_covariates = x_store[i][rf_covars]
   )
 
   # Stack predictions to multivariate series
@@ -1728,7 +1703,7 @@ del pred, i
 
 ```
 
-#### RNN on decomposed sales (global)
+### Global models
 
 ```{python InitTorch}
 import torch
@@ -1742,7 +1717,7 @@ torch.set_printoptions(sci_mode = False)
 # Create early stopper
 early_stopper = EarlyStopping(
   monitor = "val_loss",
-  min_delta = 5800, # 1% of min. MSE of best model so far
+  min_delta = 5000, # 1% of min. MSE of best model so far
   patience = 10
 )
 
@@ -1754,17 +1729,23 @@ model_summary = RichModelSummary(max_depth = -1)
 
 ```
 
+#### D-Linear on trend + seasonality
+
+#### RNN on remainder 
+
+##### Validation set: Remainder of linear model predictions
+
 ```{python StoreDecompValid}
 
 # Retrieve remainder validation sets as validation sets minus linear model predictions
 pred_linear_store_list = [pred_linear_store[store] for store in stores]
-remainder_store_val = []
+remainder_store_val1 = []
 
 for i in (range(0, len(pred_linear_store_list))):
   
   remainder = y_val_store[i] - pred_linear_store_list[i]
   
-  remainder_store_val.append(remainder)
+  remainder_store_val1.append(remainder)
   
 del remainder
 
@@ -1774,21 +1755,21 @@ del remainder
 from darts.models.forecasting.rnn_model import RNNModel as RNN
 
 # Specify RNN model
-model_rnn_store = RNN(
+model_rnn1 = RNN(
   model = "LSTM",
-  input_chunk_length = 180,
-  training_length = 195,
-  batch_size = 32,
+  input_chunk_length = 90,
+  training_length = 105,
+  batch_size = 64,
   n_epochs = 500,
   n_rnn_layers = 2,
   hidden_dim = 32,
   dropout = 0.1,
-  model_name = "RNNStore X",
+  model_name = "RNNStore1.0",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
   force_reset = True,
-  optimizer_kwargs = {"lr": 0.005},
+  optimizer_kwargs = {"lr": 0.002},
   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
   lr_scheduler_kwargs = {"patience": 5},
   pl_trainer_kwargs = {
@@ -1811,20 +1792,20 @@ model_rnn_store = RNN(
 # RNN covariates (calendar + cyclical)
 rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
-# # Fit RNN model
-# model_rnn_store.fit(
-#   series = remainder_store,
-#   future_covariates = [x[rnn_covars] for x in x_store],
-#   val_series = remainder_store_val,
-#   val_future_covariates = [x[rnn_covars] for x in x_store],
-#   verbose = True
-# )
+# Fit RNN model
+model_rnn1.fit(
+  series = remainder_store,
+  future_covariates = [x[rnn_covars] for x in x_store],
+  val_series = remainder_store_val,
+  val_future_covariates = [x[rnn_covars] for x in x_store],
+  verbose = True
+)
 ```
 
 ```{python StoreRNNLoad}
 
-# Load a previously trained RNN model
-model_rnn_store = model_rnn_store.load_from_checkpoint("RNNStore3", best = True)
+# # Load a previously trained RNN model
+# model_rnn_store = model_rnn1.load_from_checkpoint("RNNStore1.0", best = True)
 
 ```
 
@@ -1833,8 +1814,8 @@ The first time you fit a NN model may not be returning the best checkpoint
 ```{python StoreRNNValid}
 
 # First fit & validate the first store to initialize series
-pred_rnn_store = model_rnn_store.predict(
-  n=227,
+pred_rnn1_store = model_rnn1.predict(
+  n=15,
   series = y_train_store[0],
   future_covariates = x_store[0][rnn_covars]
   )
@@ -1843,17 +1824,19 @@ pred_rnn_store = model_rnn_store.predict(
 for i in tqdm(range(1, len(y_train_store))):
 
   # Predict validation data
-  pred = model_rnn_store.predict(
-  n=227,
-  series = y_train_store[i],
-  future_covariates = x_store[i][rnn_covars]
+  pred = model_rnn1.predict(
+    n=15,
+    series = y_train_store[i],
+    future_covariates = x_store[i][rnn_covars]
   )
 
   # Stack predictions to multivariate series
-  pred_rnn_store = pred_rnn_store.stack(pred)
+  pred_rnn1_store = pred_rnn1_store.stack(pred)
   
 del pred, i
 ```
+
+##### Validation set: Remainder of D-Linear predictions
 
 ### Model scores
 
@@ -1864,21 +1847,21 @@ print("--------")
 
 # Naive
 scores_hierarchy(
-  ts_sales[stores][-227:],
+  ts_sales[stores][-15:],
   trafo_zero(pred_drift_store),
   stores, 
   "Naive drift"
   )
 
 scores_hierarchy(
-  ts_sales[stores][-227:], 
+  ts_sales[stores][-15:], 
   trafo_zero(pred_seasonal_store),
   stores, 
   "Naive seasonal"
   )
   
 scores_hierarchy(
-  ts_sales[stores][-227:], 
+  ts_sales[stores][-15:], 
   trafo_zero(pred_ets_store),
   stores, 
   "Exponential smoothing"
@@ -1886,7 +1869,7 @@ scores_hierarchy(
 
 # Linear 
 scores_hierarchy(
-  ts_sales[stores][-227:],
+  ts_sales[stores][-15:],
   trafo_zero(pred_linear_store),
   stores,
   "Linear"
@@ -1894,7 +1877,7 @@ scores_hierarchy(
 
 # Linear + AutoARIMA
 scores_hierarchy(
-  ts_sales[stores][-227:],
+  ts_sales[stores][-15:],
   trafo_zero(pred_linear_store + pred_arima_store),
   stores,
   "Linear + AutoARIMA"
@@ -1902,19 +1885,19 @@ scores_hierarchy(
 
 # Linear + Random forest 
 scores_hierarchy(
-  ts_sales[stores][-227:],
+  ts_sales[stores][-15:],
   trafo_zero(pred_linear_store + pred_rf_store),
   stores,
   "Linear + RF"
   )
 
-# Linear + RNN global
-scores_hierarchy(
-  ts_sales[stores][-227:],
-  trafo_zero(pred_linear_store + pred_rnn_store),
-  stores,
-  "Linear + RNN (global)"
-  )
+# # Linear + RNN global
+# scores_hierarchy(
+#   ts_sales[stores][-15:],
+#   trafo_zero(pred_linear_store + pred_rnn1_store),
+#   stores,
+#   "Linear + RNN (global)"
+#   )
   
 ```
 
@@ -1923,19 +1906,20 @@ scores_hierarchy(
 store_preds_dict = {
   # "Naive drift": trafo_zero(pred_drift_store),
   # "Naive seasonal": trafo_zero(pred_seasonal_store),
-  # "Exponential smoothing": trafo_zero(pred_ets_store),
+  "Exponential smoothing": trafo_zero(pred_ets_store),
   "Linear": trafo_zero(pred_linear_store),
   "Linear + AutoARIMA": trafo_zero(pred_linear_store + pred_arima_store),
-  "Linear + Random forest": trafo_zero(pred_linear_store + pred_rf_store),
-  "Linear + RNN": trafo_zero(pred_linear_store + pred_rnn_store)
+  "Linear + Random forest": trafo_zero(pred_linear_store + pred_rf_store)
+  # "Linear + RNN": trafo_zero(pred_linear_store + pred_rnn1_store)
 }
 
 
 scores_plot(
-  ts_sales[stores][-227:],
+  ts_sales[stores][-15:],
   store_preds_dict,
   stores
 )
+
 ```
 
 ## Modeling: All bottom level series
