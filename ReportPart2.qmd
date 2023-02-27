@@ -967,27 +967,61 @@ for series in category_sales:
 
 # Import baseline models
 from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
+from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
 
 # Specify baseline models
 model_drift = NaiveDrift()
 model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
+
+# Specify ETS model
+model_ets = ETS(
+  season_length = 7, # Weekly seasonality
+  model = "AAA", # Multiplicative trend, seasonality and remainder component
+  damped = 0.95 # Dampen the trend over time
+)
+
 ```
 
 ```{python CategoryBaselineFitVal}
 
 # Fit & validate baseline models
 
-# Naive
+
+# Naive drift
 model_drift.fit(
   #scaler_minmax.fit_transform(ts_sales["AUTOMOTIVE":"SEAFOOD"][:-227])
   ts_sales[categories][:-227]
   )
 pred_drift_cat = model_drift.predict(n = 227)
 
+
+# Naive seasonal
 model_seasonal.fit(
   ts_sales[categories][:-227]
 )
 pred_seasonal_cat = model_seasonal.predict(n = 227)
+
+
+# ETS
+
+# First fit & validate the first category to initialize series
+model_ets.fit(y_train_cat[0])
+pred_ets_cat = model_ets.predict(n=227)
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_cat))):
+
+  # Fit on training data
+  model_ets.fit(y_train_cat[i])
+
+  # Predict validation data
+  pred = model_ets.predict(n=227)
+
+  # Stack predictions to multivariate series
+  pred_ets_cat = pred_ets_cat.stack(pred)
+  
+del pred, i
+
 ```
 
 ```{python CategoryScoreBaselines}
@@ -999,17 +1033,24 @@ print("--------")
 scores_hierarchy(
   #scaler_minmax.transform(ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:]),
   ts_sales[categories][-227:],
-  pred_drift_cat,
+  trafo_zero(pred_drift_cat),
   categories, 
   "Naive drift"
   )
 
 scores_hierarchy(
   ts_sales[categories][-227:], 
-  pred_seasonal_cat,
+  trafo_zero(pred_seasonal_cat),
   categories, 
   "Naive seasonal"
   )
+  
+scores_hierarchy(
+  ts_sales[categories][-227:], 
+  trafo_zero(pred_ets_cat),
+  categories, 
+  "Exponential smoothing"
+  )  
 ```
 
 ### Hybrid models
@@ -1175,27 +1216,27 @@ arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 't
 model_arima_cat.fit(
   remainder_cat[0],
   future_covariates = x_cat[0][arima_covars])
-  
+
 pred_arima_cat = model_arima_cat.predict(
   n=227,
   future_covariates = x_cat[0][arima_covars])
-  
+
 # Then loop over all categories except first
 for i in tqdm(range(1, len(y_train_cat))):
-  
+
   # Fit on training data
   model_arima_cat.fit(
   remainder_cat[i],
   future_covariates = x_cat[i][arima_covars])
-  
+
   # Predict validation data
   pred = model_arima_cat.predict(
   n=227,
   future_covariates = x_cat[i][arima_covars])
-  
+
   # Stack predictions to multivariate series
   pred_arima_cat = pred_arima_cat.stack(pred)
-  
+
 del pred, i
 ```
 
@@ -1262,7 +1303,7 @@ del pred, i
 print("Category sales prediction scores")
 print("--------")
 
-# Naive
+# Naive drift
 scores_hierarchy(
   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
   trafo_zero(pred_drift_cat),
@@ -1270,11 +1311,20 @@ scores_hierarchy(
   "Naive drift"
   )
 
+# Naive seasonal
 scores_hierarchy(
   ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:], 
   pred_seasonal_cat,
   categories, 
   "Naive seasonal"
+  )
+
+# ETS
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  trafo_zero(pred_ets_cat),
+  categories,
+  "Exponential smoothing"
   )
 
 # Linear 
@@ -1310,6 +1360,7 @@ scores_hierarchy(
 cat_preds_dict = {
   # "Naive drift": trafo_zero(pred_drift_cat),
   # "Naive seasonal": trafo_zero(pred_seasonal_cat),
+  # "ETS": trafo_zero(pred_ets_cat),
   "Linear": trafo_zero(pred_linear_cat),
   "Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
   "Linear + Random forest": trafo_zero(pred_linear_cat + pred_rf_cat)
@@ -1323,49 +1374,6 @@ scores_plot(
 )
 
 ```
-
-    Category sales prediction scores (STL: 7 freq, 7 seasonal, 365 trend, robust)
-    --------
-    Model = Linear (trend + seasonality features)
-    MAE: mean = 3046.03, sd = 6534.27, min = 4.16, max = 28588.28
-    MSE: mean = 98286888.96, sd = 292192049.04, min = 24.87, max = 1212049616.12
-    RMSE: mean = 4267.58, sd = 8948.44, min = 4.99, max = 34814.5
-    RMSLE: mean = 0.49, sd = 0.28, min = 0.22, max = 1.4
-    --------
-    Model = Linear + AutoARIMA (calendar + cyclical features)
-    MAE: mean = 5959.81, sd = 16077.21, min = 4.38, max = 86022.96
-    MSE: mean = 324237512.48, sd = 1344769719.96, min = 27.08, max = 7676345316.24
-    RMSE: mean = 6611.52, sd = 16748.89, min = 5.2, max = 87614.76
-    RMSLE: mean = 0.53, sd = 0.36, min = 0.2, max = 1.86
-    --------
-    Model = Linear + Random forest (calendar + cyclical features)
-    MAE: mean = 5370.76, sd = 15105.83, min = 5.27, max = 84914.55
-    MSE: mean = 309365404.75, sd = 1305675223.25, min = 37.2, max = 7563237010.71
-    RMSE: mean = 6538.93, sd = 16328.13, min = 6.1, max = 86966.87
-    RMSLE: mean = 0.54, sd = 0.35, min = 0.26, max = 1.81
-    --------
-
-
-    Category sales prediction scores (STL: 7 freq, 7 seasonal, 85 trend, robust)
-    --------
-    Model = Linear (trend + seasonality features)
-    MAE: mean = 2639.5, sd = 5292.82, min = 4.6, max = 21243.23
-    MSE: mean = 81261537.6, sd = 250978792.24, min = 29.46, max = 1212390953.88
-    RMSE: mean = 3923.55, sd = 8115.87, min = 5.43, max = 34819.4
-    RMSLE: mean = 0.48, sd = 0.25, min = 0.23, max = 1.29
-    --------
-    Model = Linear + AutoARIMA (calendar + cyclical features)
-    MAE: mean = 2926.01, sd = 6253.96, min = 4.83, max = 25884.62
-    MSE: mean = 88461466.49, sd = 272291133.42, min = 31.89, max = 1218547823.09
-    RMSE: mean = 3954.99, sd = 8533.44, min = 5.65, max = 34907.7
-    RMSLE: mean = 0.46, sd = 0.33, min = 0.19, max = 1.8
-    --------
-    Model = Linear + Random forest (calendar + cyclical features)
-    MAE: mean = 3023.34, sd = 6120.32, min = 4.91, max = 24538.09
-    MSE: mean = 93857560.67, sd = 278523809.53, min = 33.6, max = 1253212175.1
-    RMSE: mean = 4296.76, sd = 8683.05, min = 5.8, max = 35400.74
-    RMSLE: mean = 0.48, sd = 0.24, min = 0.26, max = 1.22
-    --------
 
 ## Modeling: Store sales
 
@@ -1438,29 +1446,60 @@ for series in store_sales:
 
 # Fit & validate baseline models
 
+
 # Naive drift
 model_drift.fit(ts_sales[stores][:-227])
 pred_drift_store = model_drift.predict(n = 227)
 
+
 # Naive seasonal
 model_seasonal.fit(ts_sales[stores][:-227])
 pred_seasonal_store = model_seasonal.predict(n = 227)
+
+
+# ETS
+
+# First fit & validate the first category to initialize series
+model_ets.fit(y_train_store[0])
+pred_ets_store = model_ets.predict(n=227)
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Fit on training data
+  model_ets.fit(y_train_store[i])
+
+  # Predict validation data
+  pred = model_ets.predict(n=227)
+
+  # Stack predictions to multivariate series
+  pred_ets_store = pred_ets_store.stack(pred)
+  
+del pred, i
+
 
 print("Store sales prediction scores, baseline models")
 print("--------")
 
 scores_hierarchy(
   ts_sales[stores][-227:],
-  pred_drift_store,
+  trafo_zero(pred_drift_store),
   stores, 
   "Naive drift"
   )
 
 scores_hierarchy(
   ts_sales[stores][-227:], 
-  pred_seasonal_store,
+  trafo_zero(pred_seasonal_store),
   stores, 
   "Naive seasonal"
+  )
+  
+scores_hierarchy(
+  ts_sales[stores][-227:], 
+  trafo_zero(pred_ets_store),
+  stores, 
+  "Exponential smoothing"
   )
 ```
 
@@ -1774,14 +1813,14 @@ model_rnn_store = RNN(
 # RNN covariates (calendar + cyclical)
 rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
-# Fit RNN model
-model_rnn_store.fit(
-  series = remainder_store,
-  future_covariates = [x[rnn_covars] for x in x_store],
-  val_series = remainder_store_val,
-  val_future_covariates = [x[rnn_covars] for x in x_store],
-  verbose = True
-)
+# # Fit RNN model
+# model_rnn_store.fit(
+#   series = remainder_store,
+#   future_covariates = [x[rnn_covars] for x in x_store],
+#   val_series = remainder_store_val,
+#   val_future_covariates = [x[rnn_covars] for x in x_store],
+#   verbose = True
+# )
 ```
 
 ```{python StoreRNNLoad}
@@ -1835,9 +1874,16 @@ scores_hierarchy(
 
 scores_hierarchy(
   ts_sales[stores][-227:], 
-  pred_seasonal_store,
+  trafo_zero(pred_seasonal_store),
   stores, 
   "Naive seasonal"
+  )
+  
+scores_hierarchy(
+  ts_sales[stores][-227:], 
+  trafo_zero(pred_ets_store),
+  stores, 
+  "Exponential smoothing"
   )
 
 # Linear 
@@ -1879,6 +1925,7 @@ scores_hierarchy(
 store_preds_dict = {
   # "Naive drift": trafo_zero(pred_drift_store),
   # "Naive seasonal": trafo_zero(pred_seasonal_store),
+  # "Exponential smoothing": trafo_zero(pred_ets_store),
   "Linear": trafo_zero(pred_linear_store),
   "Linear + AutoARIMA": trafo_zero(pred_linear_store + pred_arima_store),
   "Linear + Random forest": trafo_zero(pred_linear_store + pred_rf_store),
@@ -1892,63 +1939,6 @@ scores_plot(
   stores
 )
 ```
-
-    Store sales prediction scores (STL = 85 trend, 7 period, 7 season, robust)
-    --------
-    Model = Linear (trend + seasonality feats)
-    MAE: mean = 2046.32, sd = 1539.36, min = 613.24, max = 9609.55
-    MSE: mean = 13563682.38, sd = 26863817.51, min = 898487.02, max = 186283233.07
-    RMSE: mean = 2962.48, sd = 2188.01, min = 947.89, max = 13648.56
-    RMSLE: mean = 0.78, sd = 0.87, min = 0.36, max = 7.07
-    --------
-    Model = Linear + AutoARIMA (calendar + cyclicality feats)
-    MAE: mean = 2124.35, sd = 1614.63, min = 557.05, max = 9609.55
-    MSE: mean = 12206346.55, sd = 25945482.03, min = 594005.27, max = 186283214.04
-    RMSE: mean = 2785.3, sd = 2109.14, min = 770.72, max = 13648.56
-    RMSLE: mean = 0.72, sd = 0.88, min = 0.2, max = 7.07
-    --------
-    Model = Linear + RF (calendar + cyclicality feats)
-    MAE: mean = 2092.38, sd = 1538.2, min = 573.96, max = 9609.55
-    MSE: mean = 13005342.68, sd = 26391260.62, min = 645534.17, max = 186283233.07
-    RMSE: mean = 2911.87, sd = 2127.53, min = 803.45, max = 13648.56
-    RMSLE: mean = 0.76, sd = 0.87, min = 0.32, max = 7.07
-    --------
-    Model = Linear + RNN (global) (calendar + cyclicality feats)
-    MAE: mean = 5485.38, sd = 1284.81, min = 3229.92, max = 10135.01
-    MSE: mean = 38436688.17, sd = 23497295.9, min = 13121037.03, max = 146031353.86
-    RMSE: mean = 5992.42, sd = 1589.83, min = 3622.3, max = 12084.34
-    RMSLE: mean = 0.9, sd = 0.69, min = 0.51, max = 5.86
-    --------
-
-
-
-
-    Store sales prediction scores (STL: 365 trend, 7 period, 7 season, robust)
-    --------
-    Model = Linear (trend + seasonality feats)
-    MAE: mean = 2072.68, sd = 1556.98, min = 621.88, max = 9609.55
-    MSE: mean = 13505099.33, sd = 27006508.91, min = 892145.95, max = 186283233.07
-    RMSE: mean = 2947.06, sd = 2195.44, min = 944.53, max = 13648.56
-    RMSLE: mean = 0.77, sd = 0.87, min = 0.32, max = 7.07
-    --------
-    Model = Linear + AutoARIMA (calendar + cyclicality feats)
-    MAE: mean = 2231.12, sd = 1699.52, min = 548.22, max = 9609.55
-    MSE: mean = 13054468.23, sd = 26373898.23, min = 581303.54, max = 186283214.04
-    RMSE: mean = 2897.09, sd = 2159.02, min = 762.43, max = 13648.56
-    RMSLE: mean = 0.73, sd = 0.87, min = 0.22, max = 7.07
-    --------
-    Model = Linear + RF (calendar + cyclicality feats)
-    MAE: mean = 2330.0, sd = 1719.61, min = 592.78, max = 9609.55
-    MSE: mean = 15169178.78, sd = 28198825.95, min = 677384.54, max = 186283233.07
-    RMSE: mean = 3130.16, sd = 2317.6, min = 823.03, max = 13648.56
-    RMSLE: mean = 0.79, sd = 0.88, min = 0.3, max = 7.07
-    --------
-    Model = Linear + RNN (global) (calendar + cyclicality feats)
-    MAE: mean = 2629.96, sd = 1390.25, min = 762.26, max = 8993.99
-    MSE: mean = 15303460.93, sd = 24028177.44, min = 1126629.43, max = 163453843.88
-    RMSE: mean = 3380.1, sd = 1969.36, min = 1061.43, max = 12784.91
-    RMSLE: mean = 0.73, sd = 0.36, min = 0.34, max = 3.31
-    --------
 
 ## Modeling: All bottom level series
 
