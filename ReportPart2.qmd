@@ -1366,7 +1366,7 @@ cat_preds_dict = {
   # "Naive seasonal": trafo_zero(pred_seasonal_cat),
   "ETS": trafo_zero(pred_ets_cat),
   "Linear": trafo_zero(pred_linear_cat),
-  "Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
+  #"Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
   "Linear + Random forest": trafo_zero(pred_linear_cat + pred_rf_cat)
 }
 
@@ -1728,9 +1728,90 @@ model_summary = RichModelSummary(max_depth = -1)
 
 #### D-Linear on trend + seasonality
 
+```{python StoreDLinearSpec}
+from darts.models.forecasting.dlinear import DLinearModel as DLinear
+
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 28,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 64,
+  n_epochs = 500,
+  model_name = "DLinearStore1.0",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
+
+```
+
+```{python StoreDLinearFit}
+
+# Time covariates (trend + seasonality)
+dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
+
+# Retrieve sums of trend and seasonality components as a list
+trend_season_list_store = [
+  (trend_store[i] + season_store[i]) for i in range(0, len(trend_store))
+    ]
+
+# Fit DLinear model
+model_dlinear.fit(
+  series = [y[:-45] for y in trend_season_list_store],
+  future_covariates = [x[dlinear_covars] for x in x_store],
+  val_series = [y[-45:] for y in trend_season_list_store],
+  val_future_covariates = [x[dlinear_covars] for x in x_store],
+  verbose = True
+)
+
+
+```
+
+```{python StoreDLinearLoad}
+
+# Load a previously trained DLinear model's best checkpoint
+model_dlinear = model_dlinear.load_from_checkpoint("DLinearStore1.0", best = True)
+
+```
+
+```{python StoreDLinearVal}
+
+# First fit & validate the first store to initialize series
+pred_dlinear_store = model_dlinear.predict(
+  n=15,
+  series = y_train_store[0],
+  future_covariates = x_store[0][dlinear_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Predict validation data
+  pred = model_dlinear.predict(
+    n=15,
+    series = y_train_store[i],
+    future_covariates = x_store[i][dlinear_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_dlinear_store = pred_dlinear_store.stack(pred)
+  
+del pred, i
+
+```
+
 #### RNN on remainder
 
-```{python StoreRNNSpec}
+```{python StoreRNNSpec1}
 from darts.models.forecasting.rnn_model import RNNModel as RNN
 
 # Specify RNN model
@@ -1747,7 +1828,6 @@ model_rnn = RNN(
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
-  force_reset = True,
   optimizer_kwargs = {"lr": 0.002},
   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
   lr_scheduler_kwargs = {"patience": 5},
@@ -1760,7 +1840,7 @@ model_rnn = RNN(
 
 ```
 
-```{python StoreRNNFit}
+```{python StoreRNNFit1}
 #| output: false
 #| warning: false
 #| include: false
@@ -1775,13 +1855,13 @@ rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trn
 model_rnn.fit(
   series = [y[:-30] for y in remainder_store], 
   future_covariates = [x[rnn_covars] for x in x_store],
-  val_series = [y[-30:] for y in remainder_store], # Use last 30 values in training set as validation set
+  val_series = [y[-30:] for y in remainder_store], # Use last 45 values in training set as validation set
   val_future_covariates = [x[rnn_covars] for x in x_store],
   verbose = True
 )
 ```
 
-```{python StoreRNNLoad}
+```{python StoreRNNLoad1}
 
 # Load a previously trained RNN model's best checkpoint
 model_rnn = model_rnn.load_from_checkpoint("RNNStore1.0", best = True)
@@ -1790,10 +1870,10 @@ model_rnn = model_rnn.load_from_checkpoint("RNNStore1.0", best = True)
 
 The first time you fit a NN model may not be returning the best checkpoint
 
-```{python StoreRNNValid}
+```{python StoreRNNValid1}
 
 # First fit & validate the first store to initialize series
-pred_rnn1_store = model_rnn.predict(
+pred_rnn_store = model_rnn.predict(
   n=15,
   series = y_train_store[0],
   future_covariates = x_store[0][rnn_covars]
@@ -1810,12 +1890,10 @@ for i in tqdm(range(1, len(y_train_store))):
   )
 
   # Stack predictions to multivariate series
-  pred_rnn1_store = pred_rnn1_store.stack(pred)
+  pred_rnn_store = pred_rnn_store.stack(pred)
   
 del pred, i
 ```
-
-##### Validation set: Remainder of D-Linear predictions
 
 ### Model scores
 
@@ -1870,12 +1948,28 @@ scores_hierarchy(
   "Linear + RF"
   )
 
-# Linear + RNN global
+# Linear + RNN (global)
 scores_hierarchy(
   ts_sales[stores][-15:],
-  trafo_zero(pred_linear_store + pred_rnn1_store),
+  trafo_zero(pred_linear_store + pred_rnn_store),
   stores,
   "Linear + RNN (global)"
+  )
+  
+# D-linear (global)
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zero(pred_dlinear_store),
+  stores,
+  "D-Linear (global)"
+  )
+  
+# D-linear + RNN (global)
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zero(pred_dlinear_store + pred_rnn_store),
+  stores,
+  "D-Linear + RNN (global)"
   )
   
 ```
@@ -1888,7 +1982,9 @@ store_preds_dict = {
   "Exponential smoothing": trafo_zero(pred_ets_store),
   "Linear": trafo_zero(pred_linear_store),
   "Linear + Random forest": trafo_zero(pred_linear_store + pred_rf_store),
-  "Linear + RNN": trafo_zero(pred_linear_store + pred_rnn1_store)
+  "Linear + RNN": trafo_zero(pred_linear_store + pred_rnn_store),
+  "D-Linear": trafo_zero(pred_dlinear_store),
+  "D-Linear + RNN": trafo_zero(pred_dlinear_store + pred_rnn_store)
 }
 
 
