@@ -245,13 +245,6 @@ total = pd.DataFrame(
   data=df_train.groupby("date").sales.sum(),
   index=df_train.groupby("date").sales.sum().index)
 
-# Category
-category = pd.DataFrame(
-  data=df_train.groupby(["date", "category"]).sales.sum(),
-  index=df_train.groupby(["date", "category"]).sales.sum().index)
-category = category.reset_index(level=1)
-category = category.pivot(columns="category", values="sales")
-
 # Store
 store_nbr = pd.DataFrame(
   data=df_train.groupby(["date", "store_nbr"]).sales.sum(),
@@ -266,17 +259,16 @@ category_store_nbr = pd.DataFrame(
 category_store_nbr = category_store_nbr.reset_index(level=1)
 category_store_nbr = category_store_nbr.pivot(columns="category_store_nbr", values="sales")
 
-
 # Merge all wide dataframes
 from functools import reduce
-wide_frames = [total, category, store_nbr, category_store_nbr]
+wide_frames = [total, store_nbr, category_store_nbr]
 df_sales = reduce(lambda left, right: pd.merge(
   left, right, how="left", on="date"), wide_frames)
 df_sales = df_sales.rename(columns = {"sales":"TOTAL"})
-del total, category, store_nbr, wide_frames, category_store_nbr
+del total, store_nbr, wide_frames, category_store_nbr
 
 # Print wide sales dataframe
-print(df_sales.iloc[0:5, [0, 1, 2, 34, 35, 88, 153]])
+print(df_sales.iloc[0:5, [0, 1, 2, 84, 148]])
 print("Rows x columns: " + str(df_sales.shape))
 ```
 
@@ -296,17 +288,13 @@ categories_stores = df_train.category_store_nbr.unique().tolist()
 # Initialize empty dict
 hierarchy_target = dict()
 
-# Map category sales to total sales
-for category in categories:
-  hierarchy_target[category] = ["TOTAL"]
-
 # Map store sales to total sales
 for store in stores:
   hierarchy_target[store] = ["TOTAL"]
 
-# Map category X store combinations to respective category sales and store sales
+# Map category X store combinations to respective stores
 for category, store in product(categories, stores):
-  hierarchy_target["{}-{}".format(category, store)] = [category, store]
+  hierarchy_target["{}-{}".format(category, store)] = [store]
 
 #map hierarchy to ts_train
 ts_sales = ts_sales.with_hierarchy(hierarchy_target)
@@ -325,17 +313,6 @@ from darts.dataprocessing.transformers import MissingValuesFiller
 na_filler = MissingValuesFiller()
 ts_sales = na_filler.transform(ts_sales)
 
-```
-
-```{python CategoryPlots}
-_ = ts_sales["BREAD/BAKERY"].plot()
-_ = ts_sales["CLEANING"].plot()
-_ = ts_sales["CELEBRATION"].plot()
-_ = ts_sales["LIQUOR,WINE,BEER"].plot()
-_ = ts_sales["SCHOOL AND OFFICE SUPPLIES"].plot()
-_ = plt.title("Sales of 5 select categories")
-plt.show()
-plt.close("all")
 ```
 
 ```{python StorePlots}
@@ -458,7 +435,7 @@ total_covars2 = total_covars2.drop(["oil", "onpromotion", "transactions"], axis 
 total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 ```
 
-### Category sales covariates
+### Store sales covariates
 
 ```{python CommonCovars}
 
@@ -471,92 +448,15 @@ common_covars["oil"] = diff.fit_transform(common_covars["oil"]).interpolate("tim
 common_covars["oil_ma28"] = common_covars["oil"].rolling(window = 28, center = False).mean()
 common_covars["oil_ma28"] = common_covars["oil_ma28"].interpolate(
   method = "spline", order = 2, limit_direction = "both")
-
+  
 # Print common covariates
 print(common_covars.columns)
-```
-
-```{python CategoryCovars}
-#| output: false
-
-from darts.utils.timeseries_generation import datetime_attribute_timeseries
-
-# Initialize list of category covariates
-cat_covars = []
-
-for category in categories:
-  
-  # Retrieve common covariates
-  covars = common_covars.copy()
-  
-  # Retrieve differenced onpromotion, its MA
-  covars["onpromotion"] = diff.fit_transform(
-    df[df["category"] == category].groupby("date").onpromotion.sum()
-    ).interpolate(
-      "time", limit_direction = "both"
-      )
-  covars["onp_ma28"] = covars["onpromotion"].rolling(
-    window = 28, center = False
-    ).mean().interpolate(
-  method = "spline", order = 2, limit_direction = "both"
-  ) 
-  
-  # Retrieve differenced transactions, its MA
-  covars["transactions"] = diff.fit_transform(
-    df[df["category"] == category].groupby(["date", "store_nbr"]).transactions.mean().groupby("date").sum()
-    ).interpolate(
-      "time", limit_direction = "both"
-      )
-  covars["trns_ma7"] = covars["transactions"].rolling(
-    window = 7, center = False
-    ).mean().interpolate(
-  "linear", limit_direction = "backward"
-  ) 
-  
-  # Create darts TS, fill gaps
-  covars = na_filler.transform(
-    TimeSeries.from_dataframe(covars, freq = "D")
-    ) 
-  
-  # Cyclical encode day of month using datetime_attribute_timeseries
-  covars = covars.stack(
-    datetime_attribute_timeseries(
-      time_index = covars,
-      attribute = "day",
-      cyclic = True
-      )
-    )
-    
-   # Cyclical encode month using datetime_attribute_timeseries
-  covars = covars.stack(
-    datetime_attribute_timeseries(
-      time_index = covars,
-      attribute = "month",
-      cyclic = True
-      )
-    ) 
-  
-  # Append TS to list
-  cat_covars.append(covars)
-  
-# Cleanup
-del covars
-```
-
-```{python CategoryStaticCovars}
-
-# Create dataframe where column=static covariate and index=category
-cat_static = df["category"].reset_index().drop("date", axis=1).drop_duplicates().set_index("category")
-cat_static["category"] = df["category"].unique()
-
-# Encode static covariates
-cat_static = pd.get_dummies(cat_static, sparse = True, drop_first = True)
 
 ```
-
-### Store sales covariates
 
 ```{python StoreCovars}
+
+from darts.utils.timeseries_generation import datetime_attribute_timeseries
 
 # Initialize list of category covariates
 store_covars = []
@@ -628,6 +528,7 @@ store_static["store_cluster"] = store_static["store_cluster"].astype(str)
 
 # Encode static covariates
 store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
+
 ```
 
 ### Category X store sales covariates
@@ -637,8 +538,9 @@ store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
 ```{python ScoringFunc}
 #| echo = false
 
-# Define model scoring function
 from darts.metrics import rmse, rmsle, mape
+
+# Define model scoring function
 def perf_scores(val, pred, model="drift"):
   
   scores_dict = {
@@ -810,7 +712,7 @@ from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
 from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 from darts.models.forecasting.auto_arima import AutoARIMA
 from darts.models.forecasting.random_forest import RandomForest
-# from darts.models.forecasting.xgboost import XGBModel
+from darts.models.forecasting.xgboost import XGBModel
 from darts.models.forecasting.dlinear import DLinearModel as DLinear
 from darts.models.forecasting.rnn_model import RNNModel as RNN
 
@@ -952,564 +854,6 @@ grid search runtime: 9-10mins grid search best tune and score:
 
 ```
 
-## Modeling: Category sales
-
-### Preprocessing
-
-```{python CategoryCovars}
-
-# Create min-max scaler
-scaler_minmax = Scaler()
-
-# Train-validation split and scaling for covariates
-x_cat = []
-for series in cat_covars:
-  
-  # Split train-val series
-  cov_train, cov_val = series[:-16], series[-16:]
-  
-  # Scale train-val series
-  cov_train = scaler_minmax.fit_transform(cov_train)
-  cov_val = scaler_minmax.transform(cov_val)
-  
-  # Cast series to 32-bits for performance gains
-  cov_train = cov_train.astype(np.float32)
-  cov_val = cov_val.astype(np.float32)
-  
-  # Rejoin series
-  cov_train = cov_train.append(cov_val)
-  
-  # Append series to list
-  x_cat.append(cov_train)
-  
-# Cleanup
-del cov_train, cov_val
-```
-
-```{python CategoryTargets}
-
-# List of category sales
-category_sales = [ts_sales[categories][category] for category in categories]
-
-# Train-validation split for category sales
-y_train_cat, y_val_cat = [], []
-for series in category_sales:
-  
-  # Add static covariates to series
-  series = series.with_static_covariates(
-    cat_static[cat_static.index == series.components[0]]
-    )
-  
-  # Split train-val series
-  y_train, y_val = series[:-15], series[-15:]
-  
-  # # Scale train-val series
-  # y_train = scaler_minmax.fit_transform(y_train)
-  # y_val = scaler_minmax.transform(y_val)
-  
-  # Cast series to 32-bits for performance gains
-  y_train = y_train.astype(np.float32)
-  y_val = y_val.astype(np.float32)
-  
-  # Append series
-  y_train_cat.append(y_train)
-  y_val_cat.append(y_val)
-  
-# Cleanup
-del y_train, y_val
-
-```
-
-### Baseline models
-
-```{python CategoryBaselineSpec}
-
-# Specify baseline models
-model_drift = NaiveDrift()
-model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
-
-# Specify ETS model
-model_ets = ETS(
-  season_length = 7, # Weekly seasonality
-  model = "AAA", # Multiplicative trend, seasonality and remainder component
-  damped = 0.95 # Dampen the trend over time
-)
-
-```
-
-```{python CategoryBaselineFitVal}
-
-# Fit & validate baseline models
-
-
-# Naive drift
-model_drift.fit(ts_sales[categories][:-15])
-pred_drift_cat = model_drift.predict(n = 15)
-
-# Naive seasonal
-model_seasonal.fit(ts_sales[categories][:-15])
-pred_seasonal_cat = model_seasonal.predict(n = 15)
-
-
-# ETS
-
-# First fit & validate the first category to initialize series
-model_ets.fit(y_train_cat[0])
-pred_ets_cat = model_ets.predict(n=15)
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_cat))):
-
-  # Fit on training data
-  model_ets.fit(y_train_cat[i])
-
-  # Predict validation data
-  pred = model_ets.predict(n=15)
-
-  # Stack predictions to multivariate series
-  pred_ets_cat = pred_ets_cat.stack(pred)
-  
-del pred, i
-
-```
-
-```{python CategoryScoreBaselines}
-
-print("Category sales prediction scores, baseline models")
-print("--------")
-
-# Naive
-scores_hierarchy(
-  ts_sales[categories][-15:],
-  trafo_zero(pred_drift_cat),
-  categories, 
-  "Naive drift"
-  )
-
-scores_hierarchy(
-  ts_sales[categories][-15:], 
-  trafo_zero(pred_seasonal_cat),
-  categories, 
-  "Naive seasonal"
-  )
-  
-scores_hierarchy(
-  ts_sales[categories][-15:], 
-  trafo_zero(pred_ets_cat),
-  categories, 
-  "Exponential smoothing"
-  )  
-```
-
-### Hybrid models
-
-#### STL decomposition
-
-```{python CatSTLDecomp}
-
-# Perform STL decomposition on training data to get trend + seasonality and remainder series
-trend_cat = []
-season_cat = []
-remainder_cat = []
-
-for series in y_train_cat:
-  
-  # # Log transform series
-  # series = trafo_log(series)
-  
-  # Perform STL decomposition
-  trend, seasonality = decomposition(
-    series,
-    model = ModelMode.ADDITIVE,
-    method = "STL",
-    freq = 7, # N. of obs in each seasonality cycle (12 for monthly CO2 data with yearly seasonality cycle)
-    seasonal = 29, # Size of seasonal smoother (last n lags)
-    trend = 731, # Size of trend smoother (last n lags)
-    robust = True
-  )
-  
-  # Rename components in trend and seasonality series
-  trend = trend.with_columns_renamed(
-    trend.components[0], 
-    series.components[0]
-    )
-    
-  seasonality = seasonality.with_columns_renamed(
-    seasonality.components[0], 
-    series.components[0]
-    )
-  
-  # Remove trend & seasonality from series
-  remainder = remove_from_series(
-    series,
-    (trend + seasonality),
-    ModelMode.ADDITIVE
-  )
-  
-  # Append to lists
-  trend_cat.append(
-    # trafo_exp(trend)
-    trend
-    )
-  
-  season_cat.append(
-    # trafo_exp(seasonality)
-    seasonality
-  )  
-    
-  remainder_cat.append(
-    # trafo_exp(remainder)
-    remainder
-  )
-  
-# Cleanup
-del series, trend, seasonality, remainder
-
-```
-
-```{python CatSTLPlot}
-
-y_train_cat[5].plot()
-trend_cat[5].plot(label = "STL trend")
-plt.show()
-plt.close("all")
-
-season_cat[5].plot(label = "STL seasonality")
-plt.show()
-plt.close("all")
-
-remainder_cat[5].plot(label = "STL remainder")
-plt.show()
-plt.close("all")
-```
-
-#### Linear regression on trend + seasonality
-
-```{python CatLinearSpec}
-
-# Specify linear regression model
-model_linear = LinearRegressionModel(
-  lags_future_covariates = [0], # Don't create any covariate lags
-  output_chunk_length = 15
-)
-```
-
-```{python CatLinearFitVal}
-#| output: false
-
-# # Time covariates (trend + seasonality + calendar)
-# linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-# Time covariates (trend + seasonality)
-linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
-
-
-# First fit & validate the first category to initialize series
-model_linear.fit(
-  (trend_cat[0] + season_cat[0]),
-  future_covariates = x_cat[0][linear_covars]
-  )
-
-pred_linear_cat = model_linear.predict(
-  n=15,
-  future_covariates = x_cat[0][linear_covars]
-  )
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_cat))):
-
-  # Fit on training data
-  model_linear.fit(
-  (trend_cat[i] + season_cat[i]),
-  future_covariates = x_cat[i][linear_covars]
-  )
-
-  # Predict validation data
-  pred = model_linear.predict(
-  n=15,
-  future_covariates = x_cat[i][linear_covars]
-  )
-
-  # Stack predictions to multivariate series
-  pred_linear_cat = pred_linear_cat.stack(pred)
-  
-del pred, i
-```
-
-#### AutoARIMA on remainder
-
-```{python CatArimaSpec}
-
-# AutoARIMA
-model_arima = AutoARIMA(
-  start_p = 0,
-  max_p = 7,
-  start_q = 0,
-  max_q = 7,
-  seasonal = False, # Don't include seasonal orders
-  information_criterion = 'aicc', # Minimize AICc to choose best model
-  trace = False # Don't print tuning iterations
-  )
-
-```
-
-```{python CategoryArimaFitVal}
-
-# # AutoARIMA covars (cyclical only)
-# arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
-
-# AutoARIMA covars (cyclical + calendar)
-arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-
-# First fit & validate the first category to initialize series
-model_arima.fit(
-  remainder_cat[0],
-  future_covariates = x_cat[0][arima_covars])
-
-pred_arima_cat = model_arima.predict(
-  n=15,
-  future_covariates = x_cat[0][arima_covars])
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_cat))):
-
-  # Fit on training data
-  model_arima.fit(
-  remainder_cat[i],
-  future_covariates = x_cat[i][arima_covars])
-
-  # Predict validation data
-  pred = model_arima.predict(
-  n=15,
-  future_covariates = x_cat[i][arima_covars])
-
-  # Stack predictions to multivariate series
-  pred_arima_cat = pred_arima_cat.stack(pred)
-
-del pred, i
-```
-
-#### Random forest on remainder
-
-```{python CatRFSpec}
-
-# Specify random forest model
-model_rf = RandomForest(
-  lags = [-1, -2, -3, -4, -5, -6, -7],
-  lags_future_covariates = [0],
-  output_chunk_length = 15,
-  n_estimators = 500,
-  oob_score = True,
-  random_state = 1923,
-  n_jobs = -2
-)
-```
-
-```{python CatRFFitVal}
-
-# # RF covariates (cylical)
-# rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
-
-# RF covariates (cylical + calendar)
-rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-# First fit & validate the first category to initialize series
-model_rf.fit(
-  remainder_cat[0],
-  future_covariates = x_cat[0][rf_covars]
-  )
-
-pred_rf_cat = model_rf.predict(
-  n=15,
-  future_covariates = x_cat[0][rf_covars]
-  )
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_cat))):
-
-  # Fit on training data
-  model_rf.fit(
-    remainder_cat[i],
-    future_covariates = x_cat[i][rf_covars]
-  )
-
-  # Predict validation data
-  pred = model_rf.predict(
-    n=15,
-    future_covariates = x_cat[i][rf_covars]
-  )
-
-  # Stack predictions to multivariate series
-  pred_rf_cat = pred_rf_cat.stack(pred)
-
-del pred, i
-```
-
-### Global models
-
-#### D-Linear on full series
-
-```{python CatDLinearSpec}
-
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 28,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 64,
-  n_epochs = 500,
-  model_name = "DLinearCat2.0",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
-
-```
-
-```{python CatDLinearFit}
-
-# All covariates
-dlinear2_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-# Fit DLinear model
-model_dlinear.fit(
-  series = [y[:-45] for y in y_train_cat],
-  future_covariates = [x[dlinear2_covars] for x in x_cat],
-  val_series = [y[-45:] for y in y_train_cat],
-  val_future_covariates = [x[dlinear2_covars] for x in x_cat],
-  verbose = True
-)
-
-
-```
-
-```{python CatDLinearLoad}
-
-# Load a previously trained DLinear model's best checkpoint
-model_dlinear = DLinear.load_from_checkpoint("DLinearCat2.0", best = True)
-
-```
-
-```{python CatDLinearVal}
-
-# First fit & validate the first store to initialize series
-pred_dlinear_cat = model_dlinear.predict(
-  n=15,
-  series = y_train_cat[0],
-  future_covariates = x_cat[0][dlinear2_covars]
-  )
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_cat))):
-
-  # Predict validation data
-  pred = model_dlinear.predict(
-    n=15,
-    series = y_train_cat[i],
-    future_covariates = x_cat[i][dlinear2_covars]
-  )
-
-  # Stack predictions to multivariate series
-  pred_dlinear_cat = pred_dlinear_cat.stack(pred)
-  
-del pred, i
-
-```
-
-### Model scores
-
-```{python CategoryScore}
-
-print("Category sales prediction scores")
-print("--------")
-
-# Naive drift
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  trafo_zero(pred_drift_cat),
-  categories, 
-  "Naive drift"
-  )
-
-# Naive seasonal
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:], 
-  pred_seasonal_cat,
-  categories, 
-  "Naive seasonal"
-  )
-
-# ETS
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  trafo_zero(pred_ets_cat),
-  categories,
-  "Exponential smoothing"
-  )
-
-# Linear 
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  trafo_zero(pred_linear_cat),
-  categories,
-  "Linear"
-  )
-
-# Linear + AutoARIMA
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  trafo_zero(pred_linear_cat + pred_arima_cat),
-  categories,
-  "Linear + AutoARIMA"
-  )
-  
-
-# Linear + RF
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  trafo_zero(pred_linear_cat + pred_rf_cat),
-  categories,
-  "Linear + Random forest"
-  )  
-
-# D-Linear (global, all features) 
-scores_hierarchy(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  trafo_zero(pred_dlinear_cat),
-  categories,
-  "D-Linear (global, all features)"
-  )  
-
-```
-
-```{python CategoryScorePlot}
-
-cat_preds_dict = {
-  # "Naive drift": trafo_zero(pred_drift_cat),
-  # "Naive seasonal": trafo_zero(pred_seasonal_cat),
-  "ETS": trafo_zero(pred_ets_cat),
-  "Linear + AutoARIMA": trafo_zero(pred_linear_cat + pred_arima_cat),
-  "Linear + Random forest": trafo_zero(pred_linear_cat + pred_rf_cat)
-}
-
-
-scores_plot(
-  ts_sales["AUTOMOTIVE":"SEAFOOD"][-15:],
-  cat_preds_dict,
-  categories
-)
-
-```
-
 ## Modeling: Store sales
 
 ### Preprocessing
@@ -1579,6 +923,21 @@ del y_train, y_val
 ```
 
 ### Baseline models
+
+```{python BaselineModelSpec}
+
+# Specify baseline models
+model_drift = NaiveDrift()
+model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
+
+# Specify ETS model
+model_ets = ETS(
+  season_length = 7, # Weekly seasonality
+  model = "AAA", # Multiplicative trend, seasonality and remainder component
+  damped = 0.95 # Dampen the trend over time
+)
+
+```
 
 ```{python StoreBaselineFitVal}
 
@@ -1725,6 +1084,19 @@ plt.close("all")
 
 #### Linear regression on trend + seasonality
 
+```{python LinearRegSpec}
+
+# Specify linear regression model
+model_linear = LinearRegressionModel(
+  lags_future_covariates = [0], # Don't create any covariate lags
+  output_chunk_length = 15
+)
+
+# Time covariates (trend + seasonality)
+linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
+
+```
+
 ```{python StoreLinearFitVal}
 #| output: false
 
@@ -1762,6 +1134,24 @@ del pred, i
 
 #### AutoARIMA on remainder
 
+```{python ARIMAModelSpec}
+
+# AutoARIMA
+model_arima = AutoARIMA(
+  start_p = 0,
+  max_p = 7,
+  start_q = 0,
+  max_q = 7,
+  seasonal = False, # Don't include seasonal orders
+  information_criterion = 'aicc', # Minimize AICc to choose best model
+  trace = False # Don't print tuning iterations
+  )
+
+# AutoARIMA covars (cyclical + calendar)
+arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+```
+
 ```{python StoreARIMAFitVal}
 
 # First fit & validate the first category to initialize series
@@ -1797,6 +1187,24 @@ del pred, i
 Mention: AutoARIMA caught a completely constant input series, returned an ARMA (0 0 0) model.
 
 #### Random forest on remainder
+
+```{python RFSpec}
+
+# Specify random forest model
+model_rf = RandomForest(
+  lags = [-1, -2, -3, -4, -5, -6, -7],
+  lags_future_covariates = [0],
+  output_chunk_length = 15,
+  n_estimators = 500,
+  oob_score = True,
+  random_state = 1923,
+  n_jobs = -2
+)
+
+# RF covariates (cylical + calendar)
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+```
 
 ```{python StoreRFFitVal}
 
