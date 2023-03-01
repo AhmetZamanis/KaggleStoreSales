@@ -234,6 +234,13 @@ df = pd.concat([df_train, df_test])
 print(df.head(2))
 ```
 
+```{python DeleteRawData}
+#| include: false
+
+del df_holidays, df_oil, df_stores, df_trans, events, events_merge, local, local_merge, national, national_merge, regional, regional_merge
+
+```
+
 ## Hierarchical time series: Sales
 
 ```{python TargetDataFrames}
@@ -296,9 +303,10 @@ for store in stores:
 for category, store in product(categories, stores):
   hierarchy_target["{}-{}".format(category, store)] = [store]
 
-#map hierarchy to ts_train
+# Map hierarchy to ts_train
 ts_sales = ts_sales.with_hierarchy(hierarchy_target)
 print(ts_sales)
+
 del category, store
 
 ```
@@ -801,45 +809,95 @@ pred_total = model_forest.predict(
 perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total sales")
 ```
 
-### Linear + XGBoost hybrid, grid search tuning
+### Linear + XGBoost hybrid
 
-```{python TotalSalesXGB}
+#### Hyperparameter tuning with Optuna
 
-# #  Hyperparameter search space
-# xgb_params = {
-#   "lags": [[-1, -2, -3, -4, -5]],
-#   "lags_future_covariates": [[0]],
-#   "n_jobs": [-2],
-#   "learning_rate": [0.1, 0.2, 0.3],
-#   "max_depth": [4, 6, 8],
-#   "min_child_weight": [1, 4, 8],
-#   "gamma": [0, 0.05, 0.1],
-#   "subsample": [0.6, 0.8, 1],
-#   "colsample_bytree": [0.6, 0.8, 1],
-#   "n_estimators": [100, 250, 500]
-#   }
-# 
-# # Decomposed validation series
-# y_val_total_decomp = y_val_total - ts_preds_total1[-15:]
-# 
-# # Full covariates series
-# x_total = x_train_total.append(x_val_total)
-# 
-# # Grid search
-# model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch(
-#   parameters = xgb_params,
-#   series = y_train_total,
-#   forecast_horizon = 15,
-#   start = 0.75,
-#   stride = 15,
-#   future_covariates = x_total,
-#   val_series = y_val_total_decomp,
-#   metric = rmse
-# )
+```{python XGBTotalTuneObj}
+
+import optuna
+
+# Define objective function for hyperparameter tuning
+def objective(trial):
+  
+  # Set hyperparameter search ranges
+  learning_rate = trial.suggest_float("learning_rate", 0.05, 0.3, log = True)
+  max_depth = trial.suggest_int("max_depth", 2, 10, step = 2)
+  min_child_weight = trial.suggest_int("min_child_weight", 1, 20, step = 5)
+  gamma = trial.suggest_float("gamma", 0.001, 0.2, log = True)
+  subsample = trial.suggest_float("subsample", 0.75, 1, step = 0.5)
+  colsample_bytree = trial.suggest_float("colsample_bytree", 0.75, 1, step = 0.5)
+
+  # Specify XGBoost model
+  model_xgb = XGBModel(
+    lags = [-1, -2, -3, -4, -5],
+    lags_future_covariates = [0],
+    n_jobs = -2,
+    random_state = 1923,
+    n_estimators = 5000,
+    early_stopping_rounds = 50,
+    learning_rate = learning_rate,
+    max_depth = max_depth,
+    min_child_weight = min_child_weight
+    gamma = gamma,
+    subsample = subsample,
+    colsample_bytree = colsample_bytree
+  )
+  
+  # Train model
+  model_xgb.fit(
+    series = y_train_total[:-15],
+    future_covariates = x_train_total[:-15],
+    val_series = y_train_total[-15:],
+    val_future_covariates = x_train_total[-15:]
+  )
+  
+  # Validate model on validation set
+  preds = model_xgb.predict(
+    n = 15,
+    future_covariates = x_val_total
+  )
+  iter_rmsle = np.mean(rmsle(y_val_total, preds, n_jobs=-1))
+  
+  return iter_rmsle
+
+# Print tuning iterations
+def optuna_callback(study, trial):
+  print(f"Current score: {trial.value}, param set: {trial.params}")
+  print(f"Best score: {study.best_value}, param set: {study.best_trial.params}")
+  
+```
+
+```{python XGBTotalStudy}
+
+# Create sampler (tuning algorithm)
+
+# Create pruner (early stopper)
+
+# Create study
+xgb_study_total = optuna.create_study(
+  study_name = "XGBTotalOpt1"
+  direction = "minimize",
+  sampler = 
+  pruner = 
+  )
+
 
 ```
 
-grid search runtime: 9-10mins grid search best tune and score:
+```{python XGBTotalOptim}
+#| include: false
+
+# Optimize study
+xgb_study_total.optimize(objective, n_trials = 100, callbacks = [optuna_callback])
+
+```
+
+```{python XGBTotalBestParams}
+
+# Retrieve best params and score
+
+```
 
 ```{python TotalSalesXGBScore}
 
