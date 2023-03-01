@@ -20,6 +20,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
+import tensorboard
 from tqdm import tqdm
 
 # Set printing options
@@ -31,6 +33,10 @@ pd.set_option('display.max_columns', None)
 plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams["figure.autolayout"] = True
+
+# Set torch settings
+torch.set_float32_matmul_precision("high")
+
 ```
 
 ## Data preparation
@@ -318,6 +324,7 @@ print(ts_sales.gaps())
 from darts.dataprocessing.transformers import MissingValuesFiller
 na_filler = MissingValuesFiller()
 ts_sales = na_filler.transform(ts_sales)
+
 ```
 
 ```{python CategoryPlots}
@@ -614,9 +621,7 @@ store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
 
 ### Category X store sales covariates
 
-## Modeling: Total sales
-
-### Linear + random forest hybrid from part 1
+## Helper functions for modeling
 
 ```{python ScoringFunc}
 #| echo = false
@@ -641,141 +646,8 @@ def perf_scores(val, pred, model="drift"):
   print("--------")
 ```
 
-```{python TotalSalesModel}
-#| echo = false
+```{python HierarchyScoringFunc}
 
-# Perform time decomposition in Sklearn
-
-# Train-test split
-y_train_decomp, y_val_decomp = trafo_log(
-  ts_sales["TOTAL"][:-15].pd_series()
-  ), trafo_log(
-    ts_sales["TOTAL"][-15:].pd_series()
-    ) 
-
-x_train_decomp, x_val_decomp = total_covars1.iloc[:-31,], total_covars1.iloc[-31:-16,]
-
-# Fit & predict on train, retrieve residuals
-from sklearn.linear_model import LinearRegression
-model_decomp = LinearRegression()
-model_decomp.fit(x_train_decomp, y_train_decomp)
-pred_total1 = model_decomp.predict(x_train_decomp)
-res_total1 = y_train_decomp - pred_total1
-
-# Predict on val, retrieve residuals
-pred_total2 = model_decomp.predict(x_val_decomp)
-res_total2 = y_val_decomp - pred_total2
-
-# Concatenate residuals to get decomposed sales
-sales_decomp = pd.concat([res_total1, res_total2])
-
-# Concatenate predictions to get model 1 predictions
-preds_total1 = pd.Series(np.concatenate((pred_total1, pred_total2)), index = total_covars1.iloc[:-16,].index)
-
-
-# Add decomped sales ema5 to covars2
-total_covars2["sales_ema5"] = sales_decomp.rolling(
-  window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
-
-# Make Darts TS with decomposed sales
-ts_decomp = TimeSeries.from_series(sales_decomp.rename("TOTAL"), freq="D")
-
-# Make Darts TS with model 1 predictions
-ts_preds_total1 = TimeSeries.from_series(preds_total1.rename("TOTAL"), freq="D")
-
-# Make Darts TS with covars2, fill gaps
-ts_totalcovars2 = TimeSeries.from_dataframe(total_covars2, freq="D")
-ts_totalcovars2 = na_filler.transform(ts_totalcovars2)
-
-# Train-validation split
-y_train_total, y_val_total = ts_decomp[:-15], trafo_log(ts_sales["TOTAL"][-15:])
-x_train_total, x_val_total = ts_totalcovars2[:-31], ts_totalcovars2[-31:-16]
-
-# Scale covariates (train-validation split only)
-from sklearn.preprocessing import StandardScaler
-from darts.dataprocessing.transformers import Scaler
-scaler = Scaler(StandardScaler())
-x_train_total = scaler.fit_transform(x_train_total)
-x_val_total = scaler.transform(x_val_total)
-
-# Model spec
-from darts.models.forecasting.random_forest import RandomForest
-model_forest = RandomForest(
-  lags = [-1, -2, -3, -4, -5], # Target lags that can be used
-  lags_future_covariates = [0], # No covariate lags
-  n_estimators = 500, # Build 500 trees
-  random_state = 1923,
-  n_jobs = -2 # Use all but one of the CPUs
-  )
-
-# Fit model & predict validation set
-model_forest.fit(y_train_total, future_covariates = x_train_total)
-pred_total = model_forest.predict(
-  n = 15, future_covariates = x_val_total) + ts_preds_total1[-15:]
-
-  
-# Score model
-perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total sales")
-```
-
-### Linear + XGBoost hybrid, grid search tuning
-
-```{python TotalSalesXGB}
-
-# from darts.models.forecasting.xgboost import XGBModel
-# 
-# #  Hyperparameter search space
-# xgb_params = {
-#   "lags": [[-1, -2, -3, -4, -5]],
-#   "lags_future_covariates": [[0]],
-#   "n_jobs": [-2],
-#   "learning_rate": [0.1, 0.2, 0.3],
-#   "max_depth": [4, 6, 8],
-#   "min_child_weight": [1, 4, 8],
-#   "gamma": [0, 0.05, 0.1],
-#   "subsample": [0.6, 0.8, 1],
-#   "colsample_bytree": [0.6, 0.8, 1],
-#   "n_estimators": [100, 250, 500]
-#   }
-# 
-# # Decomposed validation series
-# y_val_total_decomp = y_val_total - ts_preds_total1[-15:]
-# 
-# # Full covariates series
-# x_total = x_train_total.append(x_val_total)
-# 
-# # Grid search
-# model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch(
-#   parameters = xgb_params,
-#   series = y_train_total,
-#   forecast_horizon = 15,
-#   start = 0.75,
-#   stride = 15,
-#   future_covariates = x_total,
-#   val_series = y_val_total_decomp,
-#   metric = rmse
-# )
-
-```
-
-grid search runtime: 9-10mins grid search best tune and score:
-
-```{python TotalSalesXGBScore}
-
-# # Fit model & predict validation set 
-# model_xgb.fit(y_train_total, future_covariates = x_total) 
-# pred_total = model_xgb.predict(
-#   n = 227, 
-#   future_covariates = x_total) + ts_preds_total1[-243:-16] 
-#   
-# # Score model 
-# perf_scores(y_val_total, pred_total, model="Linear + XGB hybrid, total sales")
-
-```
-
-## Modeling: Category sales
-
-```{python HierarchicalScoreFunc}
 from darts.metrics import mse, mae
 
 # Define model scoring function for full hierarchy
@@ -817,7 +689,7 @@ def scores_hierarchy(val, pred, subset, model):
 
 ```
 
-```{python HierarchicalPlotFunc}
+```{python ScorePlotFunc}
 
 # Define model score plotting function for full hierarchy
 def scores_plot(val, preds_dict, subset):
@@ -903,14 +775,171 @@ def scores_plot(val, preds_dict, subset):
   # Display and close
   plt.show()
   plt.close("all")
-
 ```
 
-```{python NegRemover}
+```{python NegRemoverFunc}
+
 # Define function to replace negative predictions with zeroes
 def trafo_zero(x):
   return x.map(lambda x: np.clip(x, a_min = 0, a_max = None))
+
 ```
+
+```{python ImportDartsFuncs}
+
+# Import scalers
+from sklearn.preprocessing import StandardScaler
+from darts.dataprocessing.transformers import Scaler
+
+# Import baseline models
+from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
+from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
+
+# Import forecasting models
+from darts.models.forecasting.linear_regression_model import LinearRegressionModel
+from darts.models.forecasting.auto_arima import AutoARIMA
+from darts.models.forecasting.random_forest import RandomForest
+# from darts.models.forecasting.xgboost import XGBModel
+
+# Import time decomposition functions
+from darts.utils.statistics import extract_trend_and_seasonality as decomposition
+from darts.utils.statistics import remove_from_series
+from darts.utils.utils import ModelMode, SeasonalityMode
+
+```
+
+## Modeling: Total sales
+
+### Linear + random forest hybrid from part 1
+
+```{python TotalSalesModel}
+#| echo = false
+
+# Perform time decomposition in Sklearn
+
+# Train-test split
+y_train_decomp, y_val_decomp = trafo_log(
+  ts_sales["TOTAL"][:-15].pd_series()
+  ), trafo_log(
+    ts_sales["TOTAL"][-15:].pd_series()
+    ) 
+
+x_train_decomp, x_val_decomp = total_covars1.iloc[:-31,], total_covars1.iloc[-31:-16,]
+
+# Fit & predict on train, retrieve residuals
+from sklearn.linear_model import LinearRegression
+model_decomp = LinearRegression()
+model_decomp.fit(x_train_decomp, y_train_decomp)
+pred_total1 = model_decomp.predict(x_train_decomp)
+res_total1 = y_train_decomp - pred_total1
+
+# Predict on val, retrieve residuals
+pred_total2 = model_decomp.predict(x_val_decomp)
+res_total2 = y_val_decomp - pred_total2
+
+# Concatenate residuals to get decomposed sales
+sales_decomp = pd.concat([res_total1, res_total2])
+
+# Concatenate predictions to get model 1 predictions
+preds_total1 = pd.Series(np.concatenate((pred_total1, pred_total2)), index = total_covars1.iloc[:-16,].index)
+
+
+# Add decomped sales ema5 to covars2
+total_covars2["sales_ema5"] = sales_decomp.rolling(
+  window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+
+# Make Darts TS with decomposed sales
+ts_decomp = TimeSeries.from_series(sales_decomp.rename("TOTAL"), freq="D")
+
+# Make Darts TS with model 1 predictions
+ts_preds_total1 = TimeSeries.from_series(preds_total1.rename("TOTAL"), freq="D")
+
+# Make Darts TS with covars2, fill gaps
+ts_totalcovars2 = TimeSeries.from_dataframe(total_covars2, freq="D")
+ts_totalcovars2 = na_filler.transform(ts_totalcovars2)
+
+# Train-validation split
+y_train_total, y_val_total = ts_decomp[:-15], trafo_log(ts_sales["TOTAL"][-15:])
+x_train_total, x_val_total = ts_totalcovars2[:-31], ts_totalcovars2[-31:-16]
+
+# Scale covariates (train-validation split only)
+scaler = Scaler(StandardScaler())
+x_train_total = scaler.fit_transform(x_train_total)
+x_val_total = scaler.transform(x_val_total)
+
+# Model spec
+model_forest = RandomForest(
+  lags = [-1, -2, -3, -4, -5], # Target lags that can be used
+  lags_future_covariates = [0], # No covariate lags
+  n_estimators = 500, # Build 500 trees
+  random_state = 1923,
+  n_jobs = -2 # Use all but one of the CPUs
+  )
+
+# Fit model & predict validation set
+model_forest.fit(y_train_total, future_covariates = x_train_total)
+pred_total = model_forest.predict(
+  n = 15, future_covariates = x_val_total) + ts_preds_total1[-15:]
+
+  
+# Score model
+perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total sales")
+```
+
+### Linear + XGBoost hybrid, grid search tuning
+
+```{python TotalSalesXGB}
+
+# #  Hyperparameter search space
+# xgb_params = {
+#   "lags": [[-1, -2, -3, -4, -5]],
+#   "lags_future_covariates": [[0]],
+#   "n_jobs": [-2],
+#   "learning_rate": [0.1, 0.2, 0.3],
+#   "max_depth": [4, 6, 8],
+#   "min_child_weight": [1, 4, 8],
+#   "gamma": [0, 0.05, 0.1],
+#   "subsample": [0.6, 0.8, 1],
+#   "colsample_bytree": [0.6, 0.8, 1],
+#   "n_estimators": [100, 250, 500]
+#   }
+# 
+# # Decomposed validation series
+# y_val_total_decomp = y_val_total - ts_preds_total1[-15:]
+# 
+# # Full covariates series
+# x_total = x_train_total.append(x_val_total)
+# 
+# # Grid search
+# model_xgb, xgb_besttunes, xgb_bestscore = XGBModel.gridsearch(
+#   parameters = xgb_params,
+#   series = y_train_total,
+#   forecast_horizon = 15,
+#   start = 0.75,
+#   stride = 15,
+#   future_covariates = x_total,
+#   val_series = y_val_total_decomp,
+#   metric = rmse
+# )
+
+```
+
+grid search runtime: 9-10mins grid search best tune and score:
+
+```{python TotalSalesXGBScore}
+
+# # Fit model & predict validation set 
+# model_xgb.fit(y_train_total, future_covariates = x_total) 
+# pred_total = model_xgb.predict(
+#   n = 227, 
+#   future_covariates = x_total) + ts_preds_total1[-243:-16] 
+#   
+# # Score model 
+# perf_scores(y_val_total, pred_total, model="Linear + XGB hybrid, total sales")
+
+```
+
+## Modeling: Category sales
 
 ### Preprocessing
 
@@ -976,10 +1005,6 @@ del y_train, y_val
 ### Baseline models
 
 ```{python CategoryBaselineSpec}
-
-# Import baseline models
-from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
-from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
 
 # Specify baseline models
 model_drift = NaiveDrift()
@@ -1063,9 +1088,6 @@ scores_hierarchy(
 #### STL decomposition
 
 ```{python CatSTLDecomp}
-from darts.utils.statistics import extract_trend_and_seasonality as decomposition
-from darts.utils.statistics import remove_from_series
-from darts.utils.utils import ModelMode, SeasonalityMode
 
 # Perform STL decomposition on training data to get trend + seasonality and remainder series
 trend_cat = []
@@ -1146,7 +1168,6 @@ plt.close("all")
 #### Linear regression on trend + seasonality
 
 ```{python CatLinearSpec}
-from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 
 # Specify linear regression model
 model_linear = LinearRegressionModel(
@@ -1200,7 +1221,6 @@ del pred, i
 #### AutoARIMA on remainder
 
 ```{python CatArimaSpec}
-from darts.models.forecasting.auto_arima import AutoARIMA
 
 # AutoARIMA
 model_arima = AutoARIMA(
@@ -1712,14 +1732,9 @@ del pred, i
 
 ### Global hybrid models
 
-```{python InitTorch}
-import torch
+```{python TorchCallbacks}
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
-import tensorboard
-
-torch.set_float32_matmul_precision("high")
-torch.set_printoptions(sci_mode = False)
 
 # Create early stopper
 early_stopper = EarlyStopping(
