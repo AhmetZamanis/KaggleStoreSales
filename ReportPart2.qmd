@@ -411,17 +411,25 @@ total_covars1 = ts_totalcovars1.pd_dataframe()
 
 # Aggregate daily covariate series
 total_covars2 = df.groupby("date").agg(
- { "oil": "mean",
+ {"sales": "sum", 
+  "oil": "mean",
   "onpromotion": "sum"}
   )
 total_covars2["transactions"] = df.groupby(["date", "store_nbr"]).transactions.mean().groupby("date").sum()
+
 
 # Difference daily covariate series
 from sktime.transformations.series.difference import Differencer
 diff = Differencer(lags = 1)
 total_covars2 = diff.fit_transform(total_covars2)
   
+  
 # Replace covariate series with MAs
+
+# Sales
+total_covars2["sales_ema5"] = total_covars2["sales"].rolling(
+  window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+
 # Oil
 total_covars2["oil_ma28"] = total_covars2["oil"].rolling(window = 28, center = False).mean()
 total_covars2["oil_ma28"] = total_covars2["oil_ma28"].interpolate(
@@ -437,9 +445,10 @@ total_covars2["trns_ma7"] = total_covars2["transactions"].rolling(window = 7, ce
 total_covars2["trns_ma7"] = total_covars2["trns_ma7"].interpolate("linear", limit_direction = "backward")  
 
 # Drop original covariate series
-total_covars2 = total_covars2.drop(["oil", "onpromotion", "transactions"], axis = 1)
+total_covars2 = total_covars2.drop(["sales", "oil", "onpromotion", "transactions"], axis = 1)
 
-# Replace last 15 dates' transactions MAs with NAs
+# Replace last 16 dates' sales and transactions MAs with NAs
+total_covars2.loc[total_covars2.index > "2017-08-15", "sales_ema5"] = np.nan
 total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 ```
 
@@ -474,6 +483,14 @@ for store in [int(store) for store in stores]:
   # Retrieve common covariates
   covars = common_covars.copy()
   
+  # Retrieve differenced sales EMA
+  covars["sales_ema7"] = diff.fit_transform(
+    df[df["store_nbr"] == store].groupby("date").sales.sum()
+    ).interpolate(
+  "linear", limit_direction = "backward"
+  ).rolling(
+    window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
+    
   # Retrieve differenced onpromotion, its MA
   covars["onpromotion"] = diff.fit_transform(
     df[df["store_nbr"] == store].groupby("date").onpromotion.sum()
@@ -815,71 +832,71 @@ perf_scores(y_val_total, pred_total, model="Linear + Random Forest hybrid, total
 
 ```{python XGBTotalTuneObj}
 
-import optuna
-
-# Define objective function for hyperparameter tuning
-def objective(trial):
-  
-  # Set hyperparameter search ranges
-  learning_rate = trial.suggest_float("learning_rate", 0.1, 0.3, log = True)
-  max_depth = trial.suggest_int("max_depth", 2, 10, step = 2)
-  min_child_weight = trial.suggest_int("min_child_weight", 1, 16, step = 5)
-  gamma = trial.suggest_float("gamma", 0.01, 0.1, log = True)
-  subsample = trial.suggest_float("subsample", 0.8, 1, step = 0.05)
-  colsample_bytree = trial.suggest_float("colsample_bytree", 0.8, 1, step = 0.05)
-
-  # Specify XGBoost model
-  model_xgb = XGBModel(
-    lags = [-1, -2, -3, -4, -5],
-    lags_future_covariates = [0],
-    random_state = 1923,
-    n_estimators = 5000,
-    early_stopping_rounds = 50,
-    learning_rate = learning_rate,
-    max_depth = max_depth,
-    min_child_weight = min_child_weight,
-    gamma = gamma,
-    subsample = subsample,
-    colsample_bytree = colsample_bytree
-  )
-  
-  # Train model
-  model_xgb.fit(
-    series = y_train_total,
-    future_covariates = x_train_total,
-    val_series = y_val_total,
-    val_future_covariates = x_val_total
-    )
-  
-  # Validate model on validation set
-  preds = model_xgb.predict(
-    n = 15,
-    future_covariates = x_val_total
-  )
-  iter_rmsle = np.mean(rmsle(y_val_total, preds, n_jobs=-1))
-  
-  return iter_rmsle
-
-# Print tuning iterations
-def optuna_callback(study, trial):
-  print(f"Current score: {trial.value}, param set: {trial.params}")
-  print(f"Best score: {study.best_value}, param set: {study.best_trial.params}")
+# import optuna
+# 
+# # Define objective function for hyperparameter tuning
+# def objective(trial):
+#   
+#   # Set hyperparameter search ranges
+#   learning_rate = trial.suggest_float("learning_rate", 0.1, 0.3, log = True)
+#   max_depth = trial.suggest_int("max_depth", 2, 10, step = 2)
+#   min_child_weight = trial.suggest_int("min_child_weight", 1, 16, step = 5)
+#   gamma = trial.suggest_float("gamma", 0.01, 0.1, log = True)
+#   subsample = trial.suggest_float("subsample", 0.8, 1, step = 0.05)
+#   colsample_bytree = trial.suggest_float("colsample_bytree", 0.8, 1, step = 0.05)
+# 
+#   # Specify XGBoost model
+#   model_xgb = XGBModel(
+#     lags = [-1, -2, -3, -4, -5],
+#     lags_future_covariates = [0],
+#     random_state = 1923,
+#     n_estimators = 5000,
+#     early_stopping_rounds = 50,
+#     learning_rate = learning_rate,
+#     max_depth = max_depth,
+#     min_child_weight = min_child_weight,
+#     gamma = gamma,
+#     subsample = subsample,
+#     colsample_bytree = colsample_bytree
+#   )
+#   
+#   # Train model
+#   model_xgb.fit(
+#     series = y_train_total,
+#     future_covariates = x_train_total,
+#     val_series = y_val_total,
+#     val_future_covariates = x_val_total
+#     )
+#   
+#   # Validate model on validation set
+#   preds = model_xgb.predict(
+#     n = 15,
+#     future_covariates = x_val_total
+#   )
+#   iter_rmsle = np.mean(rmsle(y_val_total, preds, n_jobs=-1))
+#   
+#   return iter_rmsle
+# 
+# # Print tuning iterations
+# def optuna_callback(study, trial):
+#   print(f"Current score: {trial.value}, param set: {trial.params}")
+#   print(f"Best score: {study.best_value}, param set: {study.best_trial.params}")
   
 ```
 
 ```{python XGBTotalStudy}
 
-# Create sampler (tuning algorithm)
-xgb_sampler_total = optuna.samplers.TPESampler(
-  seed = 1923
-)
-
-# Create study
-xgb_study_total = optuna.create_study(
-  study_name = "XGBTotalOpt1",
-  direction = "minimize",
-  sampler = xgb_sampler_total
-  )
+# # Create sampler (tuning algorithm)
+# xgb_sampler_total = optuna.samplers.TPESampler(
+#   seed = 1923
+# )
+# 
+# # Create study
+# xgb_study_total = optuna.create_study(
+#   study_name = "XGBTotalOpt1",
+#   direction = "minimize",
+#   sampler = xgb_sampler_total
+#   )
 
 
 ```
@@ -887,14 +904,14 @@ xgb_study_total = optuna.create_study(
 ```{python XGBTotalOptim}
 #| include: false
 
-# Optimize study
-xgb_study_total.optimize(
-  objective, 
-  n_trials = 100,
-  timeout = 1200,
-  callbacks = [optuna_callback],
-  n_jobs = 1
-  )
+# # Optimize study
+# xgb_study_total.optimize(
+#   objective, 
+#   n_trials = 100,
+#   timeout = 1200,
+#   callbacks = [optuna_callback],
+#   n_jobs = 1
+#   )
 
 ```
 
@@ -1152,7 +1169,6 @@ plt.close("all")
 # Specify linear regression model
 model_linear = LinearRegressionModel(
   lags_future_covariates = [0], # Don't create any covariate lags
-  output_chunk_length = 15
 )
 
 # Time covariates (trend + seasonality)
@@ -1211,7 +1227,7 @@ model_arima = AutoARIMA(
   )
 
 # AutoARIMA covars (cyclical + calendar)
-arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+arima_covars = ["sales_ema7", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 ```
 
@@ -1257,7 +1273,6 @@ Mention: AutoARIMA caught a completely constant input series, returned an ARMA (
 model_rf = RandomForest(
   lags = [-1, -2, -3, -4, -5, -6, -7],
   lags_future_covariates = [0],
-  output_chunk_length = 15,
   n_estimators = 500,
   oob_score = True,
   random_state = 1923,
@@ -1265,7 +1280,7 @@ model_rf = RandomForest(
 )
 
 # RF covariates (cylical + calendar)
-rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+rf_covars = ["sales_ema7", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 ```
 
@@ -1328,32 +1343,32 @@ model_summary = RichModelSummary(max_depth = -1)
 
 #### D-Linear on trend + seasonality
 
-```{python StoreDLinearSpec}
+```{python}
 
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 28,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 64,
-  n_epochs = 500,
-  model_name = "DLinearStore1.1",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify D-Linear model
+# model_dlinear = DLinear(
+#   input_chunk_length = 28,
+#   output_chunk_length = 15,
+#   kernel_size = 25,
+#   batch_size = 64,
+#   n_epochs = 500,
+#   model_name = "DLinearStoreX",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
-```{python StoreDLinearFit}
+```{python StoreDLinearCovars}
 
 # Time covariates (trend + seasonality)
 dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
@@ -1362,16 +1377,19 @@ dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sun
 trend_season_list_store = [
   (trend_store[i] + season_store[i]) for i in range(0, len(trend_store))
     ]
+    
+```
 
-# Fit DLinear model
-model_dlinear.fit(
-  series = [y[:-45] for y in trend_season_list_store],
-  future_covariates = [x[dlinear_covars] for x in x_store],
-  val_series = [y[-45:] for y in trend_season_list_store],
-  val_future_covariates = [x[dlinear_covars] for x in x_store],
-  verbose = True
-)
+```{python StoreDLinearFit}
 
+# # Fit DLinear model
+# model_dlinear.fit(
+#   series = [y[:-45] for y in trend_season_list_store],
+#   future_covariates = [x[dlinear_covars] for x in x_store],
+#   val_series = [y[-45:] for y in trend_season_list_store],
+#   val_future_covariates = [x[dlinear_covars] for x in x_store],
+#   verbose = True
+# )
 
 ```
 
@@ -1384,7 +1402,7 @@ model_dlinear = DLinear.load_from_checkpoint("DLinearStore1.1", best = True)
 
 ```{python StoreDLinearVal}
 
-# First fit & validate the first store to initialize series
+# First validate the first store to initialize series
 pred_dlinear_store = model_dlinear.predict(
   n=15,
   series = y_train_store[0],
@@ -1410,56 +1428,58 @@ del pred, i
 
 #### RNN on remainder
 
-```{python StoreRNNSpec1}
+```{python StoreRNNSpec}
 
-# Specify RNN model
-model_rnn = RNN(
-  model = "LSTM",
-  input_chunk_length = 28,
-  training_length = 29,
-  batch_size = 64,
-  n_epochs = 500,
-  n_rnn_layers = 2,
-  hidden_dim = 32,
-  dropout = 0.1,
-  model_name = "RNNStore1.1",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify RNN model
+# model_rnn = RNN(
+#   model = "LSTM",
+#   input_chunk_length = 28,
+#   training_length = 29,
+#   batch_size = 64,
+#   n_epochs = 500,
+#   n_rnn_layers = 2,
+#   hidden_dim = 32,
+#   dropout = 0.1,
+#   model_name = "RNNStore1.1",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
-```{python StoreRNNFit1}
+```{python StoreRNNCovars}
+
+# RNN covariates (calendar + cyclical)
+rnn_covars = ["sales_ema7", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+```
+
+```{python StoreRNNFit}
 #| output: false
 #| warning: false
 #| include: false
 
-# # RNN covariates (cyclical only)
-# rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+# # Fit RNN model
+# model_rnn.fit(
+#   series = [y[:-30] for y in remainder_store], 
+#   future_covariates = [x[rnn_covars] for x in x_store],
+#   val_series = [y[-30:] for y in remainder_store], # Use last 30 values in training set as validation set
+#   val_future_covariates = [x[rnn_covars] for x in x_store],
+#   verbose = True
+# )
 
-# RNN covariates (calendar + cyclical)
-rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-# Fit RNN model
-model_rnn.fit(
-  series = [y[:-30] for y in remainder_store], 
-  future_covariates = [x[rnn_covars] for x in x_store],
-  val_series = [y[-30:] for y in remainder_store], # Use last 30 values in training set as validation set
-  val_future_covariates = [x[rnn_covars] for x in x_store],
-  verbose = True
-)
 ```
 
-```{python StoreRNNLoad1}
+```{python StoreRNNLoad}
 
 # Load a previously trained RNN model's best checkpoint
 model_rnn = RNN.load_from_checkpoint("RNNStore1.1", best = True)
@@ -1474,7 +1494,7 @@ Mention that RNN may not be able to use calendar feats very well, because gates 
 
 -   STL with wide trend window leaves the calendar effects to the remainder
 
-```{python StoreRNNValid1}
+```{python StoreRNNValid}
 
 # First fit & validate the first store to initialize series
 pred_rnn_store = model_rnn.predict(
@@ -1505,42 +1525,46 @@ del pred, i
 
 ```{python StoreDLinearFull}
 
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 28,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 64,
-  n_epochs = 500,
-  model_name = "DLinearStore2.0",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify D-Linear model
+# model_dlinear = DLinear(
+#   input_chunk_length = 28,
+#   output_chunk_length = 15,
+#   kernel_size = 25,
+#   batch_size = 64,
+#   n_epochs = 500,
+#   model_name = "DLinearStore2.0",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
+
+```
+
+```{python StoreDLinearFullCovars}
+
+# All covariates
+dlinear2_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", "sales_ema7", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 ```
 
 ```{python StoreDLinearFullFit}
 
-# All covariates
-dlinear2_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-# Fit DLinear model
-model_dlinear.fit(
-  series = [y[:-45] for y in y_train_store],
-  future_covariates = [x[dlinear2_covars] for x in x_store],
-  val_series = [y[-45:] for y in y_train_store],
-  val_future_covariates = [x[dlinear2_covars] for x in x_store],
-  verbose = True
-)
+# # Fit DLinear model
+# model_dlinear.fit(
+#   series = [y[:-45] for y in y_train_store],
+#   future_covariates = [x[dlinear2_covars] for x in x_store],
+#   val_series = [y[-45:] for y in y_train_store],
+#   val_future_covariates = [x[dlinear2_covars] for x in x_store],
+#   verbose = True
+# )
 
 ```
 
@@ -1738,4 +1762,4 @@ scores_hierarchy(ts_sales[-227:], test, categories_stores)
 
 Remember to reverse log and CPI transformations
 
-Past covars for test predictions: "transactions", "trns_ma7"
+Remember to pass sales_ema5, transactions, trns_ma7 as past covariates, and output_chunk_length = 16
