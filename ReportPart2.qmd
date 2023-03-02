@@ -821,24 +821,23 @@ import optuna
 def objective(trial):
   
   # Set hyperparameter search ranges
-  learning_rate = trial.suggest_float("learning_rate", 0.05, 0.3, log = True)
+  learning_rate = trial.suggest_float("learning_rate", 0.1, 0.3, log = True)
   max_depth = trial.suggest_int("max_depth", 2, 10, step = 2)
-  min_child_weight = trial.suggest_int("min_child_weight", 1, 20, step = 5)
-  gamma = trial.suggest_float("gamma", 0.001, 0.2, log = True)
-  subsample = trial.suggest_float("subsample", 0.75, 1, step = 0.5)
-  colsample_bytree = trial.suggest_float("colsample_bytree", 0.75, 1, step = 0.5)
+  min_child_weight = trial.suggest_int("min_child_weight", 1, 16, step = 5)
+  gamma = trial.suggest_float("gamma", 0.01, 0.1, log = True)
+  subsample = trial.suggest_float("subsample", 0.8, 1, step = 0.05)
+  colsample_bytree = trial.suggest_float("colsample_bytree", 0.8, 1, step = 0.05)
 
   # Specify XGBoost model
   model_xgb = XGBModel(
     lags = [-1, -2, -3, -4, -5],
     lags_future_covariates = [0],
-    n_jobs = -2,
     random_state = 1923,
     n_estimators = 5000,
     early_stopping_rounds = 50,
     learning_rate = learning_rate,
     max_depth = max_depth,
-    min_child_weight = min_child_weight
+    min_child_weight = min_child_weight,
     gamma = gamma,
     subsample = subsample,
     colsample_bytree = colsample_bytree
@@ -846,11 +845,11 @@ def objective(trial):
   
   # Train model
   model_xgb.fit(
-    series = y_train_total[:-15],
-    future_covariates = x_train_total[:-15],
-    val_series = y_train_total[-15:],
-    val_future_covariates = x_train_total[-15:]
-  )
+    series = y_train_total,
+    future_covariates = x_train_total,
+    val_series = y_val_total,
+    val_future_covariates = x_val_total
+    )
   
   # Validate model on validation set
   preds = model_xgb.predict(
@@ -871,15 +870,15 @@ def optuna_callback(study, trial):
 ```{python XGBTotalStudy}
 
 # Create sampler (tuning algorithm)
-
-# Create pruner (early stopper)
+xgb_sampler_total = optuna.samplers.TPESampler(
+  seed = 1923
+)
 
 # Create study
 xgb_study_total = optuna.create_study(
-  study_name = "XGBTotalOpt1"
+  study_name = "XGBTotalOpt1",
   direction = "minimize",
-  sampler = 
-  pruner = 
+  sampler = xgb_sampler_total
   )
 
 
@@ -889,7 +888,13 @@ xgb_study_total = optuna.create_study(
 #| include: false
 
 # Optimize study
-xgb_study_total.optimize(objective, n_trials = 100, callbacks = [optuna_callback])
+xgb_study_total.optimize(
+  objective, 
+  n_trials = 100,
+  timeout = 1200,
+  callbacks = [optuna_callback],
+  n_jobs = 1
+  )
 
 ```
 
