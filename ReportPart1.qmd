@@ -420,7 +420,7 @@ plt.close("all")
 
 -   **Weekly:** The seasonal patterns are more visible in the weekly plot, as we see the "waves" of fluctuation line up across years. It's very likely the data has strong weekly seasonality, which is what we'd expect from supermarket sales.
 
-    -   The data for 2017 ends after August 15, so the sharp decline afterwards is misleading, though they may still be a stagnation / decline in the overall trend.
+    -   The data for 2017 ends after August 15, so the sharp decline afterwards is misleading, though there may still be a stagnation / decline in the overall trend.
 
     -   The sharp decline at the end of 2016 is also misleading, as 2016 was a 366-day year.
 
@@ -1080,7 +1080,7 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 
 We see our linear regression model performs much better than the other methods tested.
 
--   It's also notable that the naive seasonal model beats the FFT model in all metrics, while beating ETS in all metrics except RMSE.
+-   It's also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while beating ETS in all metrics except RMSE.
 
     -   ETS scores very close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE. This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
 
