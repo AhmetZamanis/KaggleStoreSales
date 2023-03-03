@@ -356,6 +356,18 @@ plt.show()
 plt.close("all")
 ```
 
+```{python}
+
+test_data = pd.DataFrame(data= {
+  "sales": [1, 2, 3 , 4, 5]
+})
+
+test_data["ma"] = test_data["sales"].rolling(
+  window = 3, center = False, closed = "left").mean()
+
+print(test_data)
+```
+
 ## Covariate series
 
 ```{python LogTrafoFuncs}
@@ -543,6 +555,7 @@ for store in [int(store) for store in stores]:
   
 # Cleanup
 del covars
+
 ```
 
 ```{python StoreStaticCovars}
@@ -811,15 +824,25 @@ x_val_total = scaler.transform(x_val_total)
 model_forest = RandomForest(
   lags = [-1, -2, -3, -4, -5], # Target lags that can be used
   lags_future_covariates = [0], # No covariate lags
+  lags_past_covariates = [-1],
   n_estimators = 500, # Build 500 trees
+  output_chunk_length = 15,
   random_state = 1923,
   n_jobs = -2 # Use all but one of the CPUs
   )
 
 # Fit model & predict validation set
-model_forest.fit(y_train_total, future_covariates = x_train_total)
+model_forest.fit(
+  y_train_total, 
+  future_covariates = x_train_total[['oil_ma28', 'onp_ma28']],
+  past_covariates = x_train_total[['sales_ema5', 'trns_ma7']]
+  )
+
 pred_total = model_forest.predict(
-  n = 15, future_covariates = x_val_total) + ts_preds_total1[-15:]
+  n = 15, 
+  future_covariates = x_val_total[['oil_ma28', 'onp_ma28']],
+  past_covariates = x_train_total[['sales_ema5', 'trns_ma7']]
+  ) + ts_preds_total1[-15:]
 
   
 # Score model
@@ -1013,7 +1036,7 @@ model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
 # Specify ETS model
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
-  model = "AAA", # Multiplicative trend, seasonality and remainder component
+  model = "AAA", # Additive trend, seasonality and remainder component
   damped = 0.95 # Dampen the trend over time
 )
 
@@ -1175,6 +1198,8 @@ model_linear = LinearRegressionModel(
 linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
 
 ```
+
+For validation, output chunk length = 1 so we can compare model performances more directly with baseline models
 
 ```{python StoreLinearFitVal}
 #| output: false
@@ -1345,26 +1370,26 @@ model_summary = RichModelSummary(max_depth = -1)
 
 ```{python}
 
-# # Specify D-Linear model
-# model_dlinear = DLinear(
-#   input_chunk_length = 28,
-#   output_chunk_length = 15,
-#   kernel_size = 25,
-#   batch_size = 64,
-#   n_epochs = 500,
-#   model_name = "DLinearStoreX",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 28,
+  output_chunk_length = 1,
+  kernel_size = 25,
+  batch_size = 64,
+  n_epochs = 500,
+  model_name = "DLinearStore1.2",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
 
@@ -1382,21 +1407,21 @@ trend_season_list_store = [
 
 ```{python StoreDLinearFit}
 
-# # Fit DLinear model
-# model_dlinear.fit(
-#   series = [y[:-45] for y in trend_season_list_store],
-#   future_covariates = [x[dlinear_covars] for x in x_store],
-#   val_series = [y[-45:] for y in trend_season_list_store],
-#   val_future_covariates = [x[dlinear_covars] for x in x_store],
-#   verbose = True
-# )
+# Fit DLinear model
+model_dlinear.fit(
+  series = [y[:-30] for y in trend_season_list_store],
+  future_covariates = [x[dlinear_covars] for x in x_store],
+  val_series = [y[-30:] for y in trend_season_list_store],
+  val_future_covariates = [x[dlinear_covars] for x in x_store],
+  verbose = True
+)
 
 ```
 
 ```{python StoreDLinearLoad}
 
 # Load a previously trained DLinear model's best checkpoint
-model_dlinear = DLinear.load_from_checkpoint("DLinearStore1.1", best = True)
+model_dlinear = DLinear.load_from_checkpoint("DLinearStore1.2", best = True)
 
 ```
 
@@ -1430,29 +1455,29 @@ del pred, i
 
 ```{python StoreRNNSpec}
 
-# # Specify RNN model
-# model_rnn = RNN(
-#   model = "LSTM",
-#   input_chunk_length = 28,
-#   training_length = 29,
-#   batch_size = 64,
-#   n_epochs = 500,
-#   n_rnn_layers = 2,
-#   hidden_dim = 32,
-#   dropout = 0.1,
-#   model_name = "RNNStore1.1",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+# Specify RNN model
+model_rnn = RNN(
+  model = "LSTM",
+  input_chunk_length = 28,
+  training_length = 29,
+  batch_size = 64,
+  n_epochs = 500,
+  n_rnn_layers = 2,
+  hidden_dim = 32,
+  dropout = 0.1,
+  model_name = "RNNStore1.2",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
 
@@ -1464,25 +1489,22 @@ rnn_covars = ["sales_ema7", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'trans
 ```
 
 ```{python StoreRNNFit}
-#| output: false
-#| warning: false
-#| include: false
 
-# # Fit RNN model
-# model_rnn.fit(
-#   series = [y[:-30] for y in remainder_store], 
-#   future_covariates = [x[rnn_covars] for x in x_store],
-#   val_series = [y[-30:] for y in remainder_store], # Use last 30 values in training set as validation set
-#   val_future_covariates = [x[rnn_covars] for x in x_store],
-#   verbose = True
-# )
+# Fit RNN model
+model_rnn.fit(
+  series = [y[:-30] for y in remainder_store],
+  future_covariates = [x[rnn_covars] for x in x_store],
+  val_series = [y[-30:] for y in remainder_store], # Use last 30 values in training set as validation set
+  val_future_covariates = [x[rnn_covars] for x in x_store],
+  verbose = True
+)
 
 ```
 
 ```{python StoreRNNLoad}
 
 # Load a previously trained RNN model's best checkpoint
-model_rnn = RNN.load_from_checkpoint("RNNStore1.1", best = True)
+model_rnn = RNN.load_from_checkpoint("RNNStore1.2", best = True)
 
 ```
 
