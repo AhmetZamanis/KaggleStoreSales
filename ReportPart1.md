@@ -415,17 +415,11 @@ The CPI values for Ecuador in the time period were retrieved
 - We’ll use the yearly CPI values for simplicity, but it’s possible to
   use monthly CPI as well.
 
-- Since 2017 is not complete in the data, and we’ll use it as the
-  validation period, we’ll use 2016’s CPI for 2017 to avoid leaking
-  information from the future into our predictions. In a real-life
-  scenario, the expected / forecasted CPI or inflation rates could be
-  used as well.
-
 ``` python
 # CPI adjust sales and oil, with CPI 2010 = 100
 cpis = {
-  "2010":100, "2013":112.8, "2014":116.8, "2015":121.5, "2016":123.6, 
-  "2017":123.6
+  "2010": 100, "2013": 112.8, "2014": 116.8, "2015": 121.5, "2016": 123.6, 
+  "2017": 124.1
   }
   
 for year in [2013, 2014, 2015, 2016, 2017]:
@@ -489,11 +483,11 @@ sales
     2013-01-04   314237.3024
     2013-01-05   423182.7316
                      ...    
-    2017-08-11   668587.1537
-    2017-08-12   641286.8407
-    2017-08-13   700355.7261
-    2017-08-14   615633.0146
-    2017-08-15   617040.4012
+    2017-08-11   665893.4102
+    2017-08-12   638703.0903
+    2017-08-13   697533.9867
+    2017-08-14   613152.6238
+    2017-08-15   614554.3400
     Name: sales, Length: 1684, dtype: float64
 
 We will create a Darts
@@ -519,11 +513,11 @@ print(ts_sales)
 
            ...,
 
-           [[700355.7261]],
+           [[697533.9867]],
 
-           [[615633.0146]],
+           [[613152.6238]],
 
-           [[617040.4012]]])
+           [[614554.34  ]]])
     Coordinates:
       * date       (date) datetime64[ns] 2013-01-01 2013-01-02 ... 2017-08-15
       * component  (component) object 'sales'
@@ -541,17 +535,19 @@ print(ts_sales)
 - To create a multivariate time series, we create a Pandas dataframe
   with each time series as a column, and a common date-time index. When
   we pass this dataframe to TimeSeries, we’ll have each time series as a
-  component. If the time series have a **hierarchy**, i.e. if they sum
-  up together in a certain way, we can map that hierarchy as a
-  dictionary to later perform hierarchical reconciliation. We will
-  explore this further in part 2 of the analysis.
+  component. If the multivariate time series has a **hierarchy**,
+  i.e. if they sum up together in a certain way, we can map that
+  hierarchy as a dictionary to later perform hierarchical
+  reconciliation. We will explore this further in part 2 of the
+  analysis.
 
 - **Static covariates** are time-invariant covariates that may be used
-  as predictors, if not used to split the time series into a
-  multivariate series. They are stored together with the target series
-  in Darts TS. In our case, the type or cluster of a store may be used
-  as static covariates, but for part 1 of our analysis we are looking at
-  national sales, so we won’t use these.
+  as predictors in global models (models trained on multiple Darts TS at
+  once), if not used to split the time series into a multivariate series
+  (one Darts TS with multiple components). They are stored together with
+  the target series in Darts TS. In our case, the type or cluster of a
+  store may be used as static covariates, but for part 1 of our analysis
+  we are looking at national sales, so these aren’t applicable.
 
 ## Overview of hybrid modeling approach
 
@@ -645,7 +641,8 @@ last plot, we just have the daily sales without any averaging).
 - **Quarterly:** Sales do not seem to have a considerable quarterly
   seasonality pattern. However, the plot still shows us a few things:
 
-  - Sales generally slightly increase over a year.
+  - Sales generally slightly increase over a year, but the trend may be
+    stagnating / declining at the end of our data in 2017.
 
   - In Q2 2014, there was a considerable drop. Sales declined almost to
     the level of Q2 2013. This was likely a cyclical effect.
@@ -672,7 +669,8 @@ last plot, we just have the daily sales without any averaging).
   expect from supermarket sales.
 
   - The data for 2017 ends after August 15, so the sharp decline
-    afterwards is misleading.
+    afterwards is misleading, though they may still be a stagnation /
+    decline in the overall trend.
 
   - The sharp decline at the end of 2016 is also misleading, as 2016 was
     a 366-day year.
@@ -704,8 +702,8 @@ will group them by year.
   are lowest in Thursdays, increase and peak at Sundays, then drop on
   Mondays. The pattern holds in all years.
 
-- The monthly seasonality across days of a month aren’t as strong, but
-  look considerable. Sales are generally highest at the start of a
+- The monthly seasonality across days of a month isn’t as strong, but
+  looks considerable. Sales are generally highest at the start of a
   month, likely because most salaries are paid at the end of a month,
   though the competition information also says salaries are paid
   biweekly, in the middle and at the end of each month.
@@ -766,13 +764,13 @@ The sinusoidal pattern in the ACF plot is typical for strong weekly
 seasonality:
 
 - Sales at T=0 are highly correlated with the sales of the previous day
-  at T=1.
+  at T-1.
 
-- The correlation declines until T=6, which is the previous value of the
-  next weekday from T=0, and spikes again at T=7, which is the previous
+- The correlation declines until T-6, which is the previous value of the
+  next weekday from T=0, and spikes again at T-7, which is the previous
   value of the same weekday.
 
-- The pattern repeats weekly after T=7, with declining strength.
+- The pattern repeats weekly after T-7, with declining strength.
 
 The PACF plot shows the marginal contribution of each lag to the
 relationship with the present day value. The partial autocorrelation is
@@ -1003,7 +1001,7 @@ mostly due to proximity to paydays.
   numerous sine-cosine pairs.
 
 - We’ll create 5 Fourier pairs (10 columns in total) for 28-period
-  seasonality. T
+  seasonality.
 
   - Too few pairs may not capture the fluctuations well, while too many
     run the risk of overfitting.
@@ -1126,12 +1124,13 @@ def trafo_exp(x):
 
 We’ll train our time decomposition models on the natural logarithm of
 the daily sales data from 2013-2016, and validate their prediction
-performance on 2017.
+performance on 2017. We use an entire year of data for validation to see
+if our features can capture long-term seasonality and fixed calendar
+effects.
 
 ``` python
 # Train-validation split: Pre 2017 vs 2017
 y_train1, y_val1 = trafo_log(ts_sales[:-227]), trafo_log(ts_sales[-227:])
-x_train1, x_val1 = ts_timecovars[:-227], ts_timecovars[-227:]
 ```
 
 ### Model specification
@@ -1179,6 +1178,38 @@ and dummy features for weekly seasonality & calendar effects. We’ll see
 how much better it performs compared to models that can be specified and
 applied quickly.
 
+- All of the covariates we’ll use in this step are known into the
+  future: For example, when predicting the day after our training data,
+  we’ll know what day of the week it will be, or what value our Fourier
+  pairs will take. Darts takes in such covariates as **future
+  covariates**, and requires their values as inputs for predictions into
+  the future.
+
+- Covariates that are known in the past, but won’t be known in the
+  future are called **past covariates**. Some Darts models still use
+  these as inputs, but models trained with past covariates have some
+  limitations in future predictions:
+
+  - They can predict up to **output_chunk_length** time steps without
+    needing values of “future” past covariates.
+
+  - For forecast horizons longer than output_chunk_length, they require
+    “future” values of past covariates. These can be forecasts of the
+    past covariates, of course using forecasts to forecast may lead to
+    compounded errors.
+
+  - We’ll use past covariates in the second step of this analysis.
+
+  - We’ll set **output_chunk_length** to 15, meaning the model will
+    predict 15 time steps in one go, similar to what the competition
+    requires.
+
+    - The model can still predict forecast horizons longer than 15 time
+      steps, by using the predicted values of the target in
+      auto-regressive fashion, as long as the future and past covariates
+      are supplied. Of course, forecast errors will compound with longer
+      horizons.
+
 ``` python
 # Import models
 from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
@@ -1201,20 +1232,23 @@ model_fft = FFT(
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
   model = "AAA", # Additive trend, seasonality and remainder component
-  damped = 0.9 # Dampen the trend over time
+  damped = 0.95 # Dampen the trend over time
 )
 
 # Specify linear regression model
 model_linear1 = LinearRegressionModel(
-  lags_future_covariates = [0] # Don't create any covariate lags
+  lags_future_covariates = [0], # Don't create any future covariate lags
+  output_chunk_length = 15 # Predict 15 time steps in one go
   )
 ```
 
 ### Model validation: Predicting 2017 sales
 
 We’ll train our models on 2013-2016 sales data, predict the sales for
-2017, and score the predictions with a custom function. We’ll use three
+2017, and score the predictions with a custom function. We’ll use four
 regression performance metrics:
+
+- **Mean absolute error (MAE),**
 
 - **Root mean squared error (RMSE),**
 
@@ -1236,16 +1270,17 @@ pred_fft = model_fft.predict(n = 227)
 model_ets.fit(y_train1)
 pred_ets = model_ets.predict(n = 227)
 
-model_linear1.fit(y_train1, future_covariates = x_train1)
-pred_linear1 = model_linear1.predict(n = 227, future_covariates = x_val1)
+model_linear1.fit(y_train1, future_covariates = ts_timecovars)
+pred_linear1 = model_linear1.predict(n = 227, future_covariates = ts_timecovars)
 ```
 
 ``` python
 # Define model scoring function
-from darts.metrics import mape, rmse, rmsle
+from darts.metrics import mape, rmse, rmsle, mae
 def perf_scores(val, pred, model="drift"):
   
   scores_dict = {
+    "MAE": mae(trafo_exp(val), trafo_exp(pred)),
     "RMSE": rmse(trafo_exp(val), trafo_exp(pred)), 
     "RMSLE": rmse(val, pred), 
     "MAPE": mape(trafo_exp(val), trafo_exp(pred))
@@ -1269,54 +1304,74 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 ```
 
     Model: Naive drift
-    RMSE: 899727.1315
-    RMSLE: 0.8665
-    MAPE: 161.8275
+    MAE: 798635.4611
+    RMSE: 902091.7355
+    RMSLE: 0.87
+    MAPE: 162.8795
     --------
     Model: Naive seasonal
-    RMSE: 183226.1742
-    RMSLE: 0.3836
-    MAPE: 64.2437
+    MAE: 153335.7317
+    RMSE: 184939.3724
+    RMSLE: 0.3857
+    MAPE: 64.8081
     --------
     Model: FFT
-    RMSE: 226535.1335
-    RMSLE: 0.3972
-    MAPE: 59.8851
+    MAE: 184690.6545
+    RMSE: 228241.9286
+    RMSLE: 0.3993
+    MAPE: 60.4031
     --------
     Model: Exponential smoothing
-    RMSE: 201526.3126
-    RMSLE: 0.3956
-    MAPE: 75.8211
+    MAE: 177944.8239
+    RMSE: 203758.4308
+    RMSLE: 0.398
+    MAPE: 76.5003
     --------
     Model: Linear regression
-    RMSE: 75003.7023
-    RMSLE: 0.1061
-    MAPE: 8.1491
+    MAE: 64128.0321
+    RMSE: 81697.341
+    RMSLE: 0.1171
+    MAPE: 9.7622
     --------
 
 We see our linear regression model performs much better than the other
 methods tested.
 
-- It’s also notable that the naive seasonal model beats the ETS model in
-  all metrics, while beating FFT in RMSE and RMSLE. However, FFT beats
-  the naive seasonal model in MAPE.
+- It’s also notable that the naive seasonal model beats the FFT model in
+  all metrics, while beating ETS in all metrics except RMSE.
 
-- The ETS model also beats FFT in RMSE and RMSLE, while having
-  considerably higher MAPE. This is likely because MAPE is a measure of
-  relative error, while RMSE and RMSLE are measures of absolute error.
+  - ETS scores very close to naive seasonal on MAE, RMSE and RMSLE, but
+    much worse on MAPE. This is likely because MAPE is a measure of
+    relative error, while the others are measures of absolute error.
 
-  - For example, an absolute error of 2 translates to 2% MAPE if the
-    true value is 100, but it translates to 0.2% MAPE if the true value
-    is 1000.
+    - For example, an absolute error of 2 translates to 2% MAPE if the
+      true value is 100, but it translates to 0.2% MAPE if the true
+      value is 1000.
 
-  - In both cases, the absolute error is the same, but we may argue an
-    absolute error of 2 is more “costly” for the former case.
+    - In both cases, the absolute error is the same, but we may argue an
+      absolute error of 2 is more “costly” for the former case.
 
-- In either case, RMSLE is likely the more important metric among these
-  three. Log errors penalize underpredictions more strongly than
-  overpredictions, which could be good for assessing sales predictions,
-  as unfulfilled demand is likely more costly than overstocking. The
-  competition is also scored on RMSLE.
+  - In either case, RMSLE is likely the most important metric among
+    these three. Log errors penalize underpredictions more strongly than
+    overpredictions, which could be good for assessing sales
+    predictions, as unfulfilled demand is likely more costly than
+    overstocking. The competition is also scored on RMSLE.
+
+- The forecast horizon plays a huge role in the prediction scores of our
+  models:
+
+  - When the same models are validated on only the last 15 days of our
+    training data, they perform very similarly to one another, and the
+    ETS model has the best performance, even slightly better than our
+    linear regression model with features.
+
+    - The difference in performance is mainly because the models except
+      linear regression can’t take in covariates to model calendar
+      effects or long-term seasonality, but these may not matter much
+      for a short forecast horizon like 15. With a long forecast horizon
+      like 227, the linear regression is able to perform fairly
+      similarly to its performance with 15, while the other models do
+      much worse.
 
 Let’s plot the predictions of our models and compare them visually with
 the actual values.
@@ -1331,7 +1386,7 @@ the predictions are similar to the actual values.
   2017 sales.
 
   - This is likely because their methods for modeling the trend is not
-    fully suitable for the trend in our data.
+    fully suitable for the piecewise trend in our data.
 
 - The naive seasonal model performed close to FFT and ETS by
   coincidence, because the 7 days of sales it repeated were not far from
@@ -1365,6 +1420,13 @@ wider training windows until the end of the data.
   time for more sophisticated algorithms, but it should be fine for
   linear regression.
 
+- Keep in mind the performance won’t be fully comparable to our 2017
+  validation predictions, because those were made with an output chunk
+  length of n=15, while the historical forecasts are computed with an
+  output chunk length of n=1. We do this because the number of timesteps
+  in our data is not divisible by 15, so we can’t obtain a forecast for
+  all timesteps with n=15.
+
 - We’ll also retrieve the residuals for each prediction to perform
   residual diagnosis.
 
@@ -1372,20 +1434,22 @@ wider training windows until the end of the data.
 # Retrieve historical forecasts and decomposed residuals for 2014-2017
 pred_hist1 = model_linear1.historical_forecasts(
   trafo_log(ts_sales), 
-  future_covariates = ts_timecovars, start = 365, stride = 1,
-  verbose = True)
+  future_covariates = ts_timecovars, 
+  start = 365, 
+  stride = 1,
+  forecast_horizon = 1,
+  verbose = False)
 res_linear1 = trafo_log(ts_sales[365:]) - pred_hist1
 
 # Score historical forecasts
 perf_scores(trafo_log(ts_sales[365:]), pred_hist1, model="Linear regression, historical")
 ```
 
-      0%|          | 0/1323 [00:00<?, ?it/s]
-
     Model: Linear regression, historical
-    RMSE: 99341.6312
-    RMSLE: 0.1828
-    MAPE: 13.8001
+    MAE: 89260.1694
+    RMSE: 114684.7746
+    RMSLE: 0.3414
+    MAPE: 16.4487
     --------
 
 ![](ReportPart1_files/figure-commonmark/cell-53-output-1.png)
@@ -1434,9 +1498,9 @@ our predictions.
   smaller training data likely plays a role as well.
 
 - The overall distribution of the residuals is not too far from a normal
-  distribution around zero, but the right tail is bigger, indicating
+  distribution around zero, but there is a huge right tail, indicating
   some values are strongly underpredicted. These are mostly from
-  2014-2015.
+  2014-2015, with one particularly huge residual at the start of 2015.
 
 - The PACF plot shows strong partial autocorrelation with lag 1, and a
   weak one with lag 2, which means we’ll likely include lagged sales
@@ -1479,7 +1543,7 @@ print(
 ) # Null rejected = data is stationary around a constant
 ```
 
-    ADF test p-value: 7.49538399004551e-05
+    ADF test p-value: 2.492249770117031e-05
 
 The null hypothesis for the ADF test (this version) is the presence of a
 unit root, while the alternative hypothesis is stationarity around a
@@ -1593,7 +1657,7 @@ print(
 ```
 
     KPSS test p-value: 0.01
-    ADF test p-value: 0.8027065796825488
+    ADF test p-value: 0.8037342071858674
 
 Both the KPSS and ADF test suggest the oil time series is
 non-stationary, so we’ll difference it. If one covariate is differenced,
@@ -1617,11 +1681,11 @@ print(sales_covariates)
     2013-01-04  0.1330       0.0000      -10.0000  0.1230
     2013-01-05  0.0236       0.0000    15079.0000  0.1126
     ...            ...          ...           ...     ...
-    2017-08-11  0.2184    6262.0000     6487.0000 -0.1136
-    2017-08-12 -0.3290   -5867.0000      376.0000 -0.3183
-    2017-08-13 -0.3290     971.0000    -3934.0000 -0.2906
-    2017-08-14 -0.3290   -1240.0000     -545.0000 -0.1182
-    2017-08-15 -0.0162    2562.0000     1113.0000 -0.0716
+    2017-08-11  0.2176    6262.0000     6487.0000 -0.1177
+    2017-08-12 -0.3277   -5867.0000      376.0000 -0.3223
+    2017-08-13 -0.3277     971.0000    -3934.0000 -0.2947
+    2017-08-14 -0.3277   -1240.0000     -545.0000 -0.1223
+    2017-08-15 -0.0161    2562.0000     1113.0000 -0.0757
 
     [1684 rows x 4 columns]
 
@@ -1677,7 +1741,11 @@ We can also consider a rolling feature, such as a moving average.
 ``` python
 # Calculate 5-day exponential moving average of sales lags
 sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
-  window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+  window = 5, 
+  min_periods = 1, 
+  center = False, # T0 is the end of the window instead of the center
+  closed = "left", # Exclude sales at T0 from the calculation
+  win_type = "exponential").mean()
 ```
 
 ![](ReportPart1_files/figure-commonmark/cell-65-output-1.png)
@@ -1691,17 +1759,27 @@ correlation with sales.
 pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) 
 ```
 
-    PearsonRResult(statistic=0.790350805157687, pvalue=0.0)
+    PearsonRResult(statistic=0.7905238105754431, pvalue=0.0)
 
 ``` python
 # Correlation of sales and ema5
 pearsonr(sales_covariates["sales"], sales_covariates["sales_ema5"]) 
 ```
 
-    PearsonRResult(statistic=0.7580111987059072, pvalue=1.7543396815e-314)
+    PearsonRResult(statistic=0.7582545348904933, pvalue=8.454075723e-315)
 
 Lag 1 comes out as the slightly stronger linear predictor, but EMA5 is a
 good one too. We can include both as features.
+
+``` python
+# Keep sales EMA5 as a feature, but calculate it with T0 included, as Darts will ask for at least 1 past covariate lag
+sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
+  window = 5, 
+  min_periods = 1, 
+  center = False, # T0 is the end of the window instead of the center
+  closed = "right", # Include T0 in the calculation
+  win_type = "exponential").mean()
+```
 
 ### Oil features
 
@@ -1720,20 +1798,20 @@ manifest.
 ``` python
 # Calculate oil MAs
 oil_ma = sales_covariates.assign(
-  oil_ma7 = lambda x: x["oil"].rolling(window = 7, center = False).mean(),
-  oil_ma14 = lambda x: x["oil"].rolling(window = 14, center = False).mean(),
-  oil_ma28 = lambda x: x["oil"].rolling(window = 28, center = False).mean(),
-  oil_ma84 = lambda x: x["oil"].rolling(window = 84, center = False).mean(),
-  oil_ma168 = lambda x: x["oil"].rolling(window = 168, center = False).mean(),
-  oil_ma336 = lambda x: x["oil"].rolling(window = 336, center = False).mean(),
+  oil_ma7 = lambda x: x["oil"].rolling(window = 7, center = False, closed = "left").mean(),
+  oil_ma14 = lambda x: x["oil"].rolling(window = 14, center = False, closed = "left").mean(),
+  oil_ma28 = lambda x: x["oil"].rolling(window = 28, center = False, closed = "left").mean(),
+  oil_ma84 = lambda x: x["oil"].rolling(window = 84, center = False, closed = "left").mean(),
+  oil_ma168 = lambda x: x["oil"].rolling(window = 168, center = False, closed = "left").mean(),
+  oil_ma336 = lambda x: x["oil"].rolling(window = 336, center = False, closed = "left").mean(),
 )
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-69-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-70-output-1.png)
 
 We don’t see particularly strong relationships between oil price change
 MAs and sales, though the monthly MA is the most notable one with a
-correlation of -0.2, so we will use that as a feature.
+correlation of -0.19, so we will use that as a feature.
 
 Since we need 28 past periods to calculate this MA for a 29th period,
 we’ll have missing values for the first 28 periods in our data. After
@@ -1756,7 +1834,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-70-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-71-output-1.png)
 
 ### Onpromotion features
 
@@ -1780,7 +1858,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-71-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-72-output-1.png)
 
 Single lags / leads of onpromotion don’t display any significant
 correlations with sales, though there is a repeating pattern of likely
@@ -1788,12 +1866,12 @@ six days. Let’s look at the scatterplots of sales at time 0, with four
 of the more relatively significant lags (lag 0 being the present value
 of onpromotion).
 
-![](ReportPart1_files/figure-commonmark/cell-72-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-73-output-1.png)
 
 Again, no significant relationship between single onpromotion lags and
 sales. Let’s consider moving averages.
 
-![](ReportPart1_files/figure-commonmark/cell-73-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-74-output-1.png)
 
 The monthly and quarterly MA of onpromotion seems to be slightly
 positively correlated with sales. We’ll use the monthly MA as a feature,
@@ -1816,7 +1894,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-74-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-75-output-1.png)
 
 The daily changes in onpromotion are practically zero roughly until Q1
 2014. Afterwards, changes in onpromotion became increasingly larger,
@@ -1836,21 +1914,18 @@ stores.
 
 - The transactions data is only available for the training dataset (up
   to mid-August 2017), and not for the testing dataset (15 days after
-  the training dataset).
+  the training dataset), which has implications for its use in part 2 of
+  this analysis. Lag 15 is marked with a red dashed vertical line in the
+  cross-correlation plot below.
 
-- We can freely consider transactions as a feature for part 1 of this
-  analysis, but in part 2 we’ll only be able to consider lag 15 or older
-  values of transactions as features. Lag 15 is marked with a red dashed
-  vertical line in the cross-correlation plot below.
-
-![](ReportPart1_files/figure-commonmark/cell-75-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-76-output-1.png)
 
 Again, single transactions lags don’t display strong correlations with
 sales. Unlike onpromotion, there doesn’t seem to be a repeating pattern
 either. Lags 0-3 are relatively stronger, so let’s see their
 scatterplots.
 
-![](ReportPart1_files/figure-commonmark/cell-76-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-77-output-1.png)
 
 As we expected, the present value of transactions have a weak, but
 relatively stronger positive relationship with the value of sales
@@ -1867,12 +1942,12 @@ compared to the lags.
 Let’s consider moving averages of changes in transactions, as a possible
 indicator of recent sales activity.
 
-![](ReportPart1_files/figure-commonmark/cell-77-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-78-output-1.png)
 
 The MAs are much more significant than single lags, though the
 correlations are still likely impacted by extreme values. Still, these
 features could help our model adjust for extreme increases / decreases
-in transactions. We’ll keep the weekly MA as it has the strongest linear
+in sales. We’ll keep the weekly MA as it has the strongest linear
 relationship, and will create the fewest number of missing values to
 fill in.
 
@@ -1891,7 +1966,7 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-78-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-79-output-1.png)
 
 We can see the sharp drop in transactions on January 1st, and the
 recovery on January 2nd, reflected both in the time series plot of
@@ -1942,6 +2017,9 @@ from darts.dataprocessing.transformers import Scaler
 scaler = Scaler(StandardScaler())
 x_train2 = scaler.fit_transform(x_train2)
 x_val2 = scaler.transform(x_val2)
+
+# Combine back scaled covariate series
+ts_lagscovars_scaled = x_train2.append(x_val2)
 ```
 
 ### Model specification
@@ -1961,8 +2039,8 @@ model.
     be thought of as a weighted moving average of the past q forecast
     errors.
 
-  - The **order d** indicates the order of differentiation previously
-    applied to the target series.
+  - The **order d** indicates the order of differentiation applied to
+    the target series.
 
   - This implementation of the ARIMA model also takes in covariates,
     which will be used as linear predictors just like in linear
@@ -1987,7 +2065,8 @@ model.
 
   - They can’t extrapolate a relationship outside the value ranges in
     the training set, so we didn’t consider them for the time
-    decomposition model.
+    decomposition model. This inability may still impact the second
+    model’s ability to predict future values.
 
   - We could also include a more sophisticated gradient boosting
     algorithm such as XGBoost, but these often require [extensive
@@ -2024,14 +2103,19 @@ model_arima = AutoARIMA(
 
 # Specify second linear regression model
 model_linear2 = LinearRegressionModel(
-  lags = 1, # Target lag 1
-  lags_future_covariates = [0] # No covariate lags
+  lags = [-1], # Use one target lag
+  lags_future_covariates = [0], # No future covariate lags
+  lags_past_covariates = [-1], # Use lag 1 of past covariates
+  output_chunk_length = 15 # Predict 15 steps in one go
   )
 
 # Specify random forest model  
 model_forest = RandomForest(
-  lags = [-1, -2, -3, -4, -5], # Target lags that can be used
-  lags_future_covariates = [0], # No covariate lags
+  lags = [-1],
+  lags_future_covariates = [0],
+  lags_past_covariates = [-1],
+  output_chunk_length = 15,
+  n_estimators = 500, # Build 500 trees
   random_state = 1923,
   n_jobs = -2 # Use all but one of the CPUs
   )
@@ -2051,20 +2135,20 @@ significant period for autoregression.
     significant partial correlations persist up to lag 5.
 
   - Accordingly, we’ll consider AR components from 1 to 5, and MA
-    components from 0 to 5, though it’s likely the order of the MA
-    component will be low, if not zero.
+    components from 0 to 5.
 
   - We specify a differencing order of 0, as our target is already
-    decomposed of time effects, so we didn’t difference it. We also do
-    not perform detrending, or include seasonal components in our ARIMA
-    models.
+    decomposed of time effects. We also do not perform detrending, or
+    include seasonal components in our ARIMA models.
 
-- Our linear regression model will take in sales lag 1, sales EMA5, oil
-  MA28, onpromotion MA28 and transactions MA7 as predictors.
+- Our linear and random forest regression models will take in sales lag
+  1, sales EMA5, oil MA28, onpromotion MA28 and transactions MA7 as
+  predictors.
 
-- The random forest model is capable of feature selection to a degree,
-  so we will feed it the same predictors as the linear regression model,
-  plus lags 3-5 which were slightly significant on their own.
+  - Sales and transaction MAs will be past covariates: Their future
+    values won’t be used for predictions. It makes sense to validate our
+    model like this, as we won’t know the future values of these
+    variables for our test data predictions in part 2.
 
 ### Model validation: Predicting 2017 sales
 
@@ -2073,6 +2157,10 @@ values for 2017, and add these to the 2017 predictions of model 1 to
 retrieve our final, hybrid model predictions.
 
 ``` python
+# Specify future and past covariates
+fut_cov = ['oil_ma28', 'onp_ma28']
+past_cov = ['sales_ema5', 'trns_ma7']
+
 # Fit models on train data (pre-2017), predict validation data (2017)
 model_drift.fit(y_train2)
 pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
@@ -2080,67 +2168,93 @@ pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
 model_seasonal.fit(y_train2)
 pred_seasonal2 = model_seasonal.predict(n = 227) + ts_preds1[-227:]
 
-model_arima.fit(y_train2, future_covariates = x_train2)
+model_arima.fit(
+  y_train2, 
+  future_covariates = ts_lagscovars_scaled[fut_cov]
+)
+
 pred_arima = model_arima.predict(
-  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
+  n = 227, 
+  future_covariates = ts_lagscovars_scaled[fut_cov]
+  ) + ts_preds1[-227:]
 
-model_linear2.fit(y_train2, future_covariates = x_train2)
+model_linear2.fit(
+  y_train2, 
+  future_covariates = ts_lagscovars_scaled[fut_cov],
+  past_covariates = ts_lagscovars_scaled[past_cov]
+  )
+  
 pred_linear2 = model_linear2.predict(
-  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
+  n = 227, 
+  future_covariates = ts_lagscovars_scaled[fut_cov],
+  past_covariates = ts_lagscovars_scaled[past_cov]
+  ) + ts_preds1[-227:]
 
-model_forest.fit(y_train2, future_covariates = x_train2)
+model_forest.fit(
+  y_train2, 
+  future_covariates = ts_lagscovars_scaled[fut_cov],
+  past_covariates = ts_lagscovars_scaled[past_cov]
+  )
+
 pred_forest = model_forest.predict(
-  n = 227, future_covariates = x_val2) + ts_preds1[-227:]
+  n = 227, 
+  future_covariates = ts_lagscovars_scaled[fut_cov],
+  past_covariates = ts_lagscovars_scaled[past_cov]
+  ) + ts_preds1[-227:]
 ```
 
     Performing stepwise search to minimize aicc
 
-     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2805.963, Time=0.25 sec
-     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-2539.978, Time=0.16 sec
+     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.25 sec
+     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.12 sec
 
-     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2902.368, Time=0.20 sec
-     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-2541.995, Time=0.14 sec
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.16 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.13 sec
 
-     ARIMA(1,0,1)(0,0,0)[0] intercept   : AICC=-2900.354, Time=0.28 sec
+     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.33 sec
 
-     ARIMA(0,0,2)(0,0,0)[0] intercept   : AICC=-2900.356, Time=0.33 sec
+     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.44 sec
 
-     ARIMA(1,0,2)(0,0,0)[0] intercept   : AICC=-2923.947, Time=0.76 sec
+     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.50 sec
 
-     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2930.285, Time=0.80 sec
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.63 sec
 
-     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2908.076, Time=0.55 sec
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.65 sec
 
-     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2925.162, Time=0.88 sec
+     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.76 sec
 
-     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2921.878, Time=0.89 sec
+     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.75 sec
 
-     ARIMA(1,0,3)(0,0,0)[0] intercept   : AICC=-2925.349, Time=0.86 sec
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.67 sec
 
-     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2914.881, Time=0.79 sec
+     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.84 sec
 
-     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2920.268, Time=1.00 sec
+     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.85 sec
 
-     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2932.683, Time=0.76 sec
+     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.61 sec
 
-     ARIMA(1,0,2)(0,0,0)[0]             : AICC=-2926.428, Time=0.60 sec
+     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.99 sec
 
-     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2910.099, Time=0.51 sec
+     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.69 sec
 
-     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2927.185, Time=0.81 sec
+     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.60 sec
 
-     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2924.489, Time=0.83 sec
+     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.65 sec
 
-     ARIMA(1,0,1)(0,0,0)[0]             : AICC=-2902.374, Time=0.24 sec
+     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.84 sec
 
-     ARIMA(1,0,3)(0,0,0)[0]             : AICC=-2930.810, Time=0.78 sec
+     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.89 sec
 
-     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2917.879, Time=0.76 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.62 sec
 
-     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2922.432, Time=0.91 sec
+     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.51 sec
 
-    Best model:  ARIMA(2,0,2)(0,0,0)[0]          
-    Total fit time: 14.086 seconds
+     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.68 sec
+
+     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.85 sec
+
+    Best model:  ARIMA(3,0,2)(0,0,0)[0]          
+    Total fit time: 15.029 seconds
 
 ``` python
 # Score models' performance
@@ -2152,29 +2266,34 @@ perf_scores(y_val2, pred_forest, model="Random forest")
 ```
 
     Model: Naive drift
-    RMSE: 137822.5506
-    RMSLE: 0.2019
-    MAPE: 15.5944
+    MAE: 110648.8939
+    RMSE: 135351.1619
+    RMSLE: 0.1986
+    MAPE: 15.2878
     --------
     Model: Naive seasonal
-    RMSE: 161264.8033
-    RMSLE: 0.2189
-    MAPE: 20.5417
+    MAE: 138273.0834
+    RMSE: 162484.9224
+    RMSLE: 0.2206
+    MAPE: 20.7798
     --------
     Model: ARIMA
-    RMSE: 70231.2188
-    RMSLE: 0.095
-    MAPE: 6.8247
+    MAE: 57659.4119
+    RMSE: 78381.3524
+    RMSLE: 0.1078
+    MAPE: 8.3075
     --------
     Model: Linear
-    RMSE: 76222.5702
-    RMSLE: 0.1029
-    MAPE: 7.0422
+    MAE: 55895.8078
+    RMSE: 78738.332
+    RMSLE: 0.1072
+    MAPE: 7.8976
     --------
     Model: Random forest
-    RMSE: 66313.3178
-    RMSLE: 0.0929
-    MAPE: 6.6345
+    MAE: 57907.6561
+    RMSE: 77667.3722
+    RMSLE: 0.111
+    MAPE: 8.7305
     --------
 
 Remember that these are hybrid predictions: Each prediction is the
@@ -2183,43 +2302,45 @@ the respective lags & covariates models.
 
 - As a refresher, model 1’s standalone performance scores on 2017 data:
 
-      RMSE: 75003.7023
-      RMSLE: 0.1061
-      MAPE: 8.1491
+      --------
+      Model: Linear regression
+      MAE: 64128.0321
+      RMSE: 81697.341
+      RMSLE: 0.1171
+      MAPE: 9.7622
+      --------
 
 - Combining model 1 with a baseline model doesn’t increase prediction
   errors all that much. This is because our data had strong time
   effects, so getting model 1 right did most of the job.
 
-- Combining model 1 with a second linear regression increases our RMSE,
-  while reducing our RMSLE and especially MAPE.
+- Combining model 1 with a second linear regression model yields the
+  best performance in terms of MAE, RMSLE and MAPE, followed by ARIMA
+  and random forest.
 
-  - This likely means applying model 2 reduces the tendency to
-    underpredict, at the cost of increasing overpredictions a bit, which
-    is preferable.
+  - The improvement over model 1 is not big. This implies the effects of
+    our covariates aren’t too important compared to the trend,
+    seasonality and calendar effects.
 
-- Combining model 1 with an ARIMA model reduces our errors considerably.
-  The performance is a bit better than linear regression, likely because
-  ARIMA has a more sophisticated usage of the past values of the target
-  series.
+- The order is reversed on RMSE scores, and RF yields the best
+  performance, though the scores are very close.
 
-- Combining model 1 with the random forest model decreases all error
-  metrics considerably, and it appears to be the winning choice.
-
-  - The ARIMA still yields a close performance, even though it can’t
-    capture non-linear relationships or interactions like random forest
-    does.
+- RMSE punishes larger errors more severely due to the squaring applied,
+  while RMSLE punishes underpredictions more severely due to the log
+  transformation. So the RF likely makes a little less error for larger
+  values, while also underpredicting compared to ARIMA and linear
+  regression.
 
 Let’s see the predictions plotted against the actual values.
 
-![](ReportPart1_files/figure-commonmark/cell-84-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-85-output-1.png)
 
 The performance of the 3 hybrids are similar overall, and it’s hard to
 see big differences from the plots.
 
 - The random forest did a better job of adjusting to some spikes and
-  troughs, likely because it is able to select features and find
-  interactions between predictors.
+  troughs especially at the start of 2017, possibly because it is able
+  to select features and find interactions between predictors.
 
 - Still, certain large spikes are partially unaccounted for, especially
   the sharp recovery after January 1st, and the spikes at the start of
@@ -2229,14 +2350,13 @@ see big differences from the plots.
 
 ### ARIMA model summary
 
-Before carrying on with our best hybrid model, which is linear + random
-forest, we can view the model summary of the ARIMA model for some
-insight.
+Before carrying on with our best hybrid model, which is linear + linear,
+we can view the model summary of the ARIMA model for some insight.
 
-The AutoARIMA process has chosen an ARIMA(2, 0, 2) model, which uses the
-last 2 lags and the last 2 forecast errors as predictors, along with our
-covariates. Covariates x1 through x4 refer to
-`sales_ema5, oil_ma28, onp_ma28 and trns_ma7` respectively.
+The AutoARIMA process has chosen an ARIMA(3, 0, 2) model, which uses the
+last 3 lags and the last 2 forecast errors as predictors, along with our
+covariates. Covariates x1 and x2 refer to our future covariates,
+`oil_ma28 and onp_ma28` respectively.
 
 ``` python
 print(model_arima.model.summary())
@@ -2245,29 +2365,28 @@ print(model_arima.model.summary())
                                    SARIMAX Results                                
     ==============================================================================
     Dep. Variable:                      y   No. Observations:                 1461
-    Model:               SARIMAX(2, 0, 2)   Log Likelihood                1475.404
-    Date:                Wed, 08 Feb 2023   AIC                          -2932.807
-    Time:                        16:58:06   BIC                          -2885.225
-    Sample:                             0   HQIC                         -2915.058
+    Model:               SARIMAX(3, 0, 2)   Log Likelihood                1359.814
+    Date:                Fri, 03 Mar 2023   AIC                          -2703.628
+    Time:                        17:23:38   BIC                          -2661.333
+    Sample:                             0   HQIC                         -2687.851
                                    - 1461                                         
     Covariance Type:                  opg                                         
     ==============================================================================
                      coef    std err          z      P>|z|      [0.025      0.975]
     ------------------------------------------------------------------------------
-    x1             0.1457      0.003     51.378      0.000       0.140       0.151
-    x2            -0.0006      0.002     -0.373      0.709      -0.004       0.003
-    x3             0.0040      0.001      2.808      0.005       0.001       0.007
-    x4             0.0140      0.001     12.208      0.000       0.012       0.016
-    ar.L1          0.9304      0.039     23.911      0.000       0.854       1.007
-    ar.L2         -0.1716      0.043     -4.007      0.000      -0.256      -0.088
-    ma.L1         -0.4195      0.040    -10.536      0.000      -0.498      -0.341
-    ma.L2         -0.4297      0.043     -9.899      0.000      -0.515      -0.345
-    sigma2         0.0078      0.000     48.948      0.000       0.007       0.008
+    x1            -0.0195      0.009     -2.068      0.039      -0.038      -0.001
+    x2             0.0103      0.002      5.203      0.000       0.006       0.014
+    ar.L1          0.7103      0.168      4.237      0.000       0.382       1.039
+    ar.L2          0.6730      0.268      2.516      0.012       0.149       1.197
+    ar.L3         -0.4157      0.118     -3.526      0.000      -0.647      -0.185
+    ma.L1         -0.0052      0.164     -0.032      0.975      -0.326       0.316
+    ma.L2         -0.6918      0.154     -4.503      0.000      -0.993      -0.391
+    sigma2         0.0091      0.000     50.172      0.000       0.009       0.009
     ===================================================================================
-    Ljung-Box (L1) (Q):                   0.01   Jarque-Bera (JB):              2359.85
-    Prob(Q):                              0.92   Prob(JB):                         0.00
-    Heteroskedasticity (H):               1.06   Skew:                             0.74
-    Prob(H) (two-sided):                  0.52   Kurtosis:                         9.05
+    Ljung-Box (L1) (Q):                   0.71   Jarque-Bera (JB):              2542.43
+    Prob(Q):                              0.40   Prob(JB):                         0.00
+    Heteroskedasticity (H):               0.98   Skew:                             0.79
+    Prob(H) (two-sided):                  0.83   Kurtosis:                         9.27
     ===================================================================================
 
     Warnings:
@@ -2276,26 +2395,27 @@ print(model_arima.model.summary())
 The AIC score is not meaningful on its own without being compared to AIC
 scores of other models, though smaller values (including negative)
 indicate a better trade-off between variance explained and model
-complexity.
+complexity. This was the ARIMA model with the lowest AIC score among
+those tried.
 
-- The first lag has a positive coefficient (`ar.L1`), so a higher value
-  for lag 1 means a higher prediction for sales at T=0.
+- The first two lags have positive coefficients (`ar.L1 and ar.L2`), so
+  a higher value for lags 1 & 2 means a higher prediction for sales at
+  T=0.
 
-- Lag 2 and the forecast errors 1 & 2 (`ma.L1, ma.L2`) have a negative
-  effect on the prediction. If lag 2 or the forecast errors increase,
+- Lag 3 and the forecast errors 1 & 2 (`ma.L1, ma.L2`) have a negative
+  effect on the prediction. If lag 3 or the forecast errors increase,
   the prediction for T=0 is pulled back.
 
-- The oil moving average (coefficient `x2`) does not have a significant
-  effect. The sales EMA has a considerable positive effect, while the
-  onpromotion and transactions MAs have small but significant positive
-  effects.
+  - The first forecast error’s effect is not significant, with p =
+    0.975, and the 95% confidence interval for the coefficient value
+    ranging from roughly -0.3 to 0.3.
 
-- The p-value for the Ljung-Box test is 0.92, so the null hypothesis of
+- The p-value for the Ljung-Box test is 0.4, so the null hypothesis of
   residual independence is accepted. The residuals of our model are not
   correlated, so applying a third autoregressive model on them is not
   likely to improve predictions.
 
-- The p-value for the heteroskedasticity test is 0.52, so the residuals
+- The p-value for the heteroskedasticity test is 0.83, so the residuals
   meet the equal variance assumption. The model makes similar errors
   across the entire predicted time series, which means its performance
   is consistent.
@@ -2303,7 +2423,7 @@ complexity.
 - The null hypothesis for the Jarque-Bera test is zero skew & zero
   excess kurtosis in the distribution of the tested data. With a p-value
   of 0, the null hypothesis is rejected, and we can see the residuals
-  have a skew of 0.74 and kurtosis of 9.05, compared to 0 and 3
+  have a skew of 0.79 and kurtosis of 9.27, compared to 0 and 3
   respectively for a normal distribution.
 
   - A high kurtosis distribution can be thought of as a narrower and
@@ -2328,64 +2448,79 @@ forecasts of the hybrid model.
 - 2017 does not suffer from this issue, as 2017 time decomposed sales
   were predicted out-of-sample.
 
-- As before, we’ll start by feeding the full year of 2013 as our initial
-  training data, and expand our training window by 1 day in each
-  iteration.
+- As we did before, we’ll start with the first 365 days, and expand our
+  training window by 1 day in each iteration.
 
 ``` python
 # Retrieve historical forecasts & residuals for linear + random forest
 
-# Fit scaler on 2013
+# Fit scaler on 2013, transform 2013+
 scaler.fit(ts_lagscovars[:365])
+ts_lagscovars_hist = scaler.transform(ts_lagscovars)
+
 
 # Predict historical forecasts for 2014-2017
-pred_hist2 = model_forest.historical_forecasts(
-  trafo_log(ts_decomp), 
-  future_covariates = scaler.transform(ts_lagscovars), start = 365, stride = 1,
-  verbose = True) + ts_preds1[365:]
+pred_hist2 = model_linear2.historical_forecasts(
+  ts_decomp, 
+  future_covariates = ts_lagscovars_hist[fut_cov],
+  past_covariates = ts_lagscovars_hist[past_cov],
+  start = 365, 
+  stride = 1,
+  forecast_horizon = 1,
+  verbose = False) + ts_preds1[365:]
 
 # Retrieve residuals for 2014-2017
 res_hist2 = trafo_log(ts_sales[365:]) - pred_hist2
 
 # Score historical forecasts for linear + random_forest
-perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + random forest")
+perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + linear")
 ```
 
-      0%|          | 0/1323 [00:00<?, ?it/s]
-
-    Model: Linear + random forest
-    RMSE: 61002.573
-    RMSLE: 0.0944
-    MAPE: 6.5231
+    Model: Linear + linear
+    MAE: 48026.0543
+    RMSE: 78790.2799
+    RMSLE: 5.9406
+    MAPE: 8.4835
     --------
+
+![](ReportPart1_files/figure-commonmark/cell-88-output-1.png)
 
 With model 1, the overall historical forecasts performed considerably
 worse than the 2017 predictions. With the hybrid, the historical
-forecasts perform very close to the 2017 predictions. Again, this is
-partly misleading due to the way we performed time decomposition, but
-the improvements from accounting for cyclical effects in 2014-2015 are
-likely a factor too.
+forecasts perform fairly close to the 2017 predictions, even a bit
+better on MAE.
 
-![](ReportPart1_files/figure-commonmark/cell-87-output-1.png)
+- Again, this is partly misleading due to the way we performed time
+  decomposition, but the improvements from accounting for cyclical
+  effects in 2014-2015 are likely a factor too.
 
-As we see from the historical forecasts plot, the cyclical fluctuations
-in 2014 and H1 2015, which were mostly unaccounted for in model 1, are
-matched nicely with the hybrid model. The spikes and troughs in the rest
-of the data are also matched better.
+- As we see from the historical forecasts plot, the cyclical
+  fluctuations in 2014 and H1 2015, which were mostly unaccounted for in
+  model 1, are matched nicely with the hybrid model. The spikes and
+  troughs in the rest of the data are also matched better.
+
+- The RMSLE score is absurdly high due to a few values erratically
+  predicted as zero in mid-2014 (I do not know why, possibly due to the
+  very sharp drop in sales that precedes these predictions). These
+  errors are heavily penalized due to the nature of the RMSLE metric.
 
 ### Residuals diagnosis & stationarity
 
 We can diagnose the residuals of the hybrid model and test their
-stationarity.
+stationarity. The erratic predictions in mid-2014 will yield massive
+residuals, so we’ll clip them to 1 to get interpretable plots.
 
 ``` python
+# Clip high end of residuals
+res_hist2_plot = res_hist2.map(lambda x: np.clip(x, a_min = None, a_max = 1))
+
 # Residuals diagnosis
-_ = plot_residuals_analysis(res_hist2)
+_ = plot_residuals_analysis(res_hist2_plot)
 plt.show()
 plt.close("all")
 
 # PACF plot
-_ = plot_pacf(res_hist2, max_lag=56)
+_ = plot_pacf(res_hist2_plot, max_lag=56)
 _ = plt.title("Partial autocorrelation plot, hybrid model innovation residuals")
 _ = plt.xlabel("Lags")
 _ = plt.ylabel("PACF")
@@ -2397,14 +2532,15 @@ plt.show()
 plt.close("all")
 ```
 
-![](ReportPart1_files/figure-commonmark/cell-88-output-1.png)
+![](ReportPart1_files/figure-commonmark/cell-89-output-1.png)
 
-![](ReportPart1_files/figure-commonmark/cell-88-output-2.png)
+![](ReportPart1_files/figure-commonmark/cell-89-output-2.png)
 
-Overall, the residuals seem much closer to stationary.
+Overall, the residuals seem much closer to stationary, with t.
 
-- There are a few particularly large residuals, especially in 2014-2015,
-  and at year starts.
+- There are a few particularly large residuals (besides the erratic
+  predictions clipped to 1), especially in 2014-2015, and at year
+  starts.
 
 - The distribution of residuals is more centered around 0, with smaller
   extreme values. This time, the extreme values are well-balanced
@@ -2412,8 +2548,11 @@ Overall, the residuals seem much closer to stationary.
   more than it underpredicts (as the ARIMA summary suggested), which is
   preferable to the opposite.
 
-- The ACF and PACF plots display almost no significant autocorrelation,
-  except for a weak autocorrelation with lag 1 and 7.
+- The PACF plot still displays significant autocorrelations, mainly for
+  lags 1-3. It’s possible the linear regression couldn’t account for the
+  exact effect of lagged values, which may be non-linear in nature. Or,
+  the ACF and PACF calculations are strongly impacted by the few erratic
+  predictions in mid-2014.
 
 ``` python
 # Stationarity tests on hybrid model residuals
@@ -2428,14 +2567,14 @@ print(
 ) # Null rejected = data is stationary around a constant
 ```
 
-    KPSS test p-value: 0.017435346001820496
-    ADF test p-value: 1.9338571199099526e-21
+    KPSS test p-value: 0.07112705469666736
+    ADF test p-value: 2.2979600604438747e-08
 
-The stationarity tests are still in conflict:
+The stationarity tests are no longer in conflict:
 
-- The p-value for the KPSS test is smaller than 0.05 , leading us to
-  reject the null hypothesis of stationarity around a constant, though
-  we are closer to stationarity compared to model 1’s test results.
+- The p-value for the KPSS test is larger than 0.05 , leading us to
+  accept the null hypothesis of stationarity around a constant, though
+  we are still close to non-stationarity.
 
 - The p-value for the ADF test is practically 0, rejecting the null
   hypothesis of the presence of an unit root. This implies the data is
@@ -2446,11 +2585,12 @@ The stationarity tests are still in conflict:
 In part 1 of this analysis, we were able to predict national daily
 sales, aggregated across all categories and stores, pretty well.
 
-- In the end, a hybrid model combining linear regression for the time
-  effects, and random forest regression for the remainder, gave us the
-  best results.
+- In the end, a hybrid model combining a linear regression for the time
+  effects, and a second linear regression with covariates and lagged
+  values for the remainder, gave us the best results. Using an ARIMA or
+  random forest for the second model yielded very similar performance.
 
-- However, the second model’s relative improvement was not huge, as the
+- However, the second model’s relative improvement was not big, as the
   first model already performed very well.
 
 - This means the time & seasonality effects in our data were much
@@ -2466,6 +2606,9 @@ sales, aggregated across all categories and stores, pretty well.
   initial unexpected fluctuation in advance, but that fluctuation will
   enter the model as a predictor in the next period, and allow the model
   to adjust predictions for the following periods.
+
+  - However, this may also lead to erratic crashes in predictions, as we
+    saw in the historical forecasts of model 2.
 
 In part 2, we will attempt to make a competition submission, predicting
 the daily sales for every store & category combination. That makes 33
@@ -2483,8 +2626,9 @@ prediction for.
   our work while still yielding good predictions. Some of the 33 product
   categories likely have very different seasonality patterns. We’ll
   likely rely on more “automatic” models that are able to derive time
-  effects & seasonality, such as AutoARIMA and more sophisticated neural
-  networks available in Darts.
+  effects & seasonality, such as AutoARIMA, or neural networks that can
+  be trained “globally” on multiple time series to try and model them in
+  one go.
 
 - We’ll also explore the topic of **hierarchical reconciliation**:
   Making sure our predictions are coherent within the levels of the time

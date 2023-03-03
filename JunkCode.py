@@ -1,5 +1,274 @@
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
+print(np.isnan(series1.values()).sum())
+
+lr_scheduler_cls = torch.optim.lr_scheduler.CyclicLR,
+  lr_scheduler_kwargs = {
+    "base_lr": 0.001,
+    "max_lr": 0.01,
+    "step_size_up": 100,
+    "mode": "exp_range",
+    "gamma": 0.8,
+    "cycle_momentum": False
+  }
+
+
+
+
+{python StoreDLinearSpec}
+# from darts.models.forecasting.dlinear import DLinearModel as DLinear
+# 
+# # Specify DLinear model
+# model_dlinear_store = DLinear(
+#   input_chunk_length = 90,
+#   output_chunk_length = 15,
+#   kernel_size = 27,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   model_name = "DLinearStore2",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   random_state = 1923,
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     },
+#   show_warnings = True,
+#   force_reset = True
+# )
+
+
+
+{python StoreDLinearFit}
+#| output: false
+#| warning: false
+#| include: false
+
+# # D-linear covariates (trend + season + calendar)
+# dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', 'month_sin', 'month_cos', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# 
+# # Fit d-linear model
+# model_dlinear_store.fit(
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store],
+#   val_series = y_val_store,
+#   val_future_covariates = [x[dlinear_covars] for x in x_store],
+#   verbose = True
+# )
+
+
+
+
+{python StoreDLinearValid}
+
+# # Predict validation data with D-Linear
+# pred_dlinear_store_list = model_dlinear_store.predict(
+#   n = 227,
+#   series = y_train_store,
+#   future_covariates = [x[dlinear_covars] for x in x_store]
+#   )
+# 
+# # Stack predictions to get multivariate series
+# pred_dlinear_store = pred_dlinear_store_list[0].stack(pred_dlinear_store_list[1])
+# for pred in pred_dlinear_store_list[2:]:
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+#   del pred
+
+
+
+
+
+
+{python}
+
+# # First fit & validate the first store to initialize series
+# pred_dlinear_store = model_dlinear_store.predict(
+#   n=227,
+#   series = y_train_store[0],
+#   future_covariates = x_store[0][dlinear_covars]
+#   )
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(1, len(y_train_store))):
+# 
+#   # Predict validation data
+#   pred = model_dlinear_store.predict(
+#   n=227,
+#   series = y_train_store[i],
+#   future_covariates = x_store[i][dlinear_covars]
+#   )
+# 
+#   # Stack predictions to multivariate series
+#   pred_dlinear_store = pred_dlinear_store.stack(pred)
+# 
+#   del pred
+
+
+
+
+{python StoreRFLinear}
+
+# Model spec
+model_rf_store_global = model_rf_store
+
+# Time covariates
+rf_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7']
+
+# First fit on all stores & predict the first store to initialize series
+model_rf_store_global.fit(
+  y_train_store,
+  future_covariates = [x[rf_covars] for x in x_store]
+  )
+
+pred_rf_store_global = model_rf_store_global.predict(
+  n=227,
+  series = y_train_store[0],
+  future_covariates = x_store[0][rf_covars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_val_store))):
+
+  # Predict validation data
+  pred = model_rf_store_global.predict(
+  n=227,
+  series = y_train_store[i],
+  future_covariates = x_store[i][rf_covars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_rf_store_global = pred_rf_store_global.stack(pred)
+
+  # Cleanup
+  del pred
+
+
+
+
+
+
+
+
+
+
+# Random forest (global) 
+scores_hierarchy(
+  ts_sales[stores][-227:],
+  trafo_zero(pred_linear_store + pred_rf_store_global),
+  stores,
+  "Linear + global RF"
+  )
+
+
+
+# Create grouped Darts TS
+store_covars = TimeSeries.from_group_dataframe(
+  df.drop(["id", "category", "category_store_nbr"], axis=1),
+  group_cols = "store_nbr",
+  static_cols = ["city", "state", "store_type", "store_cluster"],
+  fill_missing_dates = True,
+  freq = "D"
+)
+
+
+
+from sklearn.preprocessing import OrdinalEncoder
+
+# Create encoder for static covariates
+trafo_static = StaticCovariatesTransformer()
+
+from darts.dataprocessing.transformers.static_covariates_transformer import StaticCovariatesTransformer
+
+
+
+{python CategoryArimaSpec}
+from darts.models.forecasting.auto_arima import AutoARIMA
+
+# AutoARIMA
+model_arima_cat = AutoARIMA(
+  start_p = 0,
+  max_p = 7,
+  start_q = 0,
+  max_q = 7,
+  seasonal = False, # Don't include seasonal orders
+  information_criterion = 'aicc', # Minimize AICc to choose best model
+  trace = False # Don't print tuning iterations
+  )
+
+
+{python CategoryArimaFitVal}
+
+
+# {python CatLinearResids}
+# 
+# # Retrieve 2014 > residuals from linear decomposition model
+# 
+# # Initialize list of linear model residuals
+# res_linear_cat = []
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(0, len(y_train_cat))):
+# 
+#   # Retrieve residuals
+#   res = model_linear_cat.residuals(
+#   y_train_cat[i],
+#   future_covariates = x_cat[i][linear_covars]
+#   )
+#   
+#   # Drop residuals before 2014
+#   res = res.split_after(pd.Timestamp("2013-12-31"))[1]
+#   
+#   # Append residuals to list
+#   res_linear_cat.append(res)
+#   
+#   #Cleanup
+#   del res
+
+
+
+
+# AutoARIMA
+arima_covars = ['local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'transactions', 'trns_ma7', 'day_sin', 'day_cos', "month_sin", "month_cos"]
+
+# First fit & validate the first category to initialize series
+model_arima_cat.fit(
+  y_train_cat[0],
+  future_covariates = x_cat[0][arima_covars])
+
+pred_arima_cat = model_arima_cat.predict(
+  n=227,
+  future_covariates = x_cat[0][arima_covars])
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_cat))):
+
+  # Fit on training data
+  model_arima_cat.fit(
+  y_train_cat[i],
+  future_covariates = x_cat[i][arima_covars])
+
+  # Predict validation data
+  pred = model_arima_cat.predict(
+  n=227,
+  future_covariates = x_cat[i][arima_covars])
+
+  # Stack predictions to multivariate series
+  pred_arima_cat = pred_arima_cat.stack(pred)
+  
+  # Cleanup
+  del pred
+
+
+# AutoARIMA
+scores_hierarchy(
+  ts_sales["AUTOMOTIVE":"SEAFOOD"][-227:],
+  trafo_zero(pred_arima_cat),
+  categories,
+  "AutoARIMA"
+  )
+
+
 
 static_covariates = pd.DataFrame(
         data = {"category": category},
