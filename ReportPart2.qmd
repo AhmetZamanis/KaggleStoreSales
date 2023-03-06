@@ -489,7 +489,7 @@ print(common_covars.columns)
 
 from darts.utils.timeseries_generation import datetime_attribute_timeseries
 
-# Initialize list of category covariates
+# Initialize list of store covariates
 store_covars = []
 
 for store in [int(store) for store in stores]:
@@ -581,7 +581,7 @@ store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
 from darts.metrics import rmse, rmsle, mape, mae, mse
 
 # Define model scoring function
-def perf_scores(val, pred, model="drift"):
+def perf_scores(val, pred, model="drift", rounding=2):
   
   scores_dict = {
     "MAE": mae(trafo_exp(val), trafo_exp(pred)),
@@ -596,7 +596,7 @@ def perf_scores(val, pred, model="drift"):
   for key in scores_dict:
     print(
       key + ": " + 
-      str(round(scores_dict[key], 4))
+      str(round(scores_dict[key], rounding))
        )
   print("--------")
   
@@ -606,7 +606,7 @@ def perf_scores(val, pred, model="drift"):
 
 
 # Define model scoring function for full hierarchy
-def scores_hierarchy(val, pred, subset, model):
+def scores_hierarchy(val, pred, subset, model, rounding=2):
   
   def measure_mae(val, pred, subset):
     return mae([val[c] for c in subset], [pred[c] for c in subset])
@@ -632,12 +632,12 @@ def scores_hierarchy(val, pred, subset, model):
   for key in scores_dict:
     print(
       key + ": mean = " + 
-      str(round(np.nanmean(scores_dict[key]), 2)) + 
+      str(round(np.nanmean(scores_dict[key]), rounding)) + 
       ", sd = " + 
-      str(round(np.nanstd(scores_dict[key]), 2)) + 
-      ", min = " + str(round(min(scores_dict[key]), 2)) + 
+      str(round(np.nanstd(scores_dict[key]), rounding)) + 
+      ", min = " + str(round(min(scores_dict[key]), rounding)) + 
       ", max = " + 
-      str(round(max(scores_dict[key]), 2))
+      str(round(max(scores_dict[key]), rounding))
        )
        
   print("--------")
@@ -647,7 +647,7 @@ def scores_hierarchy(val, pred, subset, model):
 ```{python ScorePlotFunc}
 
 # Define model score plotting function for full hierarchy
-def scores_plot(val, preds_dict, subset):
+def scores_plot(val, preds_dict, subset, logscale = True):
   
   # Scoring functions
   def measure_mae(val, pred, subset):
@@ -693,7 +693,7 @@ def scores_plot(val, preds_dict, subset):
     x = "MAE",
     hue = "Model",
     element = "poly",
-    log_scale = True,
+    log_scale = logscale,
     ax = ax[0,0],
     legend = False
   )
@@ -703,7 +703,7 @@ def scores_plot(val, preds_dict, subset):
     x = "MSE",
     hue = "Model",
     element = "poly",
-    log_scale = True,
+    log_scale = logscale,
     ax = ax[0,1]
   )
   
@@ -712,7 +712,7 @@ def scores_plot(val, preds_dict, subset):
     x = "RMSE",
     hue = "Model",
     element = "poly",
-    log_scale = True,
+    log_scale = logscale,
     ax = ax[1,0], 
     legend = False
   )
@@ -722,7 +722,7 @@ def scores_plot(val, preds_dict, subset):
     x = "RMSLE",
     hue = "Model",
     element = "poly",
-    log_scale = True,
+    log_scale = logscale,
     ax = ax[1,1],
     legend = False
   )
@@ -793,10 +793,12 @@ model_ets = ETS(
 model_drift.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_drift_total = model_drift.predict(n = 15)
 
-
 # Naive seasonal
 model_seasonal.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_seasonal_total = model_seasonal.predict(n = 15)
+
+# Naive stacked
+pred_naive_total = (trafo_exp(pred_drift_total) + trafo_exp(pred_seasonal_total)) - ts_sales["TOTAL"].last_value()
 
 
 # ETS
@@ -804,6 +806,7 @@ pred_seasonal_total = model_seasonal.predict(n = 15)
 # First fit & validate the first store to initialize series
 model_ets.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_ets_total = model_ets.predict(n=15)
+
 
 print("Total sales prediction scores, baseline models")
 print("--------")
@@ -819,6 +822,12 @@ perf_scores(
   pred_seasonal_total,
   "Naive seasonal"
   )
+
+perf_scores(
+  trafo_log(ts_sales["TOTAL"][-15:]),
+  trafo_log(pred_naive_total),
+  "Naive stacked"
+)  
   
 perf_scores(
   trafo_log(ts_sales["TOTAL"][-15:]), 
@@ -1140,7 +1149,7 @@ scores_hierarchy(
   stores, 
   "Naive seasonal"
   )
-  
+
 scores_hierarchy(
   ts_sales[stores][-15:], 
   trafo_zeroclip(pred_ets_store),
@@ -1282,6 +1291,60 @@ for i in tqdm(range(1, len(y_train_store))):
 del pred, i
 ```
 
+#### Linear regression on remainder
+
+```{python StoreLinear2FitVal}
+
+# Specify linear regression model
+model_linear2 = LinearRegressionModel(
+  lags = [-1],
+  lags_future_covariates = [0], # Don't create any covariate lags
+  lags_past_covariates = [-1],
+  output_chunk_length = 15 # Predict 15 steps in one go
+)
+
+
+# Covariates (cylical + calendar, future & past)
+linear2_futcovars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+linear2_pastcovars = ["sales_ema7", 'transactions', 'trns_ma7']
+
+
+# First fit & validate the first store to initialize series
+model_linear2.fit(
+  remainder_store[0],
+  future_covariates = x_store[0][linear2_futcovars],
+  past_covariates = x_store[0][linear2_pastcovars]
+  )
+
+pred_linear2_store = model_linear2.predict(
+  n=15,
+  future_covariates = x_store[0][linear2_futcovars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Fit on training data
+  model_linear2.fit(
+  remainder_store[i],
+  future_covariates = x_store[i][linear2_futcovars],
+  past_covariates = x_store[i][linear2_pastcovars]
+  )
+
+  # Predict validation data
+  pred = model_linear2.predict(
+  n=15,
+  future_covariates = x_store[i][linear2_futcovars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_linear2_store = pred_linear2_store.stack(pred)
+  
+del pred, i
+
+```
+
 #### AutoARIMA on remainder
 
 ```{python ARIMAModelSpec}
@@ -1335,10 +1398,22 @@ del pred, i
 ```
 
 ```{python ARIMAStoreSave}
+#| include: false
 
-# Save ARIMA store preds
-pred_arima_store.to_csv(
-  "./ModifiedData/pred_arima_store1.csv"
+# # Save ARIMA store preds
+# pred_arima_store.to_csv(
+#   "./ModifiedData/pred_arima_store1.csv"
+# )
+
+```
+
+```{python ARIMAStoreLoad}
+
+# Load ARIMA store preds
+pred_arima_store = TimeSeries.from_csv(
+  "./ModifiedData/pred_arima_store1.csv",
+  time_col = "date",
+  freq = "D"
 )
 
 ```
@@ -1357,7 +1432,7 @@ model_rf = RandomForest(
   n_estimators = 500,
   oob_score = True,
   random_state = 1923,
-  n_jobs = -2
+  n_jobs = 20
 )
 
 # RF covariates (cylical + calendar, future & past)
@@ -1679,7 +1754,7 @@ for i in tqdm(range(1, len(y_train_store))):
     n=15,
     series = y_train_store[i],
     future_covariates = x_store[i][dlinear2_futcovars],
-  past_covariates = x_store[0][dlinear2_pastcovars]
+    past_covariates = x_store[i][dlinear2_pastcovars]
   )
 
   # Stack predictions to multivariate series
@@ -1726,6 +1801,14 @@ scores_hierarchy(
   stores,
   "Linear (time features only)"
   )
+  
+# Linear + linear
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_linear_store + pred_linear2_store),
+  stores,
+  "Linear + linear"
+  )
 
 # Linear + AutoARIMA
 scores_hierarchy(
@@ -1757,6 +1840,14 @@ scores_hierarchy(
   trafo_zeroclip(pred_dlinear_store),
   stores,
   "D-Linear (global, time features only)"
+  )
+
+# D-Linear (global) + linear
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_dlinear_store + pred_linear2_store),
+  stores,
+  "D-Linear + linear"
   )
 
 # D-Linear (global) + AutoARIMA 
@@ -1795,21 +1886,22 @@ scores_hierarchy(
 
 ```{python StoreScorePlot}
 
-# store_preds_dict = {
-#   # "Naive drift": trafo_zero(pred_drift_store),
-#   # "Naive seasonal": trafo_zero(pred_seasonal_store),
-#   "Exponential smoothing": trafo_zero(pred_ets_store),
-#   "D-Linear + Random forest": trafo_zero(pred_dlinear_store + pred_rf_store),
-#   "D-Linear (all features)": trafo_zero(pred_dlinear2_store)
-#   
-# }
-# 
-# 
-# scores_plot(
-#   ts_sales[stores][-15:],
-#   store_preds_dict,
-#   stores
-# )
+store_preds_dict = {
+  # "Naive drift": trafo_zero(pred_drift_store),
+  # "Naive seasonal": trafo_zero(pred_seasonal_store),
+  "Exponential smoothing": trafo_zeroclip(pred_ets_store),
+  "D-Linear + RNN": trafo_zeroclip(pred_dlinear2_store + pred_rnn_store),
+  "D-Linear (all features)": trafo_zeroclip(pred_dlinear2_store)
+
+}
+
+
+scores_plot(
+  ts_sales[stores][-15:],
+  store_preds_dict,
+  stores,
+  logscale = False
+)
 
 ```
 
