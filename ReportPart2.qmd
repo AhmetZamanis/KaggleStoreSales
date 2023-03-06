@@ -231,7 +231,9 @@ df = pd.concat([df_train, df_test])
 
 ```{python PrintRawData}
 #| echo: false
+#| 
 print(df.head(2))
+
 ```
 
 ```{python DeleteRawData}
@@ -367,6 +369,7 @@ def trafo_log(x):
 
 def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
+
 ```
 
 ### Total sales covariates
@@ -457,6 +460,7 @@ total_covars2 = total_covars2.drop([
 # Replace last 16 dates' sales and transactions MAs with NAs
 # total_covars2.loc[total_covars2.index > "2017-08-15", "sales_ema5"] = np.nan
 total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
+
 ```
 
 ### Store sales covariates
@@ -1032,7 +1036,7 @@ x_store = []
 for series in store_covars:
   
   # Split train-val series
-  cov_train, cov_innerval, cov_outerval = series[:-45], series[-45:-16], series[-16:]
+  cov_train, cov_innerval, cov_outerval = series[:-76], series[-76:-31], series[-31:]
   
   # Scale train-val series
   cov_train = scaler_minmax.fit_transform(cov_train)
@@ -1145,9 +1149,7 @@ scores_hierarchy(
   )
 ```
 
-### Hybrid models
-
-#### STL decomposition
+### STL decomposition
 
 ```{python StoreSTLDecomp}
 
@@ -1225,7 +1227,10 @@ plt.close("all")
 remainder_store[8].plot(label = "STL remainder")
 plt.show()
 plt.close("all")
+
 ```
+
+### Hybrid models
 
 #### Linear regression on trend + seasonality
 
@@ -1281,52 +1286,61 @@ del pred, i
 
 ```{python ARIMAModelSpec}
 
-# AutoARIMA
-model_arima = AutoARIMA(
-  start_p = 0,
-  max_p = 7,
-  start_q = 0,
-  max_q = 7,
-  seasonal = False, # Don't include seasonal orders
-  information_criterion = 'aicc', # Minimize AICc to choose best model
-  trace = False # Don't print tuning iterations
-  )
-
-# AutoARIMA covars (cyclical + calendar, future only)
-arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# # AutoARIMA
+# model_arima = AutoARIMA(
+#   start_p = 0,
+#   max_p = 7,
+#   start_q = 0,
+#   max_q = 7,
+#   seasonal = False, # Don't include seasonal orders
+#   information_criterion = 'aicc', # Minimize AICc to choose best model
+#   trace = False # Don't print tuning iterations
+#   )
+# 
+# # AutoARIMA covars (cyclical + calendar, future only)
+# arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 ```
 
 ```{python StoreARIMAFitVal}
 
-# First fit & validate the first category to initialize series
-model_arima.fit(
-  remainder_store[0],
-  future_covariates = x_store[0][arima_covars])
+# # First fit & validate the first category to initialize series
+# model_arima.fit(
+#   remainder_store[0],
+#   future_covariates = x_store[0][arima_covars])
+# 
+# pred_arima_store = model_arima.predict(
+#   n=15,
+#   future_covariates = x_store[0][arima_covars])
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(1, len(y_train_store))):
+# 
+#   # Fit on training data
+#   model_arima.fit(
+#     remainder_store[i],
+#     future_covariates = x_store[i][arima_covars]
+#     )
+# 
+#   # Predict validation data
+#   pred = model_arima.predict(
+#     n=15,
+#     future_covariates = x_store[i][arima_covars]
+#     )
+# 
+#   # Stack predictions to multivariate series
+#   pred_arima_store = pred_arima_store.stack(pred)
+# 
+# del pred, i
+```
 
-pred_arima_store = model_arima.predict(
-  n=15,
-  future_covariates = x_store[0][arima_covars])
+```{python ARIMAStoreSave}
 
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_store))):
+# Save ARIMA store preds
+pred_arima_store.to_csv(
+  "./ModifiedData/pred_arima_store1.csv"
+)
 
-  # Fit on training data
-  model_arima.fit(
-    remainder_store[i],
-    future_covariates = x_store[i][arima_covars]
-    )
-
-  # Predict validation data
-  pred = model_arima.predict(
-    n=15,
-    future_covariates = x_store[i][arima_covars]
-    )
-
-  # Stack predictions to multivariate series
-  pred_arima_store = pred_arima_store.stack(pred)
-
-del pred, i
 ```
 
 Mention: AutoARIMA caught a completely constant input series, returned an ARMA (0 0 0) model.
@@ -1538,9 +1552,9 @@ rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 're
 
 # Fit RNN model
 model_rnn.fit(
-  series = [y[:-31] for y in remainder_store],
+  series = [y[:-45] for y in remainder_store],
   future_covariates = [x[rnn_covars] for x in x_store],
-  val_series = [y[-31:] for y in remainder_store],
+  val_series = [y[-45:] for y in remainder_store],
   val_future_covariates = [x[rnn_covars] for x in x_store],
   verbose = True
 )
@@ -1587,9 +1601,9 @@ for i in tqdm(range(1, len(remainder_store))):
 del pred, i
 ```
 
-### Global models without decomposition
+### Global models on original series
 
-#### D-Linear on full series
+#### D-Linear
 
 ```{python StoreDLinearFull}
 
@@ -1710,7 +1724,7 @@ scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_linear_store),
   stores,
-  "Linear"
+  "Linear (time features only)"
   )
 
 # Linear + AutoARIMA
