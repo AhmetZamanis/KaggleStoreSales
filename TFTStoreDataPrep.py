@@ -5,6 +5,7 @@
 import pandas as pd 
 import numpy as np
 from darts.dataprocessing.transformers import Scaler
+from darts.metrics import rmse, rmsle, mape, mae, mse
 
 
 
@@ -507,3 +508,8 @@ def scores_hierarchy(val, pred, subset, model, rounding=2):
        )
        
   print("--------")
+
+
+# Define function to replace negative predictions with zeroes
+def trafo_zeroclip(x):
+  return x.map(lambda x: np.clip(x, a_min = 0, a_max = None))

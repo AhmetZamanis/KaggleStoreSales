@@ -1,5 +1,6 @@
 # TFT modeling, store sales
 import torch
+from tqdm import tqdm
 from darts.models.forecasting.tft_model import TFTModel
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 # from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
