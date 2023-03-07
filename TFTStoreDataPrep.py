@@ -6,6 +6,10 @@ import pandas as pd
 import numpy as np
 from darts.dataprocessing.transformers import Scaler
 
+
+
+
+
 # Load original datasets
 df_train = pd.read_csv("./OriginalData/train.csv", encoding="utf-8")
 df_test = pd.read_csv("./OriginalData/test.csv", encoding="utf-8")
@@ -189,6 +193,9 @@ df_train["transactions"] = df_train["transactions"].fillna(0)
 # Recombine train and test
 df = pd.concat([df_train, df_test])
 
+
+
+
 # Create wide dataframes with dates as rows, sales numbers for each hierarchy node as columns
 
 # Total
@@ -222,6 +229,10 @@ del total, store_nbr, wide_frames, category_store_nbr
 print(df_sales.iloc[0:5, [0, 1, 2, 84, 148]])
 print("Rows x columns: " + str(df_sales.shape))
 
+
+
+
+
 from darts import TimeSeries
 from itertools import product
 
@@ -251,10 +262,14 @@ print(ts_sales)
 del category, store
 
 
+
+
 # Fill gaps
 from darts.dataprocessing.transformers import MissingValuesFiller
 na_filler = MissingValuesFiller()
 ts_sales = na_filler.transform(ts_sales)
+
+
 
 
 # Aggregate time features by mean
@@ -289,12 +304,13 @@ ts_totalcovars1 = na_filler.transform(ts_totalcovars1)
 total_covars1 = ts_totalcovars1.pd_dataframe()
 
 
+
+
 # Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all categories).
 common_covars = total_covars1[total_covars1.columns[0:21].values.tolist()]
 
 # Add differenced oil price and its MA to common covariates. 
 common_covars["oil"] = df.groupby("date").oil.mean()
-
 
 # Difference daily covariate series
 from sktime.transformations.series.difference import Differencer
@@ -308,6 +324,7 @@ common_covars["oil_ma28"] = common_covars["oil_ma28"].interpolate(
   
 # Print common covariates
 print(common_covars.columns)
+
 
 
 
@@ -384,12 +401,14 @@ del covars
 
 
 
+
 # Create dataframe where column=static covariate and index=store nbr
 store_static = df[["store_nbr", "city", "state", "store_type", "store_cluster"]].reset_index().drop("date", axis=1).drop_duplicates().set_index("store_nbr")
 store_static["store_cluster"] = store_static["store_cluster"].astype(str)
 
 # Encode static covariates
 store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
+
 
 
 
@@ -422,6 +441,7 @@ del cov_train, cov_innerval, cov_outerval
 
 
 
+
 # List of store sales
 store_sales = [ts_sales[store] for store in stores]
 
@@ -447,3 +467,43 @@ for series in store_sales:
   
 # Cleanup
 del y_train, y_val
+
+
+
+
+# Define model scoring function for full hierarchy
+def scores_hierarchy(val, pred, subset, model, rounding=2):
+  
+  def measure_mae(val, pred, subset):
+    return mae([val[c] for c in subset], [pred[c] for c in subset])
+  
+  def measure_mse(val, pred, subset):
+    return mse([val[c] for c in subset], [pred[c] for c in subset])
+  
+  def measure_rmse(val, pred, subset):
+    return rmse([val[c] for c in subset], [pred[c] for c in subset])
+
+  def measure_rmsle(val, pred, subset):
+    return rmsle([(val[c]) for c in subset], [pred[c] for c in subset])
+
+  scores_dict = {
+    "MAE": measure_mae(val, pred, subset),
+    "MSE": measure_mse(val, pred, subset),
+    "RMSE": measure_rmse(val, pred, subset), 
+    "RMSLE": measure_rmsle(val, pred, subset)
+      }
+      
+  print("Model = " + model)    
+  
+  for key in scores_dict:
+    print(
+      key + ": mean = " + 
+      str(round(np.nanmean(scores_dict[key]), rounding)) + 
+      ", sd = " + 
+      str(round(np.nanstd(scores_dict[key]), rounding)) + 
+      ", min = " + str(round(min(scores_dict[key]), rounding)) + 
+      ", max = " + 
+      str(round(max(scores_dict[key]), rounding))
+       )
+       
+  print("--------")

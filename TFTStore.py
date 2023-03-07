@@ -5,6 +5,10 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 # from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
 torch.set_float32_matmul_precision("high")
 
+
+
+
+
 # Create early stopper
 early_stopper = EarlyStopping(
   monitor = "val_loss",
@@ -17,6 +21,10 @@ early_stopper = EarlyStopping(
 
 # # Rich model summary
 # model_summary = RichModelSummary(max_depth = -1)
+
+
+
+
 
 
 # Specify TFT model 2.0 (TFT specific params all default)
@@ -32,7 +40,7 @@ model_tft = TFTModel(
   n_epochs = 500,
   likelihood = None,
   loss_fn = torch.nn.MSELoss(),
-  model_name = "TFTStore2.0",
+  model_name = "TFTStoreX",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
@@ -46,6 +54,10 @@ model_tft = TFTModel(
     }
 )
 
+
+
+
+
 # All covariates, future & past
 tft_futcovars = [
   "trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 
@@ -55,6 +67,10 @@ tft_futcovars = [
   'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 tft_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
+
+
+
+
 
 # Fit TFT model
 model_tft.fit(
@@ -67,8 +83,13 @@ model_tft.fit(
   verbose = True
 )
 
+
+
+
 # Load best checkpoint
 model_tft = TFTModel.load_from_checkpoint("TFTStore2.0", best = True)
+
+
 
 
 # First fit & validate the first store to initialize series
@@ -94,3 +115,16 @@ for i in tqdm(range(1, len(y_train_store))):
   pred_tft_store = pred_tft_store.stack(pred)
   
 del pred, i
+
+
+
+# Score TFT
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_tft_store),
+  stores,
+  "TFT (global, all features)"
+  )
+
+
+

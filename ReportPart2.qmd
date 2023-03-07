@@ -227,6 +227,7 @@ df_train["transactions"] = df_train["transactions"].fillna(0)
   
 # Recombine train and test
 df = pd.concat([df_train, df_test])
+
 ```
 
 ```{python PrintRawData}
@@ -468,6 +469,8 @@ total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 ```{python CommonCovars}
 
 # Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all categories).
+
+### DROP LOCAL & REGIONAL HOLIDAY HERE ###
 common_covars = total_covars1[total_covars1.columns[0:21].values.tolist()]
 
 # Add differenced oil price and its MA to common covariates. 
@@ -497,6 +500,13 @@ for store in [int(store) for store in stores]:
   # Retrieve common covariates
   covars = common_covars.copy()
   
+  # Retrieve local & regional holiday
+  covars["local_holiday"] = df[
+    df["store_nbr"] == store].groupby("date").local_holiday.mean()
+    
+  covars["regional_holiday"] = df[
+    df["store_nbr"] == store].groupby("date").regional_holiday.mean()  
+  
   # Retrieve differenced sales EMA
   covars["sales_ema7"] = diff.fit_transform(
     df[df["store_nbr"] == store].groupby("date").sales.sum()
@@ -511,6 +521,7 @@ for store in [int(store) for store in stores]:
     ).interpolate(
       "time", limit_direction = "both"
       )
+      
   covars["onp_ma28"] = covars["onpromotion"].rolling(
     window = 28, center = False
     ).mean().interpolate(
@@ -523,6 +534,7 @@ for store in [int(store) for store in stores]:
       "time", limit_direction = "both"
       )
     )
+    
   covars["trns_ma7"] = covars["transactions"].rolling(
     window = 7, center = False
     ).mean().interpolate(
@@ -571,7 +583,94 @@ store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
 
 ```
 
-### Category X store sales covariates
+### Disaggregated sales covariates
+
+```{python DisaggCovars}
+
+# Initialize list of disagg covariates
+disagg_covars = []
+
+for series in categories_stores:
+  
+  # Retrieve common covariates
+  covars = common_covars.copy()
+  
+  # Retrieve local & regional holiday
+  covars["local_holiday"] = df[
+    df["category_store_nbr"] == series].local_holiday
+    
+  covars["regional_holiday"] = df[
+    df["category_store_nbr"] == series].regional_holiday
+  
+  # Retrieve differenced sales EMA
+  covars["sales_ema7"] = diff.fit_transform(
+    df[df["category_store_nbr"] == series].sales).interpolate(
+  "linear", limit_direction = "backward"
+  ).rolling(
+    window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
+    
+  # Retrieve differenced onpromotion, its MA
+  covars["onpromotion"] = diff.fit_transform(
+    df[df["category_store_nbr"] == series].onpromotion).interpolate(
+      "time", limit_direction = "both")
+      
+  covars["onp_ma28"] = covars["onpromotion"].rolling(
+    window = 28, center = False
+    ).mean().interpolate(
+  method = "spline", order = 2, limit_direction = "both") 
+  
+  # Retrieve differenced transactions, its MA
+  covars["transactions"] = diff.fit_transform(
+    df[df["category_store_nbr"] == series].transactions).interpolate(
+      "time", limit_direction = "both")
+    
+  covars["trns_ma7"] = covars["transactions"].rolling(
+    window = 7, center = False
+    ).mean().interpolate(
+  "linear", limit_direction = "backward")
+  
+  # Create darts TS, fill gaps
+  covars = na_filler.transform(
+    TimeSeries.from_dataframe(covars, freq = "D")
+    )
+  
+  # Cyclical encode day of month using datetime_attribute_timeseries
+  covars = covars.stack(
+    datetime_attribute_timeseries(
+      time_index = covars,
+      attribute = "day",
+      cyclic = True
+      )
+    )
+    
+   # Cyclical encode month using datetime_attribute_timeseries
+  covars = covars.stack(
+    datetime_attribute_timeseries(
+      time_index = covars,
+      attribute = "month",
+      cyclic = True
+      )
+    )
+    
+  # Append TS to list
+  disagg_covars.append(covars)
+  
+# Cleanup
+del covars
+
+```
+
+```{python DisaggStaticCovars}
+
+# Create dataframe where column=static covariate and index=series label
+disagg_static = df[["category", "store_nbr", "city", "state", "store_type", "store_cluster", "category_store_nbr"]].reset_index().drop("date", axis=1).drop_duplicates().set_index("category_store_nbr")
+
+disagg_static["store_cluster"] = disagg_static["store_cluster"].astype(str)
+
+# Encode static covariates
+disagg_static = pd.get_dummies(disagg_static, sparse = True, drop_first = True)
+
+```
 
 ## Helper functions for modeling
 
@@ -1156,6 +1255,7 @@ scores_hierarchy(
   stores, 
   "Exponential smoothing"
   )
+  
 ```
 
 ### STL decomposition
@@ -1906,6 +2006,134 @@ scores_plot(
 ```
 
 ## Modeling: Disaggregated sales
+
+### Preprocessing
+
+```{python DisaggCovars}
+
+# Create min-max scaler
+scaler_minmax = Scaler()
+
+# Train-validation split and scaling for covariates
+x_disagg = []
+for series in disagg_covars:
+  
+  # Split train-val series
+  cov_train, cov_innerval, cov_outerval = series[:-76], series[-76:-31], series[-31:]
+  
+  # Scale train-val series
+  cov_train = scaler_minmax.fit_transform(cov_train)
+  cov_innerval = scaler_minmax.transform(cov_innerval)
+  cov_outerval = scaler_minmax.transform(cov_outerval)
+  
+  # Rejoin series
+  cov_train = (cov_train.append(cov_innerval)).append(cov_outerval)
+  
+  # Cast series to 32-bits for performance gains
+  cov_train = cov_train.astype(np.float32)
+  
+  # Append series to list
+  x_disagg.append(cov_train)
+  
+# Cleanup
+del cov_train, cov_innerval, cov_outerval
+
+```
+
+```{python DisaggTargets}
+
+# List of disagg sales
+disagg_sales = [ts_sales[series] for series in categories_stores]
+
+# Train-validation split for disagg sales
+y_train_disagg, y_val_disagg = [], []
+
+for series in disagg_sales:
+  
+  # Add static covariates to series
+  series = series.with_static_covariates(
+    disagg_static[disagg_static.index == series.components[0]]
+  )
+  
+  # Split train-val series
+  y_train, y_val = series[:-15], series[-15:]
+  
+  # Cast series to 32-bits for performance gains
+  y_train = y_train.astype(np.float32)
+  y_val = y_val.astype(np.float32)
+  
+  # Append series
+  y_train_disagg.append(y_train)
+  y_val_disagg.append(y_val)
+  
+# Cleanup
+del y_train, y_val
+
+```
+
+### Baseline models
+
+```{python DisaggBaselineFitVal}
+
+# Fit & validate baseline models
+
+
+# Naive drift
+model_drift.fit(ts_sales[categories_stores][:-15])
+pred_drift_disagg = model_drift.predict(n = 15)
+
+
+# Naive seasonal
+model_seasonal.fit(ts_sales[categories_stores][:-15])
+pred_seasonal_disagg = model_seasonal.predict(n = 15)
+
+
+# ETS
+
+# First fit & validate the first series to initialize series
+model_ets.fit(y_train_disagg[0])
+pred_ets_disagg = model_ets.predict(n = 15)
+
+# Then loop over all stores except first
+for i in tqdm(range(1, len(y_train_disagg))):
+
+  # Fit on training data
+  model_ets.fit(y_train_disagg[i])
+
+  # Predict validation data
+  pred = model_ets.predict(n = 15)
+
+  # Stack predictions to multivariate series
+  pred_ets_disagg = pred_ets_disagg.stack(pred)
+  
+del pred, i
+
+
+print("Disaggregated sales prediction scores, baseline models")
+print("--------")
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:],
+  trafo_zeroclip(pred_drift_disagg),
+  categories_stores, 
+  "Naive drift"
+  )
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_seasonal_disagg),
+  categories_stores, 
+  "Naive seasonal"
+  )
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_ets_disagg),
+  categories_stores, 
+  "Exponential smoothing"
+  )
+  
+```
 
 ## Hierarchical reconciliation
 
