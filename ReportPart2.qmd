@@ -371,6 +371,10 @@ def trafo_log(x):
 def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
 
+# Create differencer
+from sktime.transformations.series.difference import Differencer
+diff = Differencer(lags = 1)
+
 ```
 
 ### Total sales covariates
@@ -425,8 +429,6 @@ total_covars2["transactions"] = df.groupby(["date", "store_nbr"]).transactions.m
 
 
 # Difference daily covariate series
-from sktime.transformations.series.difference import Differencer
-diff = Differencer(lags = 1)
 total_covars2 = diff.fit_transform(total_covars2)
   
   
@@ -469,9 +471,7 @@ total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 ```{python CommonCovars}
 
 # Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all categories).
-
-### DROP LOCAL & REGIONAL HOLIDAY HERE ###
-common_covars = total_covars1[total_covars1.columns[0:21].values.tolist()]
+common_covars = total_covars1[total_covars1.columns[2:21].values.tolist()]
 
 # Add differenced oil price and its MA to common covariates. 
 common_covars["oil"] = df.groupby("date").oil.mean()
@@ -491,6 +491,9 @@ print(common_covars.columns)
 ```{python StoreCovars}
 
 from darts.utils.timeseries_generation import datetime_attribute_timeseries
+
+# Create differencer
+diff = Differencer(lags = 1)
 
 # Initialize list of store covariates
 store_covars = []
@@ -680,7 +683,7 @@ disagg_static = pd.get_dummies(disagg_static, sparse = True, drop_first = True)
 from darts.metrics import rmse, rmsle, mape, mae, mse
 
 # Define model scoring function
-def perf_scores(val, pred, model="drift", rounding=2):
+def perf_scores(val, pred, model="drift", rounding = 4):
   
   scores_dict = {
     "MAE": mae(trafo_exp(val), trafo_exp(pred)),
@@ -705,7 +708,7 @@ def perf_scores(val, pred, model="drift", rounding=2):
 
 
 # Define model scoring function for full hierarchy
-def scores_hierarchy(val, pred, subset, model, rounding=2):
+def scores_hierarchy(val, pred, subset, model, rounding = 4):
   
   def measure_mae(val, pred, subset):
     return mae([val[c] for c in subset], [pred[c] for c in subset])
@@ -841,7 +844,7 @@ def trafo_zeroclip(x):
 
 ```{python ImportDartsFuncs}
 
-# Import scalers
+# Import transformers
 from sklearn.preprocessing import StandardScaler
 from darts.dataprocessing.transformers import Scaler
 
@@ -1449,61 +1452,62 @@ del pred, i
 
 ```{python ARIMAModelSpec}
 
-# # AutoARIMA
-# model_arima = AutoARIMA(
-#   start_p = 0,
-#   max_p = 7,
-#   start_q = 0,
-#   max_q = 7,
-#   seasonal = False, # Don't include seasonal orders
-#   information_criterion = 'aicc', # Minimize AICc to choose best model
-#   trace = False # Don't print tuning iterations
-#   )
-# 
-# # AutoARIMA covars (cyclical + calendar, future only)
-# arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# AutoARIMA
+model_arima = AutoARIMA(
+  start_p = 0,
+  max_p = 7,
+  start_q = 0,
+  max_q = 7,
+  seasonal = False, # Don't include seasonal orders
+  information_criterion = 'aicc', # Minimize AICc to choose best model
+  trace = False # Don't print tuning iterations
+  )
+
+# AutoARIMA covars (cyclical + calendar, future only)
+arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 ```
 
 ```{python StoreARIMAFitVal}
 
-# # First fit & validate the first category to initialize series
-# model_arima.fit(
-#   remainder_store[0],
-#   future_covariates = x_store[0][arima_covars])
-# 
-# pred_arima_store = model_arima.predict(
-#   n=15,
-#   future_covariates = x_store[0][arima_covars])
-# 
-# # Then loop over all categories except first
-# for i in tqdm(range(1, len(y_train_store))):
-# 
-#   # Fit on training data
-#   model_arima.fit(
-#     remainder_store[i],
-#     future_covariates = x_store[i][arima_covars]
-#     )
-# 
-#   # Predict validation data
-#   pred = model_arima.predict(
-#     n=15,
-#     future_covariates = x_store[i][arima_covars]
-#     )
-# 
-#   # Stack predictions to multivariate series
-#   pred_arima_store = pred_arima_store.stack(pred)
-# 
-# del pred, i
+# First fit & validate the first category to initialize series
+model_arima.fit(
+  remainder_store[0],
+  future_covariates = x_store[0][arima_covars])
+
+pred_arima_store = model_arima.predict(
+  n=15,
+  future_covariates = x_store[0][arima_covars])
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Fit on training data
+  model_arima.fit(
+    remainder_store[i],
+    future_covariates = x_store[i][arima_covars]
+    )
+
+  # Predict validation data
+  pred = model_arima.predict(
+    n=15,
+    future_covariates = x_store[i][arima_covars]
+    )
+
+  # Stack predictions to multivariate series
+  pred_arima_store = pred_arima_store.stack(pred)
+
+del pred, i
+
 ```
 
 ```{python ARIMAStoreSave}
 #| include: false
 
-# # Save ARIMA store preds
-# pred_arima_store.to_csv(
-#   "./ModifiedData/pred_arima_store1.csv"
-# )
+# Save ARIMA store preds
+pred_arima_store.to_csv(
+  "./ModifiedData/pred_arima_store1.csv"
+)
 
 ```
 
@@ -1656,7 +1660,7 @@ model_dlinear.fit(
 ```{python StoreDLinearLoad}
 
 # Load a previously trained DLinear model's best checkpoint
-model_dlinear = DLinear.load_from_checkpoint("DLinearStore1.2", best = True)
+model_dlinear = DLinear.load_from_checkpoint("DLinearStore1.3", best = True)
 
 ```
 
@@ -1700,7 +1704,7 @@ model_rnn = RNN(
   n_rnn_layers = 2,
   hidden_dim = 32,
   dropout = 0.1,
-  model_name = "RNNStoreX",
+  model_name = "RNNStore1.3",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
@@ -1739,7 +1743,7 @@ model_rnn.fit(
 ```{python StoreRNNLoad}
 
 # Load a previously trained RNN model's best checkpoint
-model_rnn = RNN.load_from_checkpoint("RNNStore1.2", best = True)
+model_rnn = RNN.load_from_checkpoint("RNNStore1.3", best = True)
 
 ```
 
@@ -1789,7 +1793,7 @@ model_dlinear = DLinear(
   kernel_size = 25,
   batch_size = 64,
   n_epochs = 500,
-  model_name = "DLinearStoreX",
+  model_name = "DLinearStore2.2",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
@@ -1832,7 +1836,7 @@ model_dlinear.fit(
 ```{python StoreDLinearFullLoad}
 
 # Load a previously trained DLinear model's best checkpoint
-model_dlinear = DLinear.load_from_checkpoint("DLinearStore2.1", best = True)
+model_dlinear = DLinear.load_from_checkpoint("DLinearStore2.2", best = True)
 
 ```
 
