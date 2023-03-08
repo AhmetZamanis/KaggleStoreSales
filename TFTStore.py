@@ -58,6 +58,36 @@ model_tft = TFTModel(
 
 
 
+# Specify TFT model 2.1 (TFT specific params all default, local-regional fix,
+# higher initial LR)
+model_tft = TFTModel(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  hidden_size = 16,
+  lstm_layers = 1,
+  num_attention_heads = 4,
+  dropout = 0.1,
+  hidden_continuous_size = 8,
+  batch_size = 32,
+  n_epochs = 500,
+  likelihood = None,
+  loss_fn = torch.nn.MSELoss(),
+  model_name = "TFTStore2.1",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.005},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
+
+
+
 
 # All covariates, future & past
 tft_futcovars = [
@@ -88,7 +118,7 @@ model_tft.fit(
 
 
 # Load best checkpoint
-model_tft = TFTModel.load_from_checkpoint("TFTStore2.0", best = True)
+model_tft = TFTModel.load_from_checkpoint("TFTStore2.1", best = True)
 
 
 
