@@ -1,7 +1,5 @@
 
 
-
-
 # Initialize list of store covariates
 store_covars = []
 

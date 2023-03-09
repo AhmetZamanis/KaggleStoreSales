@@ -1,11 +1,27 @@
 # Import libraries
 import pandas as pd 
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import torch
 import tensorboard
 from tqdm import tqdm
+
+# Import transformers
+from sklearn.preprocessing import StandardScaler
+from darts.dataprocessing.transformers import Scaler
+from darts.dataprocessing.transformers import MissingValuesFiller
+from sktime.transformations.series.difference import Differencer
+
+# Import forecasting models
+from darts.models.forecasting.dlinear import DLinearModel as DLinear
+from darts.models.forecasting.rnn_model import RNNModel as RNN
+from darts.models.forecasting.tft_model import TFTModel
+
+# Import utils
+from darts import TimeSeries
+from darts.utils.timeseries_generation import datetime_attribute_timeseries
+from itertools import product
+from functools import reduce
+
 
 # Set printing options
 np.set_printoptions(suppress=True, precision=4)
@@ -230,16 +246,11 @@ category_store_nbr = category_store_nbr.reset_index(level=1)
 category_store_nbr = category_store_nbr.pivot(columns="category_store_nbr", values="sales")
 
 # Merge all wide dataframes
-from functools import reduce
 wide_frames = [total, store_nbr, category_store_nbr]
 df_sales = reduce(lambda left, right: pd.merge(
   left, right, how="left", on="date"), wide_frames)
 df_sales = df_sales.rename(columns = {"sales":"TOTAL"})
 del total, store_nbr, wide_frames, category_store_nbr
-
-
-from darts import TimeSeries
-from itertools import product
 
 # Create multivariate time series with sales components
 ts_sales = TimeSeries.from_dataframe(df_sales, freq="D")
@@ -268,13 +279,12 @@ del category, store
 
 
 # Fill gaps
-from darts.dataprocessing.transformers import MissingValuesFiller
 na_filler = MissingValuesFiller()
 ts_sales = na_filler.transform(ts_sales)
 
 
 # Create differencer
-from sktime.transformations.series.difference import Differencer
+
 diff = Differencer(lags = 1)
 
 
@@ -310,9 +320,6 @@ ts_totalcovars1 = na_filler.transform(ts_totalcovars1)
 total_covars1 = ts_totalcovars1.pd_dataframe()
 
 
-from darts.utils.timeseries_generation import datetime_attribute_timeseries
-
-
 # Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all categories).
 common_covars = total_covars1[total_covars1.columns[2:21].values.tolist()]
 
@@ -332,23 +339,3 @@ diff = Differencer(lags = 1)
 
 
 
-# Import transformers
-from sklearn.preprocessing import StandardScaler
-from darts.dataprocessing.transformers import Scaler
-
-# Import baseline models
-from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
-from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
-
-# Import forecasting models
-from darts.models.forecasting.linear_regression_model import LinearRegressionModel
-from darts.models.forecasting.auto_arima import AutoARIMA
-from darts.models.forecasting.random_forest import RandomForest
-from darts.models.forecasting.xgboost import XGBModel
-from darts.models.forecasting.dlinear import DLinearModel as DLinear
-from darts.models.forecasting.rnn_model import RNNModel as RNN
-
-# Import time decomposition functions
-from darts.utils.statistics import extract_trend_and_seasonality as decomposition
-from darts.utils.statistics import remove_from_series
-from darts.utils.utils import ModelMode, SeasonalityMode

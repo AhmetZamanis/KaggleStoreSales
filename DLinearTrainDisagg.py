@@ -17,7 +17,6 @@ progress_bar = RichProgressBar()
 model_summary = RichModelSummary(max_depth = -1)
 
 
-
 # Specify D-Linear model
 model_dlinear = DLinear(
   input_chunk_length = 30,
@@ -42,7 +41,6 @@ model_dlinear = DLinear(
 
 # All covariates, future & past
 dlinear2_futcovars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
 dlinear2_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
 
 

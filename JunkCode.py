@@ -1,3 +1,7 @@
+exec(open("test2.py").read())
+
+
+
 Sys.setenv(QUARTO_PYTHON="./venv/Scripts/python.exe")
 
 print(np.isnan(series1.values()).sum())
