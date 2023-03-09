@@ -571,7 +571,7 @@ for store in [int(store) for store in stores]:
   store_covars.append(covars)
   
 # Cleanup
-del covars
+del covars, store
 
 ```
 
@@ -582,7 +582,7 @@ store_static = df[["store_nbr", "city", "state", "store_type", "store_cluster"]]
 store_static["store_cluster"] = store_static["store_cluster"].astype(str)
 
 # Encode static covariates
-store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
+store_static = pd.get_dummies(store_static, sparse = False, drop_first = True)
 
 ```
 
@@ -593,7 +593,7 @@ store_static = pd.get_dummies(store_static, sparse = True, drop_first = True)
 # Initialize list of disagg covariates
 disagg_covars = []
 
-for series in categories_stores:
+for series in tqdm(categories_stores):
   
   # Retrieve common covariates
   covars = common_covars.copy()
@@ -659,7 +659,7 @@ for series in categories_stores:
   disagg_covars.append(covars)
   
 # Cleanup
-del covars
+del covars, series
 
 ```
 
@@ -671,7 +671,7 @@ disagg_static = df[["category", "store_nbr", "city", "state", "store_type", "sto
 disagg_static["store_cluster"] = disagg_static["store_cluster"].astype(str)
 
 # Encode static covariates
-disagg_static = pd.get_dummies(disagg_static, sparse = True, drop_first = True)
+disagg_static = pd.get_dummies(disagg_static, sparse = False, drop_first = True)
 
 ```
 
@@ -892,11 +892,11 @@ model_ets = ETS(
 
 
 # Naive drift
-model_drift.fit(trafo_log(ts_sales["TOTAL"][:-15]))
+_ = model_drift.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_drift_total = model_drift.predict(n = 15)
 
 # Naive seasonal
-model_seasonal.fit(trafo_log(ts_sales["TOTAL"][:-15]))
+_ = model_seasonal.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_seasonal_total = model_seasonal.predict(n = 15)
 
 # Naive stacked
@@ -904,9 +904,7 @@ pred_naive_total = (trafo_exp(pred_drift_total) + trafo_exp(pred_seasonal_total)
 
 
 # ETS
-
-# First fit & validate the first store to initialize series
-model_ets.fit(trafo_log(ts_sales["TOTAL"][:-15]))
+_ = model_ets.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_ets_total = model_ets.predict(n=15)
 
 
@@ -958,7 +956,7 @@ x_train_decomp, x_val_decomp = total_covars1.iloc[:-31,], total_covars1.iloc[-31
 # Fit & predict on train, retrieve residuals
 from sklearn.linear_model import LinearRegression
 model_decomp = LinearRegression()
-model_decomp.fit(x_train_decomp, y_train_decomp)
+_ = model_decomp.fit(x_train_decomp, y_train_decomp)
 pred_total1 = model_decomp.predict(x_train_decomp)
 res_total1 = y_train_decomp - pred_total1
 
@@ -1008,7 +1006,7 @@ model_linear = LinearRegressionModel(
   )
 
 # Fit model & predict validation set
-model_linear.fit(
+_ = model_linear.fit(
   y_train_total, 
   future_covariates = x_train_total[['oil_ma28', 'onp_ma28']],
   past_covariates = x_train_total[['sales_ema5', 'trns_ma7']]
@@ -1195,6 +1193,7 @@ for series in store_sales:
   
 # Cleanup
 del y_train, y_val
+
 ```
 
 ### Baseline models
@@ -1205,26 +1204,26 @@ del y_train, y_val
 
 
 # Naive drift
-model_drift.fit(ts_sales[stores][:-15])
+_ = model_drift.fit(ts_sales[stores][:-15])
 pred_drift_store = model_drift.predict(n = 15)
 
 
 # Naive seasonal
-model_seasonal.fit(ts_sales[stores][:-15])
+_ = model_seasonal.fit(ts_sales[stores][:-15])
 pred_seasonal_store = model_seasonal.predict(n = 15)
 
 
 # ETS
 
 # First fit & validate the first store to initialize series
-model_ets.fit(y_train_store[0])
+_ = model_ets.fit(y_train_store[0])
 pred_ets_store = model_ets.predict(n = 15)
 
 # Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  model_ets.fit(y_train_store[i])
+  _ = model_ets.fit(y_train_store[i])
 
   # Predict validation data
   pred = model_ets.predict(n = 15)
@@ -1363,7 +1362,7 @@ linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturda
 #| output: false
 
 # First fit & validate the first store to initialize series
-model_linear.fit(
+_ = model_linear.fit(
   (trend_store[0] + season_store[0]),
   future_covariates = x_store[0][linear_covars]
   )
@@ -1377,7 +1376,7 @@ pred_linear_store = model_linear.predict(
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  model_linear.fit(
+  _ = model_linear.fit(
   (trend_store[i] + season_store[i]),
   future_covariates = x_store[i][linear_covars]
   )
@@ -1414,7 +1413,7 @@ linear2_pastcovars = ["sales_ema7", 'transactions', 'trns_ma7']
 
 
 # First fit & validate the first store to initialize series
-model_linear2.fit(
+_ = model_linear2.fit(
   remainder_store[0],
   future_covariates = x_store[0][linear2_futcovars],
   past_covariates = x_store[0][linear2_pastcovars]
@@ -1429,10 +1428,10 @@ pred_linear2_store = model_linear2.predict(
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  model_linear2.fit(
-  remainder_store[i],
-  future_covariates = x_store[i][linear2_futcovars],
-  past_covariates = x_store[i][linear2_pastcovars]
+  _ = model_linear2.fit(
+        remainder_store[i],
+        future_covariates = x_store[i][linear2_futcovars],
+        past_covariates = x_store[i][linear2_pastcovars]
   )
 
   # Predict validation data
@@ -1471,7 +1470,7 @@ arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', '
 ```{python StoreARIMAFitVal}
 
 # First fit & validate the first category to initialize series
-model_arima.fit(
+_ = model_arima.fit(
   remainder_store[0],
   future_covariates = x_store[0][arima_covars])
 
@@ -1483,9 +1482,9 @@ pred_arima_store = model_arima.predict(
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  model_arima.fit(
-    remainder_store[i],
-    future_covariates = x_store[i][arima_covars]
+  _ = model_arima.fit(
+        remainder_store[i],
+        future_covariates = x_store[i][arima_covars]
     )
 
   # Predict validation data
@@ -1549,7 +1548,7 @@ rf_pastcovars = ["sales_ema7", 'transactions', 'trns_ma7']
 ```{python StoreRFFitVal}
 
 # First fit & validate the first category to initialize series
-model_rf.fit(
+_ = model_rf.fit(
   remainder_store[0],
   future_covariates = x_store[0][rf_futcovars],
   past_covariates = x_store[0][rf_pastcovars],
@@ -1564,10 +1563,10 @@ pred_rf_store = model_rf.predict(
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  model_rf.fit(
-    remainder_store[i],
-    future_covariates = x_store[i][rf_futcovars],
-    past_covariates = x_store[i][rf_pastcovars]
+  _ = model_rf.fit(
+        remainder_store[i],
+        future_covariates = x_store[i][rf_futcovars],
+        past_covariates = x_store[i][rf_pastcovars]
   )
 
   # Predict validation data
@@ -1867,6 +1866,88 @@ for i in tqdm(range(1, len(y_train_store))):
 del pred, i
 ```
 
+#### Temporal Fusion Transformer
+
+```{python StoreTFT}
+
+# Specify TFT model
+model_tft = TFTModel(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  hidden_size = 16,
+  lstm_layers = 1,
+  num_attention_heads = 4,
+  dropout = 0.1,
+  hidden_continuous_size = 8,
+  batch_size = 32,
+  n_epochs = 500,
+  likelihood = None,
+  loss_fn = torch.nn.MSELoss(),
+  model_name = "TFTStoreX",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
+
+```
+
+```{python StoreTFTCovars}
+
+# All covariates, future & past
+tft_futcovars = [
+  "trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 
+  'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 
+  'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 
+  'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 
+  'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+tft_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
+
+```
+
+```{python StoreTFTLoad}
+
+# Load best checkpoint
+model_tft = TFTModel.load_from_checkpoint("TFTStore2.0", best = True)
+
+```
+
+```{python StoreTFTVal}
+
+# First fit & validate the first store to initialize series
+pred_tft_store = model_tft.predict(
+  n=15,
+  series = y_train_store[0],
+  future_covariates = x_store[0][tft_futcovars],
+  past_covariates = x_store[0][tft_pastcovars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_store))):
+
+  # Predict validation data
+  pred = model_tft.predict(
+    n=15,
+    series = y_train_store[i],
+    future_covariates = x_store[i][tft_futcovars],
+    past_covariates = x_store[i][tft_pastcovars]
+  )
+
+  # Stack predictions to multivariate series
+  pred_tft_store = pred_tft_store.stack(pred)
+  
+del pred, i
+
+```
+
 ### Model scores
 
 ```{python StoreScore}
@@ -1986,6 +2067,15 @@ scores_hierarchy(
   stores,
   "D-Linear (global, all features)"
   )
+  
+# TFT (global, all features)
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_tft_store),
+  stores,
+  "TFT (global, all features)"
+  )  
+  
 ```
 
 ```{python StoreScorePlot}
@@ -2020,7 +2110,8 @@ scaler_minmax = Scaler()
 
 # Train-validation split and scaling for covariates
 x_disagg = []
-for series in disagg_covars:
+
+for series in tqdm(disagg_covars):
   
   # Split train-val series
   cov_train, cov_innerval, cov_outerval = series[:-76], series[-76:-31], series[-31:]
@@ -2052,7 +2143,7 @@ disagg_sales = [ts_sales[series] for series in categories_stores]
 # Train-validation split for disagg sales
 y_train_disagg, y_val_disagg = [], []
 
-for series in disagg_sales:
+for series in tqdm(disagg_sales):
   
   # Add static covariates to series
   series = series.with_static_covariates(
@@ -2083,26 +2174,26 @@ del y_train, y_val
 
 
 # Naive drift
-model_drift.fit(ts_sales[categories_stores][:-15])
+_ = model_drift.fit(ts_sales[categories_stores][:-15])
 pred_drift_disagg = model_drift.predict(n = 15)
 
 
 # Naive seasonal
-model_seasonal.fit(ts_sales[categories_stores][:-15])
+_ = model_seasonal.fit(ts_sales[categories_stores][:-15])
 pred_seasonal_disagg = model_seasonal.predict(n = 15)
 
 
 # ETS
 
 # First fit & validate the first series to initialize series
-model_ets.fit(y_train_disagg[0])
+_ = model_ets.fit(y_train_disagg[0])
 pred_ets_disagg = model_ets.predict(n = 15)
 
 # Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_disagg))):
 
   # Fit on training data
-  model_ets.fit(y_train_disagg[i])
+  _ = model_ets.fit(y_train_disagg[i])
 
   # Predict validation data
   pred = model_ets.predict(n = 15)
@@ -2137,6 +2228,33 @@ scores_hierarchy(
   "Exponential smoothing"
   )
   
+```
+
+### D-Linear
+
+```{python DisaggDLinearSpec}
+
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "DLinearDisagg2.0",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
+
 ```
 
 ## Hierarchical reconciliation
