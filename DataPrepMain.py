@@ -28,10 +28,6 @@ np.set_printoptions(suppress=True, precision=4)
 pd.options.display.float_format = '{:.4f}'.format
 pd.set_option('display.max_columns', None)
 
-# Set plotting options
-plt.rcParams['figure.dpi'] = 300
-plt.rcParams['savefig.dpi'] = 300
-plt.rcParams["figure.autolayout"] = True
 
 # Set torch settings
 torch.set_float32_matmul_precision("high")

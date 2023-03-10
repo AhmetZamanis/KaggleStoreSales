@@ -2257,6 +2257,20 @@ model_dlinear = DLinear(
 
 ```
 
+\-\-\-\-\-\-\--
+
+Model = D-Linear (global, all features)
+
+MAE: mean = 95.4615, sd = 262.7068, min = 2.2765, max = 5283.5649
+
+MSE: mean = 144055.2264, sd = 1400417.7929, min = 23.08, max = 40024200.7085
+
+RMSE: mean = 124.0217, sd = 358.7114, min = 4.8042, max = 6326.4683
+
+RMSLE: mean = 0.9723, sd = 0.7964, min = 0.1258, max = 6.285
+
+\-\-\-\-\-\-\--
+
 ## Hierarchical reconciliation
 
 ```{python ReconcileTop}

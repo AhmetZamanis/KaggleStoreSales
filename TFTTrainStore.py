@@ -116,7 +116,7 @@ model_tft = TFTModel(
   n_epochs = 500,
   likelihood = None,
   loss_fn = torch.nn.MSELoss(),
-  model_name = "TFTStoreX",
+  model_name = "TFTStore2.3",
   log_tensorboard = True,
   save_checkpoints = True,
   show_warnings = True,
@@ -150,49 +150,11 @@ model_tft.fit(
   val_series = [y[-45:] for y in y_train_store],
   val_future_covariates = [x[tft_futcovars] for x in x_store],
   val_past_covariates = [x[tft_pastcovars] for x in x_store],
-  verbose = True
+  verbose = True,
+  num_loader_workers = 10
 )
 
 
-# # Load best checkpoint
-# model_tft = TFTModel.load_from_checkpoint("TFTStore2.0", best = True)
-# 
-# 
-# 
-# 
-# # First fit & validate the first store to initialize series
-# pred_tft_store = model_tft.predict(
-#   n=15,
-#   series = y_train_store[0],
-#   future_covariates = x_store[0][tft_futcovars],
-#   past_covariates = x_store[0][tft_pastcovars]
-#   )
-# 
-# # Then loop over all categories except first
-# for i in tqdm(range(1, len(y_train_store))):
-# 
-#   # Predict validation data
-#   pred = model_tft.predict(
-#     n=15,
-#     series = y_train_store[i],
-#     future_covariates = x_store[i][tft_futcovars],
-#     past_covariates = x_store[i][tft_pastcovars]
-#   )
-# 
-#   # Stack predictions to multivariate series
-#   pred_tft_store = pred_tft_store.stack(pred)
-#   
-# del pred, i
-# 
-# 
-# 
-# # Score TFT
-# scores_hierarchy(
-#   ts_sales[stores][-15:],
-#   trafo_zeroclip(pred_tft_store),
-#   stores,
-#   "TFT (global, all features)"
-#   )
 
 
 
