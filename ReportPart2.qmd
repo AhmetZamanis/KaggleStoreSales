@@ -2230,7 +2230,7 @@ scores_hierarchy(
   
 ```
 
-### D-Linear
+### D-Linear (global, on 1782 series)
 
 ```{python DisaggDLinearSpec}
 
@@ -2273,33 +2273,176 @@ RMSLE: mean = 0.9723, sd = 0.7964, min = 0.1258, max = 6.285
 
 ## Hierarchical reconciliation
 
+```{python GatherValPreds}
+
+# Stack total, store and disaggregated predictions to get all predictions as a multivariate TS
+pred_all = (
+  trafo_exp(pred_total).stack(pred_tft_store)
+  ).stack(pred_ets_disagg)
+
+# Embed hierarchy into predictions TS
+pred_all = pred_all.with_hierarchy(hierarchy_target)
+
+```
+
+```{python PlotHierarchy}
+
+# Plot hierarchical sums of predicted and actual values
+
+
+```
+
+### Bottom-up reconciliation
+
+```{python ReconcileBottom}
+
+from darts.dataprocessing.transformers.reconciliation import BottomUpReconciliator as BottomUp
+
+# Create bottom up reconciliator, transform predictions
+recon_bottom = BottomUp(n_jobs = 20)
+pred_bottomup = recon_bottom.transform(pred_all)
+
+```
+
+### Top-down reconciliation
+
 ```{python ReconcileTop}
+
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator as TopDown
-from darts import concatenate
 
-# Fit top down reconciliator on original series
-recon_top = TopDown(verbose = True)
-recon_top.fit(ts_sales)
+# Fit top down reconciliator on training series
+recon_top = TopDown(n_jobs = 20)
+_ = recon_top.fit(ts_sales[:-15])
+
+# Transform predictions
+pred_topdown = recon_top.transform(pred_all)
+
 ```
 
-```{python TESThier1}
-# Distribute total sales forecasts to bottom levels
-test = concatenate([trafo_exp(pred_total), ts_sales["AUTOMOTIVE":][-227:]], axis = 1).with_columns_renamed("sales", "TOTAL")
-test = recon_top.transform(test.with_hierarchy(hierarchy_target))
+### MinT reconciliation
+
+```{python ReconcileMinT}
+
+from darts.dataprocessing.transformers.reconciliation import MinTReconciliator as MinT
+
+# Fit MinT reconciliator on training series
+recon_mint = MinT(method = "wls_val")
+_ = recon_mint.fit(ts_sales[:-15])
+
+# Transform predictions
+pred_mint = recon_mint.transform(pred_all)
+
 ```
 
-```{python TESTscorehier1}
-# Score each level
-scores_hierarchy(ts_sales[-227:], test, categories)
-#
-scores_hierarchy(ts_sales[-227:], test, stores)
-#
+### Raw vs hierarchical reconciled scores
 
-categories_stores = []
-for category, store in product(categories, stores):
-  categories_stores.append("{}-{}".format(category, store))
+```{python RawVsReconciledScores}
+
+print("Prediction scores, raw")
+print("--------")
+
+perf_scores(
+  y_val_total, 
+  pred_total, 
+  model="Linear + linear hybrid, total sales")
+
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_tft_store),
+  stores,
+  "TFT, store sales (global, all features)"
+  )
   
-scores_hierarchy(ts_sales[-227:], test, categories_stores)
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_ets_disagg),
+  categories_stores, 
+  "Exponential smoothing, disaggregated series"
+  )
+  
+print("--------")
+
+
+print("Prediction scores, bottom-up reconciled")
+print("--------")
+
+scores_hierarchy(
+  ts_sales["TOTAL"][-15:],
+  trafo_zeroclip(pred_bottomup["TOTAL"]),
+  "TOTAL",
+  "Linear + linear hybrid, total sales"
+  )
+
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_bottomup[stores]),
+  stores,
+  "TFT, store sales (global, all features)"
+  )  
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_bottomup[categories_stores]),
+  categories_stores, 
+  "Exponential smoothing, disaggregated series"
+  )
+  
+print("--------")
+
+
+print("Prediction scores, top-down reconciled")
+print("--------")
+
+scores_hierarchy(
+  ts_sales["TOTAL"][-15:],
+  trafo_zeroclip(pred_topdown["TOTAL"]),
+  "TOTAL",
+  "Linear + linear hybrid, total sales"
+  )
+
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_topdown[stores]),
+  stores,
+  "TFT, store sales (global, all features)"
+  )  
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_topdown[categories_stores]),
+  categories_stores, 
+  "Exponential smoothing, disaggregated series"
+  )
+  
+print("--------")
+
+
+print("Prediction scores, MinT reconciled")
+print("--------")
+
+scores_hierarchy(
+  ts_sales["TOTAL"][-15:],
+  trafo_zeroclip(pred_mint["TOTAL"]),
+  "TOTAL",
+  "Linear + linear hybrid, total sales"
+  )
+
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_mint[stores]),
+  stores,
+  "TFT, store sales (global, all features)"
+  )  
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_mint[categories_stores]),
+  categories_stores, 
+  "Exponential smoothing, disaggregated series"
+  )
+  
+print("--------")
+
 ```
 
 ## Competition submission

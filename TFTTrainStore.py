@@ -1,6 +1,6 @@
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
+from pytorch_lightning.callbacks import RichProgressBar
 
 # Create early stopper
 early_stopper = EarlyStopping(
@@ -12,8 +12,8 @@ early_stopper = EarlyStopping(
 # Progress bar
 progress_bar = RichProgressBar()
 
-# Rich model summary
-model_summary = RichModelSummary(max_depth = -1)
+# # Rich model summary
+# model_summary = RichModelSummary(max_depth = -1)
 
 
 # # Specify TFT model 2.0 (TFT specific params all default)
@@ -151,7 +151,7 @@ model_tft.fit(
   val_future_covariates = [x[tft_futcovars] for x in x_store],
   val_past_covariates = [x[tft_pastcovars] for x in x_store],
   verbose = True,
-  num_loader_workers = 10
+  num_loader_workers = 6
 )
 
 
