@@ -1,3 +1,201 @@
+def zero_forecaster(train_series, pred_series, subset):
+  
+  # Retrieve weeks of year in prediction days
+  pred_weeks = pred_series.time_index.week.unique().tolist()
+  
+  # For every univariate train-prediction pair:
+  for series in subset:
+    train = train_series[series]
+    pred = pred_series[series]
+    
+    # For every week in prediction weeks:
+    for week in pred_weeks:
+      
+      # Retrieve indexes of prediciton steps in this week
+      pred_indexes = np.where(
+        pred.time_index.week == week
+        )[0].tolist()
+      
+      # Retrieve indexes of training dates in this week
+      train_indexes = np.where(
+        train.time_index.week == week
+        )[0].tolist()
+    
+      # Sum the sales in the indexed training days
+      sum_sales = train[train_indexes].univariate_values().sum()
+      
+      # If the sum is zero, replace predictions in this week with zero 
+      if sum_sales == 0:
+        pred_series[]
+
+
+ts_sales["1"][[1, 2 ,3]]
+
+
+
+
+
+
+
+
+# ETS future covariates
+ets_futcovars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+
+
+# First fit & validate the first series to initialize series
+_ = model_ets.fit(
+  y_train_disagg[0], 
+  future_covariates = x_disagg[0][ets_futcovars]
+  )
+  
+pred_ets2_disagg = model_ets.predict(
+  n = 15,
+  future_covariates = x_disagg[0][ets_futcovars]
+  )
+
+# Then loop over all stores except first
+for i in tqdm(range(1, len(y_train_disagg))):
+
+  # Fit on training data
+  _ = model_ets.fit(
+    y_train_disagg[i],
+    future_covariates = x_disagg[i][ets_futcovars]
+    )
+
+  # Predict validation data
+  pred = model_ets.predict(
+    n = 15,
+    future_covariates = x_disagg[i][ets_futcovars]
+    )
+
+  # Stack predictions to multivariate series
+  pred_ets2_disagg = pred_ets2_disagg.stack(pred)
+  
+del pred, i
+
+# Score predictions
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_ets2_disagg),
+  categories_stores, 
+  "Exponential smoothing (with future covariates"
+  )
+  
+
+
+# Perform STL decomposition on training data to get trend + seasonality and remainder series
+trend_disagg = []
+season_disagg = []
+remainder_disagg = []
+
+for series in tqdm(y_train_disagg):
+  
+  # # Log transform series
+  # series = trafo_log(series)
+  
+  # Perform STL decomposition
+  trend, seasonality = decomposition(
+    series,
+    model = ModelMode.ADDITIVE,
+    method = "STL",
+    freq = 7, # N. of obs in each seasonality cycle (12 for monthly CO2 data with yearly seasonality cycle)
+    seasonal = 29, # Size of seasonal smoother (last n lags)
+    trend = 731, # Size of trend smoother
+    robust = True
+  )
+  
+  # Rename components in trend and seasonality series
+  trend = trend.with_columns_renamed(
+    trend.components[0], 
+    series.components[0]
+    )
+    
+  seasonality = seasonality.with_columns_renamed(
+    seasonality.components[0], 
+    series.components[0]
+    )
+  
+  # Remove trend & seasonality from series
+  remainder = remove_from_series(
+    series,
+    (trend + seasonality),
+    ModelMode.ADDITIVE
+  )
+  
+  # Append to lists
+  trend_disagg.append(
+    # trafo_exp(trend)
+    trend
+    )
+  
+  season_disagg.append(
+    # trafo_exp(seasonality)
+    seasonality
+  )  
+    
+  remainder_disagg.append(
+    # trafo_exp(remainder)
+    remainder
+  )
+  
+# Cleanup
+del series, trend, seasonality, remainder
+
+
+y_train_disagg["BREAD/BAKERY-8"].plot()
+trend_disagg[8].plot(label = "STL trend")
+plt.show()
+plt.close("all")
+
+season_disagg[8].plot(label = "STL seasonality")
+plt.show()
+plt.close("all")
+
+remainder_disagg[8].plot(label = "STL remainder")
+plt.show()
+plt.close("all")
+
+
+
+# First fit & validate the first store to initialize series
+_ = model_linear2.fit(
+  y_train_disagg[0],
+  future_covariates = x_disagg[0][linear2_futcovars],
+  past_covariates = x_disagg[0][linear2_pastcovars]
+  )
+
+pred_linear2_disagg = model_linear2.predict(
+  n=15,
+  future_covariates = x_disagg[0][linear2_futcovars]
+  )
+
+# Then loop over all categories except first
+for i in tqdm(range(1, len(y_train_disagg))):
+
+  # Fit on training data
+  _ = model_linear2.fit(
+        remainder_disagg[i],
+        future_covariates = x_disagg[i][linear2_futcovars],
+        past_covariates = x_disagg[i][linear2_pastcovars]
+    )
+
+  # Predict validation data
+  pred = model_linear2.predict(
+    n=15,
+    future_covariates = x_disagg[i][linear2_futcovars]
+    )
+
+  # Stack predictions to multivariate series
+  pred_linear2_disagg = pred_linear2_disagg.stack(pred)
+  
+del pred, i
+
+
+
+
+
+
+
 exec(open("test2.py").read())
 
 
