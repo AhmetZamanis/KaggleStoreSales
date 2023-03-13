@@ -122,7 +122,7 @@ model_tft = TFTModel(
   show_warnings = True,
   optimizer_kwargs = {"lr": 0.002},
   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
+  lr_scheduler_kwargs = {"patience": 5, "verbose": True},
   pl_trainer_kwargs = {
     "callbacks": [early_stopper],
     "accelerator": "gpu",

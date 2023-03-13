@@ -15,7 +15,6 @@ execute:
 ```{python Settings}
 #| echo: false
 
-# Import libraries
 import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,6 +35,46 @@ plt.rcParams["figure.autolayout"] = True
 
 # Set torch settings
 torch.set_float32_matmul_precision("high")
+
+```
+
+```{python ImportDartsFuncs}
+
+# Import Darts time series
+from darts import TimeSeries
+from darts.utils.timeseries_generation import datetime_attribute_timeseries
+
+# Import transformers
+from sklearn.preprocessing import StandardScaler
+from darts.dataprocessing.transformers import Scaler
+from sktime.transformations.series.difference import Differencer
+from darts.dataprocessing.transformers import MissingValuesFiller
+
+# Import baseline models
+from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
+from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
+
+# Import forecasting models
+from darts.models.forecasting.linear_regression_model import LinearRegressionModel
+from darts.models.forecasting.auto_arima import AutoARIMA
+from darts.models.forecasting.random_forest import RandomForest
+from darts.models.forecasting.dlinear import DLinearModel as DLinear
+from darts.models.forecasting.rnn_model import RNNModel as RNN
+from darts.models.forecasting.tft_model import TFTModel
+from sklearn.linear_model import LinearRegression
+
+# Import time decomposition functions
+from statsmodels.tsa.deterministic import DeterministicProcess
+from darts.utils.statistics import extract_trend_and_seasonality as decomposition
+from darts.utils.statistics import remove_from_series
+from darts.utils.utils import ModelMode, SeasonalityMode
+
+# Import performance metrics
+from darts.metrics import rmse, rmsle, mape, mae, mse
+
+# Import Torch callbacks
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
 
 ```
 
@@ -284,9 +323,6 @@ print("Rows x columns: " + str(df_sales.shape))
 
 ```{python TargetHierarchy}
 
-from darts import TimeSeries
-from itertools import product
-
 # Create multivariate time series with sales components
 ts_sales = TimeSeries.from_dataframe(df_sales, freq="D")
 
@@ -303,6 +339,7 @@ for store in stores:
   hierarchy_target[store] = ["TOTAL"]
 
 # Map category X store combinations to respective stores
+from itertools import product
 for category, store in product(categories, stores):
   hierarchy_target["{}-{}".format(category, store)] = [store]
 
@@ -320,7 +357,6 @@ del category, store
 print(ts_sales.gaps())
 
 # Fill gaps
-from darts.dataprocessing.transformers import MissingValuesFiller
 na_filler = MissingValuesFiller()
 ts_sales = na_filler.transform(ts_sales)
 
@@ -372,12 +408,13 @@ def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
 
 # Create differencer
-from sktime.transformations.series.difference import Differencer
 diff = Differencer(lags = 1)
 
 ```
 
 ### Total sales covariates
+
+#### For part 1 hybrid model
 
 ```{python TotalCovars1}
 #| echo = false
@@ -392,7 +429,6 @@ total_covars1["trend_knot"] = 0
 total_covars1.iloc[728:,-1] = range(0, 972) # Linear trend dummy 2
 
 # Add Fourier features for monthly seasonality
-from statsmodels.tsa.deterministic import DeterministicProcess
 dp = DeterministicProcess(
   index = total_covars1.index,
   constant = False,
@@ -466,11 +502,11 @@ total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 
 ```
 
-### Store sales covariates
+#### For single models
 
 ```{python CommonCovars}
 
-# Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all categories).
+# Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all hierarchy levels).
 common_covars = total_covars1[total_covars1.columns[2:21].values.tolist()]
 
 # Add differenced oil price and its MA to common covariates. 
@@ -488,12 +524,77 @@ print(common_covars.columns)
 
 ```
 
+```{python TotalCovars}
+
+# Retrieve copy of common covariates
+total_covars = common_covars.copy()
+  
+# Retrieve local & regional holiday
+total_covars["local_holiday"] = total_covars1["local_holiday"]
+total_covars["regional_holiday"] = total_covars1["regional_holiday"]
+  
+# Retrieve differenced sales EMA
+total_covars["sales_ema5"] = diff.fit_transform(
+    df.groupby("date").sales.sum()
+    ).interpolate(
+  "linear", limit_direction = "backward"
+  ).rolling(
+    window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+    
+# Retrieve differenced onpromotion, its MA
+total_covars["onpromotion"] = diff.fit_transform(
+    df.groupby("date").onpromotion.sum()
+    ).interpolate(
+      "time", limit_direction = "both"
+      )
+      
+total_covars["onp_ma28"] = total_covars["onpromotion"].rolling(
+    window = 28, center = False
+    ).mean().interpolate(
+  method = "spline", order = 2, limit_direction = "both"
+  ) 
+  
+# Retrieve differenced transactions, its MA
+total_covars["transactions"] = diff.fit_transform(
+    df.groupby("date").transactions.sum().interpolate(
+      "time", limit_direction = "both"
+      )
+    )
+    
+total_covars["trns_ma7"] = total_covars["transactions"].rolling(
+    window = 7, center = False
+    ).mean().interpolate(
+  "linear", limit_direction = "backward"
+  )
+  
+# Create darts TS, fill gaps
+x_total = na_filler.transform(
+    TimeSeries.from_dataframe(total_covars, freq = "D")
+    )
+  
+# Cyclical encode day of month using datetime_attribute_timeseries
+x_total = x_total.stack(
+    datetime_attribute_timeseries(
+      time_index = x_total,
+      attribute = "day",
+      cyclic = True
+      )
+    )
+    
+# Cyclical encode month using datetime_attribute_timeseries
+x_total = x_total.stack(
+    datetime_attribute_timeseries(
+      time_index = x_total,
+      attribute = "month",
+      cyclic = True
+      )
+    )
+  
+```
+
+### Store sales covariates
+
 ```{python StoreCovars}
-
-from darts.utils.timeseries_generation import datetime_attribute_timeseries
-
-# Create differencer
-diff = Differencer(lags = 1)
 
 # Initialize list of store covariates
 store_covars = []
@@ -680,18 +781,25 @@ disagg_static = pd.get_dummies(disagg_static, sparse = False, drop_first = True)
 ```{python ScoringFunc}
 #| echo = false
 
-from darts.metrics import rmse, rmsle, mape, mae, mse
-
 # Define model scoring function
-def perf_scores(val, pred, model="drift", rounding = 4):
+def perf_scores(val, pred, model="drift", rounding = 4, logtrafo = True):
   
-  scores_dict = {
-    "MAE": mae(trafo_exp(val), trafo_exp(pred)),
-    "MSE": mse(trafo_exp(val), trafo_exp(pred)),
-    "RMSE": rmse(trafo_exp(val), trafo_exp(pred)), 
-    "RMSLE": rmse(val, pred), 
-    "MAPE": mape(trafo_exp(val), trafo_exp(pred))
-      }
+  if logtrafo == True:
+    scores_dict = {
+      "MAE": mae(trafo_exp(val), trafo_exp(pred)),
+      "MSE": mse(trafo_exp(val), trafo_exp(pred)),
+      "RMSE": rmse(trafo_exp(val), trafo_exp(pred)), 
+      "RMSLE": rmse(val, pred), 
+      "MAPE": mape(trafo_exp(val), trafo_exp(pred))
+        }
+  else:
+    scores_dict = {
+      "MAE": mae(val, pred),
+      "MSE": mse(val, pred),
+      "RMSE": rmse(val, pred), 
+      "RMSLE": rmsle(val, pred), 
+      "MAPE": mape(val, pred)
+        }
       
   print("Model: " + model)
   
@@ -832,6 +940,7 @@ def scores_plot(val, preds_dict, subset, logscale = True):
   # Display and close
   plt.show()
   plt.close("all")
+  
 ```
 
 ```{python NegRemoverFunc}
@@ -839,31 +948,6 @@ def scores_plot(val, preds_dict, subset, logscale = True):
 # Define function to replace negative predictions with zeroes
 def trafo_zeroclip(x):
   return x.map(lambda x: np.clip(x, a_min = 0, a_max = None))
-
-```
-
-```{python ImportDartsFuncs}
-
-# Import transformers
-from sklearn.preprocessing import StandardScaler
-from darts.dataprocessing.transformers import Scaler
-
-# Import baseline models
-from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
-from darts.models.forecasting.sf_ets import StatsForecastETS as ETS
-
-# Import forecasting models
-from darts.models.forecasting.linear_regression_model import LinearRegressionModel
-from darts.models.forecasting.auto_arima import AutoARIMA
-from darts.models.forecasting.random_forest import RandomForest
-from darts.models.forecasting.xgboost import XGBModel
-from darts.models.forecasting.dlinear import DLinearModel as DLinear
-from darts.models.forecasting.rnn_model import RNNModel as RNN
-
-# Import time decomposition functions
-from darts.utils.statistics import extract_trend_and_seasonality as decomposition
-from darts.utils.statistics import remove_from_series
-from darts.utils.utils import ModelMode, SeasonalityMode
 
 ```
 
@@ -899,10 +983,6 @@ pred_drift_total = model_drift.predict(n = 15)
 _ = model_seasonal.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_seasonal_total = model_seasonal.predict(n = 15)
 
-# Naive stacked
-pred_naive_total = (trafo_exp(pred_drift_total) + trafo_exp(pred_seasonal_total)) - ts_sales["TOTAL"].last_value()
-
-
 # ETS
 _ = model_ets.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_ets_total = model_ets.predict(n=15)
@@ -923,12 +1003,6 @@ perf_scores(
   "Naive seasonal"
   )
 
-perf_scores(
-  trafo_log(ts_sales["TOTAL"][-15:]),
-  trafo_log(pred_naive_total),
-  "Naive stacked"
-)  
-  
 perf_scores(
   trafo_log(ts_sales["TOTAL"][-15:]), 
   pred_ets_total,
@@ -954,7 +1028,6 @@ y_train_decomp, y_val_decomp = trafo_log(
 x_train_decomp, x_val_decomp = total_covars1.iloc[:-31,], total_covars1.iloc[-31:-16,]
 
 # Fit & predict on train, retrieve residuals
-from sklearn.linear_model import LinearRegression
 model_decomp = LinearRegression()
 _ = model_decomp.fit(x_train_decomp, y_train_decomp)
 pred_total1 = model_decomp.predict(x_train_decomp)
@@ -986,16 +1059,16 @@ ts_totalcovars2 = TimeSeries.from_dataframe(total_covars2, freq="D")
 ts_totalcovars2 = na_filler.transform(ts_totalcovars2)
 
 # Train-validation split
-y_train_total, y_val_total = ts_decomp[:-15], trafo_log(ts_sales["TOTAL"][-15:])
-x_train_total, x_val_total = ts_totalcovars2[:-31], ts_totalcovars2[-31:-16]
+y_train_decomp2, y_val_decomp2 = ts_decomp[:-15], trafo_log(ts_sales["TOTAL"][-15:])
+x_train_decomp2, x_val_decomp2 = ts_totalcovars2[:-31], ts_totalcovars2[-31:-16]
 
 # Scale covariates (train-validation split only)
 scaler = Scaler(StandardScaler())
-x_train_total = scaler.fit_transform(x_train_total)
-x_val_total = scaler.transform(x_val_total)
+x_train_decomp2 = scaler.fit_transform(x_train_decomp2)
+x_val_decomp2 = scaler.transform(x_val_decomp2)
 
 # Combine back scaled covariates
-x_total = x_train_total.append(x_val_total)
+x_decomp = x_train_decomp2.append(x_val_decomp2)
 
 # Model spec
 model_linear = LinearRegressionModel(
@@ -1007,30 +1080,189 @@ model_linear = LinearRegressionModel(
 
 # Fit model & predict validation set
 _ = model_linear.fit(
-  y_train_total, 
-  future_covariates = x_train_total[['oil_ma28', 'onp_ma28']],
-  past_covariates = x_train_total[['sales_ema5', 'trns_ma7']]
+  y_train_decomp2, 
+  future_covariates = x_decomp[['oil_ma28', 'onp_ma28']],
+  past_covariates = x_decomp[['sales_ema5', 'trns_ma7']]
   )
 
 pred_total = model_linear.predict(
   n = 15, 
-  future_covariates = x_val_total[['oil_ma28', 'onp_ma28']],
-  past_covariates = x_train_total[['sales_ema5', 'trns_ma7']]
+  future_covariates = x_decomp[['oil_ma28', 'onp_ma28']],
+  past_covariates = x_decomp[['sales_ema5', 'trns_ma7']]
   ) + ts_preds_total1[-15:]
 
+```
+
+### D-Linear
+
+```{python TotalPreprocess}
+
+# Create min-max scaler
+scaler_minmax = Scaler()
+
+# Split train-val series
+cov_train, cov_innerval, cov_outerval = x_total[:-76], x_total[-76:-31], x_total[-31:]
   
-# Score model
-perf_scores(y_val_total, pred_total, model="Linear + linear hybrid, total sales")
+# Scale train-val series
+cov_train = scaler_minmax.fit_transform(cov_train)
+cov_innerval = scaler_minmax.transform(cov_innerval)
+cov_outerval = scaler_minmax.transform(cov_outerval)
+  
+# Rejoin series
+cov_train = (cov_train.append(cov_innerval)).append(cov_outerval)
+  
+# Cast series to 32-bits for performance gains
+x_total = cov_train.astype(np.float32)
+
+# Cleanup
+del cov_train, cov_innerval, cov_outerval
+
+```
+
+```{python TotalTargets}
+
+# Retrieve total sales
+total_sales = ts_sales["TOTAL"]
+
+# Cast series to 32-bits for performance gains
+total_sales = total_sales.astype(np.float32)
+
+# Split train-val series
+y_train_total, y_val_total = total_sales[:-15], total_sales[-15:]
+
+```
+
+```{python TotalTorchCallbacks}
+
+# Create early stopper
+early_stopper = EarlyStopping(
+  monitor = "val_loss",
+  min_delta = 10292685, # 0.1% of MSE of best baseline
+  patience = 10
+)
+
+# Progress bar
+progress_bar = RichProgressBar()
+
+# Rich model summary
+model_summary = RichModelSummary(max_depth = -1)
+
+```
+
+```{python TotalDLinear}
+
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "DLinearTotal2.0",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0],
+    "log_every_n_steps": 1
+    }
+)
+
+```
+
+```{python TotalDLinearCovars}
+
+dlinear_futcovs_total = ['national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'local_holiday', 'regional_holiday', 'onpromotion', 'onp_ma28', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
+
+dlinear_pastcovs_total = ['sales_ema5','transactions', 'trns_ma7']
+
+```
+
+```{python TotalDLinearFit}
+
+# Fit DLinear model
+model_dlinear.fit(
+  series = y_train_total[:-45],
+  future_covariates = x_total[dlinear_futcovs_total],
+  past_covariates = x_total[dlinear_pastcovs_total],
+  val_series = y_train_total[-45:],
+  val_future_covariates = x_total[dlinear_futcovs_total],
+  val_past_covariates = x_total[dlinear_pastcovs_total],
+  verbose = True
+)
+
+```
+
+```{python TotalDLinearLoad}
+
+# Load a previously trained DLinear model's best checkpoint
+model_dlinear = DLinear.load_from_checkpoint("DLinearTotal2.0", best = True)
+
+```
+
+```{python TotalDLinearValScore}
+
+pred_dlinear_total = model_dlinear.predict(
+  n=15,
+  series = y_train_total,
+  future_covariates = x_total[dlinear_futcovs_total],
+  )
+
+```
+
+### Model scores
+
+```{python TotalModelScores}
+
+print("Total sales prediction scores")
+print("--------")
+
+perf_scores(
+  trafo_log(ts_sales["TOTAL"][-15:]),
+  pred_drift_total,
+  "Naive drift"
+  )
+
+perf_scores(
+  trafo_log(ts_sales["TOTAL"][-15:]), 
+  pred_seasonal_total,
+  "Naive seasonal"
+  )
+
+perf_scores(
+  trafo_log(ts_sales["TOTAL"][-15:]), 
+  pred_ets_total,
+  "Exponential smoothing"
+  )
+
+perf_scores(
+  y_val_decomp2, 
+  pred_total,
+  "Linear + linear hybrid"
+  )
+  
+perf_scores(
+  y_val_total, 
+  pred_dlinear_total, 
+  model="D-Linear", 
+  logtrafo = False
+  )  
+  
+
 ```
 
 ## Modeling: Store sales
 
 ### Preprocessing
 
-```{python StoreCovars}
+```{python StorePreprocess}
 
-# Create min-max scaler
-scaler_minmax = Scaler()
+
 
 # Train-validation split and scaling for covariates
 x_store = []
@@ -1478,8 +1710,6 @@ del pred, i
 ### Global hybrid models
 
 ```{python TorchCallbacks}
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
 
 # Create early stopper
 early_stopper = EarlyStopping(
@@ -1995,7 +2225,7 @@ scores_plot(
 
 ### Preprocessing
 
-```{python DisaggCovars}
+```{python DisaggPreprocess}
 
 # Create min-max scaler
 scaler_minmax = Scaler()
@@ -2402,8 +2632,14 @@ print("--------")
 
 ```
 
-## Competition submission
+    # Wide dataframe of x = date, cols = categories-stores
+    test_data = ts_sales[categories_stores].pd_dataframe()
 
-Remember to reverse log and CPI transformations
+    # Long format, first all Automotives, then other categories...
+    pd.melt(test_data, var_name = "category_store_nbr", value_name = "sales", ignore_index = False) 
 
-Remember to pass sales_ema5, transactions, trns_ma7 as past covariates, and output_chunk_length = 16
+    # Merge the long dataframe above with the id column from the original data, on date and category_store_nbr
+
+
+    # This doesn't work / breaks the original order: 
+    pd.melt(test_data, var_name = "category_store_nbr", value_name = "sales", ignore_index = False).sort_values(by="date")
