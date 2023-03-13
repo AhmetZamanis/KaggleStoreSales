@@ -271,7 +271,7 @@ df = pd.concat([df_train, df_test])
 
 ```{python PrintRawData}
 #| echo: false
-#| 
+
 print(df.head(2))
 
 ```
@@ -319,6 +319,7 @@ del total, store_nbr, wide_frames, category_store_nbr
 # Print wide sales dataframe
 print(df_sales.iloc[0:5, [0, 1, 2, 84, 148]])
 print("Rows x columns: " + str(df_sales.shape))
+
 ```
 
 ```{python TargetHierarchy}
@@ -364,6 +365,7 @@ ts_sales = na_filler.transform(ts_sales)
 
 ```{python StorePlots}
 #| echo = false
+
 _ = ts_sales["1"].plot()
 _ = ts_sales["8"].plot()
 _ = ts_sales["23"].plot()
@@ -377,22 +379,26 @@ plt.close("all")
 
 ```{python CatStorePlots1}
 #| echo = false
+
 _ = ts_sales["BREAD/BAKERY-1"].plot()
 _ = ts_sales["BREAD/BAKERY-8"].plot()
 _ = ts_sales["BREAD/BAKERY-23"].plot()
 _ = plt.title("Sales of one category across 3 stores")
 plt.show()
 plt.close("all")
+
 ```
 
 ```{python CatStorePlots2}
 #| echo = false
+
 _ = ts_sales["CELEBRATION-1"].plot()
 _ = ts_sales["CELEBRATION-8"].plot()
 _ = ts_sales["CELEBRATION-23"].plot()
 _ = plt.title("Sales of one category across 3 stores")
 plt.show()
 plt.close("all")
+
 ```
 
 ## Covariate series
@@ -987,28 +993,6 @@ pred_seasonal_total = model_seasonal.predict(n = 15)
 _ = model_ets.fit(trafo_log(ts_sales["TOTAL"][:-15]))
 pred_ets_total = model_ets.predict(n=15)
 
-
-print("Total sales prediction scores, baseline models")
-print("--------")
-
-perf_scores(
-  trafo_log(ts_sales["TOTAL"][-15:]),
-  pred_drift_total,
-  "Naive drift"
-  )
-
-perf_scores(
-  trafo_log(ts_sales["TOTAL"][-15:]), 
-  pred_seasonal_total,
-  "Naive seasonal"
-  )
-
-perf_scores(
-  trafo_log(ts_sales["TOTAL"][-15:]), 
-  pred_ets_total,
-  "Exponential smoothing"
-  )
-
 ```
 
 ### Linear + linear hybrid from part 1
@@ -1085,7 +1069,7 @@ _ = model_linear.fit(
   past_covariates = x_decomp[['sales_ema5', 'trns_ma7']]
   )
 
-pred_total = model_linear.predict(
+pred_linear_total = model_linear.predict(
   n = 15, 
   future_covariates = x_decomp[['oil_ma28', 'onp_ma28']],
   past_covariates = x_decomp[['sales_ema5', 'trns_ma7']]
@@ -1134,44 +1118,44 @@ y_train_total, y_val_total = total_sales[:-15], total_sales[-15:]
 
 ```{python TotalTorchCallbacks}
 
-# Create early stopper
-early_stopper = EarlyStopping(
-  monitor = "val_loss",
-  min_delta = 10292685, # 0.1% of MSE of best baseline
-  patience = 10
-)
-
-# Progress bar
-progress_bar = RichProgressBar()
-
-# Rich model summary
-model_summary = RichModelSummary(max_depth = -1)
+# # Create early stopper
+# early_stopper = EarlyStopping(
+#   monitor = "val_loss",
+#   min_delta = 10292685, # 0.1% of MSE of best baseline
+#   patience = 10
+# )
+# 
+# # Progress bar
+# progress_bar = RichProgressBar()
+# 
+# # Rich model summary
+# model_summary = RichModelSummary(max_depth = -1)
 
 ```
 
 ```{python TotalDLinear}
 
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 30,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 32,
-  n_epochs = 500,
-  model_name = "DLinearTotal2.0",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0],
-    "log_every_n_steps": 1
-    }
-)
+# # Specify D-Linear model
+# model_dlinear = DLinear(
+#   input_chunk_length = 30,
+#   output_chunk_length = 15,
+#   kernel_size = 25,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   model_name = "DLinearTotal2.0",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0],
+#     "log_every_n_steps": 1
+#     }
+# )
 
 ```
 
@@ -1185,16 +1169,16 @@ dlinear_pastcovs_total = ['sales_ema5','transactions', 'trns_ma7']
 
 ```{python TotalDLinearFit}
 
-# Fit DLinear model
-model_dlinear.fit(
-  series = y_train_total[:-45],
-  future_covariates = x_total[dlinear_futcovs_total],
-  past_covariates = x_total[dlinear_pastcovs_total],
-  val_series = y_train_total[-45:],
-  val_future_covariates = x_total[dlinear_futcovs_total],
-  val_past_covariates = x_total[dlinear_pastcovs_total],
-  verbose = True
-)
+# # Fit DLinear model
+# _ = model_dlinear.fit(
+#   series = y_train_total[:-45],
+#   future_covariates = x_total[dlinear_futcovs_total],
+#   past_covariates = x_total[dlinear_pastcovs_total],
+#   val_series = y_train_total[-45:],
+#   val_future_covariates = x_total[dlinear_futcovs_total],
+#   val_past_covariates = x_total[dlinear_pastcovs_total],
+#   verbose = True
+# )
 
 ```
 
@@ -1242,7 +1226,7 @@ perf_scores(
 
 perf_scores(
   y_val_decomp2, 
-  pred_total,
+  pred_linear_total,
   "Linear + linear hybrid"
   )
   
@@ -1261,8 +1245,6 @@ perf_scores(
 ### Preprocessing
 
 ```{python StorePreprocess}
-
-
 
 # Train-validation split and scaling for covariates
 x_store = []
@@ -1575,62 +1557,62 @@ del pred, i
 
 ```{python ARIMAModelSpec}
 
-# AutoARIMA
-model_arima = AutoARIMA(
-  start_p = 0,
-  max_p = 7,
-  start_q = 0,
-  max_q = 7,
-  seasonal = False, # Don't include seasonal orders
-  information_criterion = 'aicc', # Minimize AICc to choose best model
-  trace = False # Don't print tuning iterations
-  )
-
-# AutoARIMA covars (cyclical + calendar, future only)
-arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# # AutoARIMA
+# model_arima = AutoARIMA(
+#   start_p = 0,
+#   max_p = 7,
+#   start_q = 0,
+#   max_q = 7,
+#   seasonal = False, # Don't include seasonal orders
+#   information_criterion = 'aicc', # Minimize AICc to choose best model
+#   trace = False # Don't print tuning iterations
+#   )
+# 
+# # AutoARIMA covars (cyclical + calendar, future only)
+# arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
 ```
 
 ```{python StoreARIMAFitVal}
 
-# First fit & validate the first category to initialize series
-_ = model_arima.fit(
-  remainder_store[0],
-  future_covariates = x_store[0][arima_covars])
-
-pred_arima_store = model_arima.predict(
-  n=15,
-  future_covariates = x_store[0][arima_covars])
-
-# Then loop over all categories except first
-for i in tqdm(range(1, len(y_train_store))):
-
-  # Fit on training data
-  _ = model_arima.fit(
-        remainder_store[i],
-        future_covariates = x_store[i][arima_covars]
-    )
-
-  # Predict validation data
-  pred = model_arima.predict(
-    n=15,
-    future_covariates = x_store[i][arima_covars]
-    )
-
-  # Stack predictions to multivariate series
-  pred_arima_store = pred_arima_store.stack(pred)
-
-del pred, i
+# # First fit & validate the first category to initialize series
+# _ = model_arima.fit(
+#   remainder_store[0],
+#   future_covariates = x_store[0][arima_covars])
+# 
+# pred_arima_store = model_arima.predict(
+#   n=15,
+#   future_covariates = x_store[0][arima_covars])
+# 
+# # Then loop over all categories except first
+# for i in tqdm(range(1, len(y_train_store))):
+# 
+#   # Fit on training data
+#   _ = model_arima.fit(
+#         remainder_store[i],
+#         future_covariates = x_store[i][arima_covars]
+#     )
+# 
+#   # Predict validation data
+#   pred = model_arima.predict(
+#     n=15,
+#     future_covariates = x_store[i][arima_covars]
+#     )
+# 
+#   # Stack predictions to multivariate series
+#   pred_arima_store = pred_arima_store.stack(pred)
+# 
+# del pred, i
 
 ```
 
 ```{python ARIMAStoreSave}
 #| include: false
 
-# Save ARIMA store preds
-pred_arima_store.to_csv(
-  "./ModifiedData/pred_arima_store1.csv"
-)
+# # Save ARIMA store preds
+# pred_arima_store.to_csv(
+#   "./ModifiedData/pred_arima_store1.csv"
+# )
 
 ```
 
@@ -1711,18 +1693,18 @@ del pred, i
 
 ```{python TorchCallbacks}
 
-# Create early stopper
-early_stopper = EarlyStopping(
-  monitor = "val_loss",
-  min_delta = 5000, # 1% of min. MSE of best model so far
-  patience = 10
-)
-
-# Progress bar
-progress_bar = RichProgressBar()
-
-# Rich model summary
-model_summary = RichModelSummary(max_depth = -1)
+# # Create early stopper
+# early_stopper = EarlyStopping(
+#   monitor = "val_loss",
+#   min_delta = 5000, # 1% of min. MSE of best model so far
+#   patience = 10
+# )
+# 
+# # Progress bar
+# progress_bar = RichProgressBar()
+# 
+# # Rich model summary
+# model_summary = RichModelSummary(max_depth = -1)
 
 ```
 
@@ -1730,26 +1712,26 @@ model_summary = RichModelSummary(max_depth = -1)
 
 ```{python}
 
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 30,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 64,
-  n_epochs = 500,
-  model_name = "DLinearStoreX",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify D-Linear model
+# model_dlinear = DLinear(
+#   input_chunk_length = 30,
+#   output_chunk_length = 15,
+#   kernel_size = 25,
+#   batch_size = 64,
+#   n_epochs = 500,
+#   model_name = "DLinearStoreX",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
@@ -1767,14 +1749,14 @@ trend_season_list_store = [
 
 ```{python StoreDLinearFit}
 
-# Fit DLinear model
-model_dlinear.fit(
-  series = [y[:-45] for y in trend_season_list_store],
-  future_covariates = [x[dlinear_covars] for x in x_store],
-  val_series = [y[-45:] for y in trend_season_list_store],
-  val_future_covariates = [x[dlinear_covars] for x in x_store],
-  verbose = True
-)
+# # Fit DLinear model
+# model_dlinear.fit(
+#   series = [y[:-45] for y in trend_season_list_store],
+#   future_covariates = [x[dlinear_covars] for x in x_store],
+#   val_series = [y[-45:] for y in trend_season_list_store],
+#   val_future_covariates = [x[dlinear_covars] for x in x_store],
+#   verbose = True
+# )
 
 ```
 
@@ -1815,29 +1797,29 @@ del pred, i
 
 ```{python StoreRNNSpec}
 
-# Specify RNN model
-model_rnn = RNN(
-  model = "LSTM",
-  input_chunk_length = 30,
-  training_length = 31,
-  batch_size = 64,
-  n_epochs = 500,
-  n_rnn_layers = 2,
-  hidden_dim = 32,
-  dropout = 0.1,
-  model_name = "RNNStore1.3",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify RNN model
+# model_rnn = RNN(
+#   model = "LSTM",
+#   input_chunk_length = 30,
+#   training_length = 31,
+#   batch_size = 64,
+#   n_epochs = 500,
+#   n_rnn_layers = 2,
+#   hidden_dim = 32,
+#   dropout = 0.1,
+#   model_name = "RNNStore1.3",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
@@ -1850,14 +1832,14 @@ rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 're
 
 ```{python StoreRNNFit}
 
-# Fit RNN model
-model_rnn.fit(
-  series = [y[:-45] for y in remainder_store],
-  future_covariates = [x[rnn_covars] for x in x_store],
-  val_series = [y[-45:] for y in remainder_store],
-  val_future_covariates = [x[rnn_covars] for x in x_store],
-  verbose = True
-)
+# # Fit RNN model
+# model_rnn.fit(
+#   series = [y[:-45] for y in remainder_store],
+#   future_covariates = [x[rnn_covars] for x in x_store],
+#   val_series = [y[-45:] for y in remainder_store],
+#   val_future_covariates = [x[rnn_covars] for x in x_store],
+#   verbose = True
+# )
 
 ```
 
@@ -1899,34 +1881,35 @@ for i in tqdm(range(1, len(remainder_store))):
   pred_rnn_store = pred_rnn_store.stack(pred)
   
 del pred, i
+
 ```
 
-### Global models on original series
+### Global models on raw series
 
 #### D-Linear
 
 ```{python StoreDLinearFull}
 
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 30,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 64,
-  n_epochs = 500,
-  model_name = "DLinearStoreX",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify D-Linear model
+# model_dlinear = DLinear(
+#   input_chunk_length = 30,
+#   output_chunk_length = 15,
+#   kernel_size = 25,
+#   batch_size = 64,
+#   n_epochs = 500,
+#   model_name = "DLinearStoreX",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
@@ -1941,16 +1924,16 @@ dlinear2_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
 
 ```{python StoreDLinearFullFit}
 
-# Fit DLinear model
-model_dlinear.fit(
-  series = [y[:-45] for y in y_train_store],
-  future_covariates = [x[dlinear2_futcovars] for x in x_store],
-  past_covariates = [x[dlinear2_pastcovars] for x in x_store],
-  val_series = [y[-45:] for y in y_train_store],
-  val_future_covariates = [x[dlinear2_futcovars] for x in x_store],
-  val_past_covariates = [x[dlinear2_pastcovars] for x in x_store],
-  verbose = True
-)
+# # Fit DLinear model
+# model_dlinear.fit(
+#   series = [y[:-45] for y in y_train_store],
+#   future_covariates = [x[dlinear2_futcovars] for x in x_store],
+#   past_covariates = [x[dlinear2_pastcovars] for x in x_store],
+#   val_series = [y[-45:] for y in y_train_store],
+#   val_future_covariates = [x[dlinear2_futcovars] for x in x_store],
+#   val_past_covariates = [x[dlinear2_pastcovars] for x in x_store],
+#   verbose = True
+# )
 
 ```
 
@@ -1986,38 +1969,39 @@ for i in tqdm(range(1, len(y_train_store))):
   pred_dlinear2_store = pred_dlinear2_store.stack(pred)
   
 del pred, i
+
 ```
 
 #### Temporal Fusion Transformer
 
 ```{python StoreTFT}
 
-# Specify TFT model
-model_tft = TFTModel(
-  input_chunk_length = 30,
-  output_chunk_length = 15,
-  hidden_size = 16,
-  lstm_layers = 1,
-  num_attention_heads = 4,
-  dropout = 0.1,
-  hidden_continuous_size = 8,
-  batch_size = 32,
-  n_epochs = 500,
-  likelihood = None,
-  loss_fn = torch.nn.MSELoss(),
-  model_name = "TFTStoreX",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify TFT model
+# model_tft = TFTModel(
+#   input_chunk_length = 30,
+#   output_chunk_length = 15,
+#   hidden_size = 16,
+#   lstm_layers = 1,
+#   num_attention_heads = 4,
+#   dropout = 0.1,
+#   hidden_continuous_size = 8,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   likelihood = None,
+#   loss_fn = torch.nn.MSELoss(),
+#   model_name = "TFTStoreX",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
@@ -2043,6 +2027,7 @@ model_tft = TFTModel.load_from_checkpoint("TFTStore2.0", best = True)
 ```
 
 ```{python StoreTFTVal}
+#| include: false
 
 # First fit & validate the first store to initialize series
 pred_tft_store = model_tft.predict(
@@ -2065,7 +2050,7 @@ for i in tqdm(range(1, len(y_train_store))):
 
   # Stack predictions to multivariate series
   pred_tft_store = pred_tft_store.stack(pred)
-  
+
 del pred, i
 
 ```
@@ -2174,7 +2159,7 @@ scores_hierarchy(
   )
 
 
-# D-linear + RNN (global)
+# D-linear (global) + RNN (global)
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear_store + pred_rnn_store),
@@ -2205,12 +2190,10 @@ scores_hierarchy(
 store_preds_dict = {
   # "Naive drift": trafo_zero(pred_drift_store),
   # "Naive seasonal": trafo_zero(pred_seasonal_store),
-  "Exponential smoothing": trafo_zeroclip(pred_ets_store),
-  "D-Linear + RNN": trafo_zeroclip(pred_dlinear2_store + pred_rnn_store),
-  "D-Linear (all features)": trafo_zeroclip(pred_dlinear2_store)
-
+  "ETS (best baseline)": trafo_zeroclip(pred_ets_store),
+  "D-Linear + RNN (best hybrid)": trafo_zeroclip(pred_dlinear2_store + pred_rnn_store),
+  "TFT (best model)": trafo_zeroclip(pred_tft_store)
 }
-
 
 scores_plot(
   ts_sales[stores][-15:],
@@ -2289,18 +2272,6 @@ del y_train, y_val
 ```
 
 ### Baseline models
-
-scores_hierarchy(
-
-ts_sales\[categories_stores\]\[-15:\],
-
-trafo_zeroclip(pred_ets_disagg),
-
-categories_stores,
-
-"Exponential smoothing"
-
-)
 
 ```{python DisaggBaselineFitVal}
 
@@ -2419,26 +2390,26 @@ scores_hierarchy(
 
 ```{python DisaggDLinearSpec}
 
-# Specify D-Linear model
-model_dlinear = DLinear(
-  input_chunk_length = 30,
-  output_chunk_length = 15,
-  kernel_size = 25,
-  batch_size = 32,
-  n_epochs = 500,
-  model_name = "DLinearDisagg2.0",
-  log_tensorboard = True,
-  save_checkpoints = True,
-  show_warnings = True,
-  optimizer_kwargs = {"lr": 0.002},
-  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-  lr_scheduler_kwargs = {"patience": 5},
-  pl_trainer_kwargs = {
-    "callbacks": [early_stopper, progress_bar, model_summary],
-    "accelerator": "gpu",
-    "devices": [0]
-    }
-)
+# # Specify D-Linear model
+# model_dlinear = DLinear(
+#   input_chunk_length = 30,
+#   output_chunk_length = 15,
+#   kernel_size = 25,
+#   batch_size = 32,
+#   n_epochs = 500,
+#   model_name = "DLinearDisagg2.0",
+#   log_tensorboard = True,
+#   save_checkpoints = True,
+#   show_warnings = True,
+#   optimizer_kwargs = {"lr": 0.002},
+#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+#   lr_scheduler_kwargs = {"patience": 5},
+#   pl_trainer_kwargs = {
+#     "callbacks": [early_stopper, progress_bar, model_summary],
+#     "accelerator": "gpu",
+#     "devices": [0]
+#     }
+# )
 
 ```
 
@@ -2460,9 +2431,13 @@ RMSLE: mean = 0.9723, sd = 0.7964, min = 0.1258, max = 6.285
 
 ```{python GatherValPreds}
 
+# Remove static covariates from store and disagg predictions
+pred_tft_store = pred_tft_store.with_static_covariates(None)
+pred_ets_disagg = pred_ets_disagg.with_static_covariates(None)
+
 # Stack total, store and disaggregated predictions to get all predictions as a multivariate TS
 pred_all = (
-  trafo_exp(pred_total).stack(pred_tft_store)
+  pred_dlinear_total.stack(pred_tft_store)
   ).stack(pred_ets_disagg)
 
 # Embed hierarchy into predictions TS
@@ -2484,7 +2459,7 @@ pred_all = pred_all.with_hierarchy(hierarchy_target)
 from darts.dataprocessing.transformers.reconciliation import BottomUpReconciliator as BottomUp
 
 # Create bottom up reconciliator, transform predictions
-recon_bottom = BottomUp(n_jobs = 20)
+recon_bottom = BottomUp()
 pred_bottomup = recon_bottom.transform(pred_all)
 
 ```
@@ -2496,7 +2471,7 @@ pred_bottomup = recon_bottom.transform(pred_all)
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator as TopDown
 
 # Fit top down reconciliator on training series
-recon_top = TopDown(n_jobs = 20)
+recon_top = TopDown()
 _ = recon_top.fit(ts_sales[:-15])
 
 # Transform predictions
@@ -2510,12 +2485,24 @@ pred_topdown = recon_top.transform(pred_all)
 
 from darts.dataprocessing.transformers.reconciliation import MinTReconciliator as MinT
 
-# Fit MinT reconciliator on training series
-recon_mint = MinT(method = "wls_val")
-_ = recon_mint.fit(ts_sales[:-15])
+# Fit MinT reconciliator (with historical values) on training series
+recon_wlsval = MinT(method = "wls_val")
+_ = recon_wlsval.fit(
+    ts_sales[:-15] + 0.0001 # Add very small value to all sales to avoid zeroes
+    )
+    
+# Transform predictions
+pred_wlsval = recon_wlsval.transform(pred_all) - 0.0001
+
+
+# Fit MinT reconciliator (with forecast residuals) on training series
+recon_wlsvar = MinT(method = "wls_var")
+_ = recon_wlsvar.fit(
+    (ts_sales[-15:] - pred_all[-15:]) + 0.0001
+    )
 
 # Transform predictions
-pred_mint = recon_mint.transform(pred_all)
+pred_wlsvar = recon_wlsvar.transform(pred_all) - 0.0001
 
 ```
 
@@ -2526,11 +2513,11 @@ pred_mint = recon_mint.transform(pred_all)
 print("Prediction scores, raw")
 print("--------")
 
-scores_hierarchy(
+perf_scores(
   ts_sales["TOTAL"][-15:],
   trafo_zeroclip(pred_all["TOTAL"]),
-  "TOTAL",
-  "Linear + linear hybrid, total sales"
+  "D-linear, total sales",
+  logtrafo = False
   )
 
 scores_hierarchy(
@@ -2544,20 +2531,20 @@ scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_ets_disagg),
   categories_stores, 
-  "Exponential smoothing, disaggregated series"
+  "ETS, disaggregated series"
   )
   
-print("--------")
+print("--------\n")
 
 
 print("Prediction scores, bottom-up reconciled")
 print("--------")
 
-scores_hierarchy(
+perf_scores(
   ts_sales["TOTAL"][-15:],
   trafo_zeroclip(pred_bottomup["TOTAL"]),
-  "TOTAL",
-  "Linear + linear hybrid, total sales"
+  "D-linear, total sales",
+  logtrafo = False
   )
 
 scores_hierarchy(
@@ -2567,25 +2554,16 @@ scores_hierarchy(
   "TFT, store sales (global, all features)"
   )  
 
-scores_hierarchy(
-  ts_sales[categories_stores][-15:], 
-  trafo_zeroclip(pred_bottomup[categories_stores]),
-  categories_stores, 
-  "Exponential smoothing, disaggregated series"
-  )
+print("Bottom-up method won't change the bottom level performance")
   
-print("--------")
+print("--------\n")
 
 
 print("Prediction scores, top-down reconciled")
 print("--------")
 
-scores_hierarchy(
-  ts_sales["TOTAL"][-15:],
-  trafo_zeroclip(pred_topdown["TOTAL"]),
-  "TOTAL",
-  "Linear + linear hybrid, total sales"
-  )
+print("Top-down method won't change the top level performance")
+print("--------")
 
 scores_hierarchy(
   ts_sales[stores][-15:],
@@ -2598,34 +2576,61 @@ scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_topdown[categories_stores]),
   categories_stores, 
-  "Exponential smoothing, disaggregated series"
+  "ETS, disaggregated series"
   )
   
+print("--------\n")
+
+
+print("Prediction scores, MinT reconciled (using historical sales)")
 print("--------")
 
-
-print("Prediction scores, MinT reconciled")
-print("--------")
-
-scores_hierarchy(
+perf_scores(
   ts_sales["TOTAL"][-15:],
-  trafo_zeroclip(pred_mint["TOTAL"]),
-  "TOTAL",
-  "Linear + linear hybrid, total sales"
+  trafo_zeroclip(pred_wlsval["TOTAL"]),
+  "D-linear, total sales",
+  logtrafo = False
   )
 
 scores_hierarchy(
   ts_sales[stores][-15:],
-  trafo_zeroclip(pred_mint[stores]),
+  trafo_zeroclip(pred_wlsval[stores]),
   stores,
   "TFT, store sales (global, all features)"
   )  
 
 scores_hierarchy(
   ts_sales[categories_stores][-15:], 
-  trafo_zeroclip(pred_mint[categories_stores]),
+  trafo_zeroclip(pred_wlsval[categories_stores]),
   categories_stores, 
-  "Exponential smoothing, disaggregated series"
+  "ETS, disaggregated series"
+  )
+  
+print("--------\n")
+
+
+print("Prediction scores, MinT reconciled (using forecast residuals)")
+print("--------")
+
+perf_scores(
+  ts_sales["TOTAL"][-15:],
+  trafo_zeroclip(pred_wlsvar["TOTAL"]),
+  "D-linear, total sales",
+  logtrafo = False
+  )
+
+scores_hierarchy(
+  ts_sales[stores][-15:],
+  trafo_zeroclip(pred_wlsvar[stores]),
+  stores,
+  "TFT, store sales (global, all features)"
+  )  
+
+scores_hierarchy(
+  ts_sales[categories_stores][-15:], 
+  trafo_zeroclip(pred_wlsvar[categories_stores]),
+  categories_stores, 
+  "ETS, disaggregated series"
   )
   
 print("--------")
