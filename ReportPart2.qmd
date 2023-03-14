@@ -971,7 +971,7 @@ model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
   model = "AAA", # Additive trend, seasonality and remainder component
-  damped = 0.95 # Dampen the trend over time
+  damped = None # Try both dampened and non-dampened trend
 )
 
 ```
@@ -1306,6 +1306,14 @@ del y_train, y_val
 
 ```{python StoreBaselineFitVal}
 
+# Specify AutoETS model
+model_autoets = ETS(
+  season_length = 7, # Weekly seasonality
+  model = "ZZZ", # Try additive, multiplicative or none for each component
+  damped = None # Try both dampened and non-dampened trend
+)
+
+
 # Fit & validate baseline models
 
 
@@ -1322,17 +1330,17 @@ pred_seasonal_store = model_seasonal.predict(n = 15)
 # ETS
 
 # First fit & validate the first store to initialize series
-_ = model_ets.fit(y_train_store[0])
-pred_ets_store = model_ets.predict(n = 15)
+_ = model_autoets.fit(y_train_store[0])
+pred_ets_store = model_autoets.predict(n = 15)
 
 # Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
-  _ = model_ets.fit(y_train_store[i])
+  _ = model_autoets.fit(y_train_store[i])
 
   # Predict validation data
-  pred = model_ets.predict(n = 15)
+  pred = model_autoets.predict(n = 15)
 
   # Stack predictions to multivariate series
   pred_ets_store = pred_ets_store.stack(pred)
@@ -2190,7 +2198,7 @@ scores_hierarchy(
 store_preds_dict = {
   # "Naive drift": trafo_zero(pred_drift_store),
   # "Naive seasonal": trafo_zero(pred_seasonal_store),
-  "ETS (best baseline)": trafo_zeroclip(pred_ets_store),
+  "AutoETS (best baseline)": trafo_zeroclip(pred_ets_store),
   "D-Linear + RNN (best hybrid)": trafo_zeroclip(pred_dlinear2_store + pred_rnn_store),
   "TFT (best model)": trafo_zeroclip(pred_tft_store)
 }
@@ -2291,17 +2299,17 @@ pred_seasonal_disagg = model_seasonal.predict(n = 15)
 # ETS
 
 # First fit & validate the first series to initialize series
-_ = model_ets.fit(y_train_disagg[0])
-pred_ets_disagg = model_ets.predict(n = 15)
+_ = model_autoets.fit(y_train_disagg[0])
+pred_ets_disagg = model_autoets.predict(n = 15)
 
 # Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_disagg))):
 
   # Fit on training data
-  _ = model_ets.fit(y_train_disagg[i])
+  _ = model_autoets.fit(y_train_disagg[i])
 
   # Predict validation data
-  pred = model_ets.predict(n = 15)
+  pred = model_autoets.predict(n = 15)
 
   # Stack predictions to multivariate series
   pred_ets_disagg = pred_ets_disagg.stack(pred)
@@ -2448,7 +2456,6 @@ pred_all = pred_all.with_hierarchy(hierarchy_target)
 ```{python PlotHierarchy}
 
 # Plot hierarchical sums of predicted and actual values
-
 
 ```
 
@@ -2637,14 +2644,4 @@ print("--------")
 
 ```
 
-    # Wide dataframe of x = date, cols = categories-stores
-    test_data = ts_sales[categories_stores].pd_dataframe()
-
-    # Long format, first all Automotives, then other categories...
-    pd.melt(test_data, var_name = "category_store_nbr", value_name = "sales", ignore_index = False) 
-
-    # Merge the long dataframe above with the id column from the original data, on date and category_store_nbr
-
-
-    # This doesn't work / breaks the original order: 
-    pd.melt(test_data, var_name = "category_store_nbr", value_name = "sales", ignore_index = False).sort_values(by="date")
+## Conclusions
