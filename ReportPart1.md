@@ -1863,8 +1863,8 @@ We see our linear regression model performs much better than the other
 methods tested.
 
 - It's also notable that the naive seasonal model beats the FFT model in
-  all metrics, while ETS scores close to naive seasonal on MAE, RMSE and
-  RMSLE, but much worse on MAPE.
+  all metrics except MAPE, while ETS scores close to naive seasonal on
+  MAE, RMSE and RMSLE, but much worse on MAPE.
 
   - This is likely because MAPE is a measure of relative error, while
     the others are measures of absolute error.
@@ -3372,32 +3372,32 @@ pred_forest = model_forest.predict(
      ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.23 sec
      ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.11 sec
 
-     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.16 sec
-     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.13 sec
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.15 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.12 sec
 
-     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.32 sec
+     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.31 sec
 
      ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.43 sec
 
-     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.46 sec
+     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.45 sec
 
-     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.61 sec
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.62 sec
 
-     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.62 sec
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.61 sec
 
-     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.72 sec
+     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.70 sec
 
      ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.73 sec
 
-     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.65 sec
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.66 sec
 
-     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.82 sec
+     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.80 sec
 
-     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.83 sec
+     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.81 sec
 
-     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.57 sec
+     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.56 sec
 
-     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.88 sec
+     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.87 sec
 
      ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.63 sec
 
@@ -3405,20 +3405,20 @@ pred_forest = model_forest.predict(
 
      ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.57 sec
 
-     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.77 sec
+     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.74 sec
 
      ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.78 sec
 
-     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.58 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.57 sec
 
      ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.49 sec
 
-     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.66 sec
+     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.65 sec
 
      ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.81 sec
 
     Best model:  ARIMA(3,0,2)(0,0,0)[0]          
-    Total fit time: 14.097 seconds
+    Total fit time: 13.980 seconds
 
 <details>
 <summary>Show code</summary>
@@ -3572,7 +3572,7 @@ print(model_arima.model.summary())
     Dep. Variable:                      y   No. Observations:                 1461
     Model:               SARIMAX(3, 0, 2)   Log Likelihood                1359.814
     Date:                Tue, 14 Mar 2023   AIC                          -2703.628
-    Time:                        18:45:02   BIC                          -2661.333
+    Time:                        18:53:09   BIC                          -2661.333
     Sample:                             0   HQIC                         -2687.851
                                    - 1461                                         
     Covariance Type:                  opg                                         

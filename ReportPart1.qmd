@@ -1123,7 +1123,7 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 
 We see our linear regression model performs much better than the other methods tested.
 
--   It\'s also notable that the naive seasonal model beats the FFT model in all metrics, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
+-   It\'s also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
 
     -    This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
 
