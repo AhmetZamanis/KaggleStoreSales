@@ -51,7 +51,7 @@ df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
 
 ```
 
-The data is split into several .csv files. **train.csv** and **test.csv** are the main datasets, consisting of daily sales data. The training data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the following 15 days in August 2017. We won't do a competition submission in part 1, so we won't work on the testing data.
+The data is split into several .csv files. **train.csv** and **test.csv** are the main datasets, consisting of daily sales data. The training data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the following 16 days until the end of August 2017. We won't do a competition submission in part 1, so we won't work on the testing data.
 
 ```{python df}
 
@@ -325,7 +325,7 @@ print(ts_sales)
 
 -   To create a multivariate time series, we create a Pandas dataframe with each time series as a column, and a common date-time index. When we pass this dataframe to TimeSeries, we'll have each time series as a component. If the multivariate time series has a **hierarchy**, i.e. if they sum up together in a certain way, we can map that hierarchy as a dictionary to later perform hierarchical reconciliation. We will explore this further in part 2 of the analysis.
 
--   **Static covariates** are time-invariant covariates that may be used as predictors in global models (models trained on multiple Darts TS at once), if not used to split the time series into a multivariate series (one Darts TS with multiple components). They are stored together with the target series in Darts TS. In our case, the type or cluster of a store may be used as static covariates, but for part 1 of our analysis we are looking at national sales, so these aren't applicable.
+-   **Static covariates** are time-invariant covariates that may be used as predictors in global models (models trained on multiple time series at once). They are stored together with the target series in the Darts TS. In our case, the location, type or cluster of a store may be used as static covariates, but for part 1 of our analysis we are looking at national sales, so these aren't applicable.
 
 ## Overview of hybrid modeling approach
 
@@ -364,7 +364,7 @@ The time series plot shows us several things:
 
 -   Supermarket sales show an increasing trend over the years. The trend is close to linear overall, but the rate of increase declines roughly from the start of 2015. Consider one straight line from 2013 to 2015, and a second, less steep one from 2015 to the end.
 
--   Sales mostly fluctuate around the trend, which suggests strong seasonality. However, there are also sharp deviations from the trend in certain periods, mainly across 2014 and at the start of 2015. These are likely cyclical in nature.
+-   Sales mostly fluctuate around the trend with a repeating pattern, which suggests strong seasonality. However, there are also sharp deviations from the trend in certain periods, mainly across 2014 and at the start of 2015. These are likely cyclical in nature.
 
 -   The "waves" of seasonal fluctuations seem to be getting bigger over time. This suggests we should use a multiplicative time decomposition instead of additive.
 
@@ -509,7 +509,7 @@ plt.close("all")
 
 ```
 
-This shows us the "overall" seasonality pattern across one year: We likely have a strong weekly seasonality pattern that holds across the years, and some monthly seasonality especially towards December.
+This shows us the "overall" seasonality pattern across all years: We likely have a strong weekly seasonality pattern that holds across the years, and some monthly seasonality especially towards December.
 
 #### Monthly & weekly seasonality
 
@@ -1123,10 +1123,13 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 
 We see our linear regression model performs much better than the other methods tested.
 
--   It\'s also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
+-   It's also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
 
-    -    This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
+    -   This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
 
+    ```{=html}
+    <!-- -->
+    ```
         -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
 
         -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
@@ -1190,7 +1193,7 @@ The FFT and ETS models actually did a good job of capturing the weekly seasonali
 
 -   In contrast, the linear model's trend and seasonality are both on point, and the January 1st drop is adjusted for nicely. The model is not able to match some spikes and troughs fully, which are possibly cyclical in nature. That's where model 2 will come in.
 
-    -   The piecewise linear trend method allows us to respond to turns in the trend more precisely, while keeping the trend lines robust against fluctuations.
+    -   The piecewise linear trend method allows us to adjust for major trend turns in the training data, while keeping the trend line robust for extrapolation into the future.
 
 ### Rolling crossvalidation
 

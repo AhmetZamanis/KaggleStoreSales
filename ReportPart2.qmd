@@ -4,6 +4,8 @@ author: "Ahmet Zamanis"
 format: 
   gfm:
     toc: true
+    code-fold: true
+    code-summary: "Show code"
 editor: visual
 jupyter: python3
 execute:
@@ -12,8 +14,11 @@ execute:
 
 ## Introduction
 
+This is part 2 of a report on time series analysis & regression modeling, performed in Python with the Darts library. In [part 1](https://github.com/AhmetZamanis/KaggleStoreSales/blob/ModelPart2.2/ReportPart1.md), we analyzed & forecasted only the daily national supermarket sales in the [Kaggle Store Sales forecasting competition](https://www.kaggle.com/competitions/store-sales-time-series-forecasting) dataset. Now, we will generate forecasts for each level of the hierarchy: Total sales, store sales (for each of the 54 stores), and disaggregated series (1782 in total, 33 categories in 54 stores). For a more detailed look into the data handling, feature engineering & exploratory analysis process, as well as some of the models used, I suggest looking at part 1 first.
+
+In part 1, we had one series to forecast, so we performed manual exploratory analysis & feature engineering, and achieved the best forecasts using a hybrid model of two linear regressions. This time, we have many series to forecast, so we will use a more automated approach. We'll also try some global deep learning / neural network models, trained on multiple time series at once. Darts offers PyTorch [implementations](https://unit8co.github.io/darts/userguide/torch_forecasting_models.html) of numerous deep learning models specialized for time series forecasting.
+
 ```{python Settings}
-#| echo: false
 
 import pandas as pd 
 import numpy as np
@@ -80,17 +85,18 @@ from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
 
 ## Data preparation steps from part 1
 
+The data preparation is mostly the same as part 1, so we won't discuss it further, though the code below is a more compact version of the code in part 1.
+
 ```{python DataPrepPart1}
-#| echo: false
 #| output: false
 
 # Load original datasets
-df_train = pd.read_csv("./OriginalData/train.csv", encoding="utf-8")
-df_test = pd.read_csv("./OriginalData/test.csv", encoding="utf-8")
-df_stores = pd.read_csv("./OriginalData/stores.csv", encoding="utf-8")
-df_oil = pd.read_csv("./OriginalData/oil.csv", encoding="utf-8")
-df_holidays = pd.read_csv("./OriginalData/holidays_events.csv", encoding="utf-8")
-df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
+df_train = pd.read_csv("./OriginalData/train.csv", encoding = "utf-8")
+df_test = pd.read_csv("./OriginalData/test.csv", encoding = "utf-8")
+df_stores = pd.read_csv("./OriginalData/stores.csv", encoding = "utf-8")
+df_oil = pd.read_csv("./OriginalData/oil.csv", encoding = "utf-8")
+df_holidays = pd.read_csv("./OriginalData/holidays_events.csv", encoding = "utf-8")
+df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding = "utf-8")
 
 # Combine df_train and df_test
 df = pd.concat([df_train, df_test])
@@ -109,11 +115,11 @@ df = df.merge(df_oil, on = "date", how = "left")
 
 
 # Split holidays data into local, regional, national and events
-events = df_holidays[df_holidays["holiday_type"] == "Event"]
+events = df_holidays[df_holidays["holiday_type"] == "Event"].copy()
 df_holidays = df_holidays.drop(labels=(events.index), axis=0)
-local = df_holidays.loc[df_holidays["locale"] == "Local"]
-regional = df_holidays.loc[df_holidays["locale"] == "Regional"]
-national = df_holidays.loc[df_holidays["locale"] == "National"]
+local = df_holidays.loc[df_holidays["locale"] == "Local"].copy()
+regional = df_holidays.loc[df_holidays["locale"] == "Regional"].copy()
+national = df_holidays.loc[df_holidays["locale"] == "National"].copy()
 
 # Drop duplicate rows in holidays-events
 local = local.drop(265, axis = 0)
@@ -121,7 +127,7 @@ national = national.drop([35, 39, 156], axis = 0)
 events = events.drop(244, axis = 0)
 
 # Add local_holiday binary column to local holidays data, to be merged into main 
-# data.
+# data
 local["local_holiday"] = (
   local.holiday_type.isin(["Transfer", "Additional", "Bridge"]) |
   ((local.holiday_type == "Holiday") & (local.transferred == False))
@@ -186,10 +192,10 @@ cpis = {
   }
   
 for year in [2013, 2014, 2015, 2016, 2017]:
-  df["sales"].loc[df.index.year==year] = df["sales"].loc[
-    df.index.year==year] / cpis[str(year)] * cpis["2010"]
-  df["oil"].loc[df.index.year==year] = df["oil"].loc[
-    df.index.year==year] / cpis[str(year)] * cpis["2010"]
+  df.loc[df.index.year == year, "sales"] = df.loc[
+    df.index.year == year, "sales"] / cpis[str(year)] * cpis["2010"]
+  df.loc[df.index.year == year, "oil"] = df.loc[
+    df.index.year == year, "oil"] / cpis[str(year)] * cpis["2010"]
 del year
 
 # Interpolate missing values in oil
@@ -198,10 +204,10 @@ df["oil"] = df["oil"].interpolate("time", limit_direction = "both")
 
 # New year's day features
 df["ny1"] = ((df.index.day == 1) & (df.index.month == 1)).astype(int)
+df["ny2"] = ((df.index.day == 2) & (df.index.month == 1)).astype(int)
 
 # Set holiday dummies to 0 if NY dummies are 1
 df.loc[df["ny1"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
-df["ny2"] = ((df.index.day == 2) & (df.index.month == 1)).astype(int)
 df.loc[df["ny2"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 
 # NY's eve features
@@ -216,7 +222,7 @@ df["xmas_before"] = 0
 
 df.loc[
   (df.index.day.isin(range(13,24))) & (df.index.month == 12), "xmas_before"] = df.loc[
-  (df.index.day.isin(range(13,24))) & (df.index.month == 12)].index.day - 12
+  (df.index.day.isin(range(13,24))) & (df.index.month == 12)].copy().index.day - 12
 
 df["xmas_after"] = 0
 df.loc[
@@ -262,15 +268,14 @@ df_train = df.loc[:"2017-08-15"]
 df_test = df.loc["2017-08-16":]
 
 # Replace transactions NAs in train with 0
-df_train["transactions"] = df_train["transactions"].fillna(0)
-  
+df_train = df_train.fillna({"transactions": 0})
+
 # Recombine train and test
 df = pd.concat([df_train, df_test])
 
 ```
 
 ```{python PrintRawData}
-#| echo: false
 
 print(df.head(2))
 
@@ -285,34 +290,48 @@ del df_holidays, df_oil, df_stores, df_trans, events, events_merge, local, local
 
 ## Hierarchical time series: Sales
 
+Each row in our original dataset is the sales of one product category, at one store, on one date. We have 33 categories and 54 stores in our data, which means we have a total of 1782 bottom level series we need to forecast for the competition. These series add up in certain ways:
+
+-   Total sales = sum of 33 categories' sales = sum of 1782 disaggregated series
+
+-   Total sales = sum of 54 stores' sales = sum of 1782 disaggregated series
+
+These are **hierarchical** time series structures, and we will generate forecasts for each hierarchy node. I've attempted working with both hierarchy structures, but had much worse results trying to predict category sales:
+
+-   The sales patterns of each store are considerably similar in terms of trend and seasonality, while the sales patterns of each category can be very different. Some categories (such as school supplies) even take zero values for most of a year.
+
+-   This makes it much harder to model category sales with a general approach. Therefore, this report will only examine the second hierarchy structure: Total \> store totals \> disaggregated series.
+
+We will create a multivariate Darts TimeSeries, where each series in the hierarchy will be one component. We'll also map the hierarchy structure as a dictionary, and embed this into the Darts TS, so we can perform hierarchical reconciliation later.
+
 ```{python TargetDataFrames}
 
 # Create wide dataframes with dates as rows, sales numbers for each hierarchy node as columns
 
 # Total
 total = pd.DataFrame(
-  data=df_train.groupby("date").sales.sum(),
-  index=df_train.groupby("date").sales.sum().index)
+  data = df_train.groupby("date").sales.sum(),
+  index = df_train.groupby("date").sales.sum().index)
 
-# Store
+# Stores
 store_nbr = pd.DataFrame(
-  data=df_train.groupby(["date", "store_nbr"]).sales.sum(),
-  index=df_train.groupby(["date", "store_nbr"]).sales.sum().index)
-store_nbr = store_nbr.reset_index(level=1)
-store_nbr = store_nbr.pivot(columns="store_nbr", values="sales")
+  data = df_train.groupby(["date", "store_nbr"]).sales.sum(),
+  index = df_train.groupby(["date", "store_nbr"]).sales.sum().index)
+store_nbr = store_nbr.reset_index(level = 1)
+store_nbr = store_nbr.pivot(columns = "store_nbr", values = "sales")
 
-# Category x store
+# Categories x stores
 category_store_nbr = pd.DataFrame(
-  data=df_train.groupby(["date", "category_store_nbr"]).sales.sum(),
-  index=df_train.groupby(["date", "category_store_nbr"]).sales.sum().index)
-category_store_nbr = category_store_nbr.reset_index(level=1)
-category_store_nbr = category_store_nbr.pivot(columns="category_store_nbr", values="sales")
+  data = df_train.groupby(["date", "category_store_nbr"]).sales.sum(),
+  index = df_train.groupby(["date", "category_store_nbr"]).sales.sum().index)
+category_store_nbr = category_store_nbr.reset_index(level = 1)
+category_store_nbr = category_store_nbr.pivot(columns = "category_store_nbr", values = "sales")
 
 # Merge all wide dataframes
 from functools import reduce
 wide_frames = [total, store_nbr, category_store_nbr]
 df_sales = reduce(lambda left, right: pd.merge(
-  left, right, how="left", on="date"), wide_frames)
+  left, right, how = "left", on = "date"), wide_frames)
 df_sales = df_sales.rename(columns = {"sales":"TOTAL"})
 del total, store_nbr, wide_frames, category_store_nbr
 
@@ -324,8 +343,8 @@ print("Rows x columns: " + str(df_sales.shape))
 
 ```{python TargetHierarchy}
 
-# Create multivariate time series with sales components
-ts_sales = TimeSeries.from_dataframe(df_sales, freq="D")
+# Create multivariate time series with sales series
+ts_sales = TimeSeries.from_dataframe(df_sales, freq = "D")
 
 # Create lists of hierarchy nodes
 categories = df_train.category.unique().tolist()
@@ -335,7 +354,7 @@ categories_stores = df_train.category_store_nbr.unique().tolist()
 # Initialize empty dict
 hierarchy_target = dict()
 
-# Map store sales to total sales
+# Map store sales series to total sales
 for store in stores:
   hierarchy_target[store] = ["TOTAL"]
 
@@ -344,13 +363,15 @@ from itertools import product
 for category, store in product(categories, stores):
   hierarchy_target["{}-{}".format(category, store)] = [store]
 
-# Map hierarchy to ts_train
+# Embed hierarchy to ts_train
 ts_sales = ts_sales.with_hierarchy(hierarchy_target)
 print(ts_sales)
 
 del category, store
 
 ```
+
+December 25 (Christmas Day) is missing from our original data. Darts automatically recognizes these gaps in the date, and we can fill in their values.
 
 ```{python FillTargetGaps}
 
@@ -363,8 +384,9 @@ ts_sales = na_filler.transform(ts_sales)
 
 ```
 
+Let's plot a few examples of the sales in our 54 stores.
+
 ```{python StorePlots}
-#| echo = false
 
 _ = ts_sales["1"].plot()
 _ = ts_sales["8"].plot()
@@ -377,8 +399,15 @@ plt.close("all")
 
 ```
 
+We see the seasonality and even cyclicality in store sales are considerably similar to one another, and to the total sales we analyzed in part 1.
+
+-   This means a single feature set is likely to perform well for many stores, if not all.
+
+-   We will also consider global deep learning models: Models that will train on all 54 series in one go, and will be able to predict all 54 stores (even new ones) with just one set of parameters. This wouldn't be feasible for series that are quite different from one another, such as the sales of 33 categories.
+
+-   We also see store 42 likely didn't open until roughly Q3 2015, so it had zero sales until then. Parametric models such as linear regression could struggle with such series.
+
 ```{python CatStorePlots1}
-#| echo = false
 
 _ = ts_sales["BREAD/BAKERY-1"].plot()
 _ = ts_sales["BREAD/BAKERY-8"].plot()
@@ -389,8 +418,9 @@ plt.close("all")
 
 ```
 
+Some categories, such as bread & bakery, could display fairly consistent seasonality in all stores, though we see the trends can be different across stores.
+
 ```{python CatStorePlots2}
-#| echo = false
 
 _ = ts_sales["CELEBRATION-1"].plot()
 _ = ts_sales["CELEBRATION-8"].plot()
@@ -401,10 +431,25 @@ plt.close("all")
 
 ```
 
+Other categories such as celebration or school supplies could take zero values for many periods of the year. Their seasonality patterns across stores could differ considerably, making it hard to model them with a single feature set and global models.
+
+To sum up findings from our short exploratory analysis:
+
+-   Patterns in store sales are fairly similar to one another, though trends can be different. These could be modeled well by a single global model trained on all 54 stores. We'll compare the performance of such global models with simpler models trained on each store separately.
+
+-   The patterns in category sales, both in category totals and single categories across different stores, could differ considerably. Applying global models to category totals (33 series), or to the disaggregated series (1782 series) is not likely to perform well.
+
+    -   One configuration could be promising for modeling disaggregated series: Training 33 global models on each category's sales in all 54 stores. This way, we derive a separate set of parameters for each category, as well as take advantage of the similarities across stores.
+
+    -   This would take a training time of at least 30+ hours on my machine depending on the model used, so I did not explore it further, but I believe it could result in the best predictions. One of the best performing [Kaggle notebooks](https://www.kaggle.com/code/ferdinandberr/darts-forecasting-deep-learning-global-models) in the competition had the best results with this approach, but with XGBoost models instead of global deep learning models.
+
 ## Covariate series
 
+We have the target series for our Darts models, now we need to create the covariate series with our features.
+
+### Total sales covariates
+
 ```{python LogTrafoFuncs}
-#| echo = false
 
 # Define functions to perform log transformation and reverse it. +1 to avoid zeroes
 def trafo_log(x):
@@ -418,12 +463,11 @@ diff = Differencer(lags = 1)
 
 ```
 
-### Total sales covariates
-
 #### For part 1 hybrid model
 
+The feature engineering for the total sales hybrid model is explained in detail in part 1, so I won't discuss it again here, though the compact code is available below.
+
 ```{python TotalCovars1}
-#| echo = false
 
 # Aggregate time features by mean
 total_covars1 = df.drop(
@@ -447,7 +491,7 @@ dp = DeterministicProcess(
 total_covars1 = total_covars1.merge(dp.in_sample(), how="left", on="date")
 
 # Create Darts time series with time features
-ts_totalcovars1 = TimeSeries.from_dataframe(total_covars1, freq="D")
+ts_totalcovars1 = TimeSeries.from_dataframe(total_covars1, freq = "D")
 
 # Fill gaps in covars
 ts_totalcovars1 = na_filler.transform(ts_totalcovars1)
@@ -458,7 +502,6 @@ total_covars1 = ts_totalcovars1.pd_dataframe()
 ```
 
 ```{python TotalCovars2}
-#| echo = false
 
 # Aggregate daily covariate series
 total_covars2 = df.groupby("date").agg(
@@ -474,11 +517,7 @@ total_covars2["transactions"] = df.groupby(["date", "store_nbr"]).transactions.m
 total_covars2 = diff.fit_transform(total_covars2)
   
   
-# Replace covariate series with MAs
-
-# # Sales
-# total_covars2["sales_ema5"] = total_covars2["sales"].rolling(
-#   window = 5, min_periods = 1, center = False, win_type = "exponential").mean()
+# Replace covariate series with their MAs
 
 # Oil
 total_covars2["oil_ma28"] = total_covars2["oil"].rolling(window = 28, center = False).mean()
@@ -499,21 +538,21 @@ total_covars2["trns_ma7"] = total_covars2["trns_ma7"].interpolate("linear", limi
 
 # Drop original covariate series
 total_covars2 = total_covars2.drop([
-  # "sales", 
   "oil", "onpromotion", "transactions"], axis = 1)
 
-# Replace last 16 dates' sales and transactions MAs with NAs
-# total_covars2.loc[total_covars2.index > "2017-08-15", "sales_ema5"] = np.nan
+# Replace last 16 dates' transactions MAs with NAs
 total_covars2.loc[total_covars2.index > "2017-08-15", "trns_ma7"] = np.nan
 
 ```
 
-#### For single models
+#### For models on raw series
+
+We'll derive a slightly different feature set for the model to be fit on the raw total sales. We'll drop the trend dummies, and replace the Fourier pairs with a cyclical encoding of day of month and month features. We'll discuss the rationale later when we introduce our model.
 
 ```{python CommonCovars}
 
 # Retrieve copy of total_covars1, drop Fourier terms, trend knot (leaving daily predictors common to all hierarchy levels).
-common_covars = total_covars1[total_covars1.columns[2:21].values.tolist()]
+common_covars = total_covars1[total_covars1.columns[2:21].values.tolist()].copy()
 
 # Add differenced oil price and its MA to common covariates. 
 common_covars["oil"] = df.groupby("date").oil.mean()
@@ -536,8 +575,8 @@ print(common_covars.columns)
 total_covars = common_covars.copy()
   
 # Retrieve local & regional holiday
-total_covars["local_holiday"] = total_covars1["local_holiday"]
-total_covars["regional_holiday"] = total_covars1["regional_holiday"]
+total_covars["local_holiday"] = total_covars1["local_holiday"].copy()
+total_covars["regional_holiday"] = total_covars1["regional_holiday"].copy()
   
 # Retrieve differenced sales EMA
 total_covars["sales_ema5"] = diff.fit_transform(
@@ -599,6 +638,14 @@ x_total = x_total.stack(
 ```
 
 ### Store sales covariates
+
+For each of the 54 stores, we will retrieve a different set of covariates.
+
+-   Some covariates, such as day of week or oil prices are common to all levels of the hierarchy.
+
+-   Others are unique to each series, for example, the local and regional holiday features will take different values for stores in different locations, not to mention the moving averages of past sales or transactions.
+
+-   Instead of using Fourier pairs for long-term seasonality features, such as day of month, we use cyclical encoding, which encodes the day of month as a single sine-cosine pair. This will likely generalize better to all stores (and algorithms), and is less likely to overfit.
 
 ```{python StoreCovars}
 
@@ -682,18 +729,28 @@ del covars, store
 
 ```
 
+**Static covariates** are time-invariant covariates, such as store location. Global models use these to differentiate the multiple series they are trained on. They are not used by models trained on one series at a time.
+
+-   These could be quite useful for our deep learning models: For example, a complex combination of weights for the store static covariates and the trend features can allow a model adjust its trend predictions for each store.
+
+-   We'll retrieve the store location, type and cluster information and one-hot encode them, to be later embedded into the target series. We'll create a Pandas dataframe where columns are static covariates, and the index is the store numbers, to be passed into Darts.
+
 ```{python StoreStaticCovars}
 
-# Create dataframe where column=static covariate and index=store nbr
+# Create dataframe where column = static covariate and index = store nbr
 store_static = df[["store_nbr", "city", "state", "store_type", "store_cluster"]].reset_index().drop("date", axis=1).drop_duplicates().set_index("store_nbr")
+
+# Convert store cluster to string
 store_static["store_cluster"] = store_static["store_cluster"].astype(str)
 
-# Encode static covariates
+# One-hot encode static covariates
 store_static = pd.get_dummies(store_static, sparse = False, drop_first = True)
 
 ```
 
 ### Disaggregated sales covariates
+
+We'll retrieve 1782 covariate series for our 1782 bottom level target series. This takes around 10 minutes on my machine, though the code is simpler as no aggregation is necessary.
 
 ```{python DisaggCovars}
 
@@ -707,21 +764,21 @@ for series in tqdm(categories_stores):
 
   # Retrieve local & regional holiday
   covars["local_holiday"] = df[
-    df["category_store_nbr"] == series].local_holiday
+    df["category_store_nbr"] == series].local_holiday.copy()
 
   covars["regional_holiday"] = df[
-    df["category_store_nbr"] == series].regional_holiday
+    df["category_store_nbr"] == series].regional_holiday.copy()
 
   # Retrieve differenced sales EMA
   covars["sales_ema7"] = diff.fit_transform(
-    df[df["category_store_nbr"] == series].sales).interpolate(
+    df[df["category_store_nbr"] == series].sales.copy()).interpolate(
   "linear", limit_direction = "backward"
   ).rolling(
     window = 7, min_periods = 1, center = False, win_type = "exponential").mean()
 
   # Retrieve differenced onpromotion, its MA
   covars["onpromotion"] = diff.fit_transform(
-    df[df["category_store_nbr"] == series].onpromotion).interpolate(
+    df[df["category_store_nbr"] == series].onpromotion.copy()).interpolate(
       "time", limit_direction = "both")
 
   covars["onp_ma28"] = covars["onpromotion"].rolling(
@@ -731,7 +788,7 @@ for series in tqdm(categories_stores):
 
   # Retrieve differenced transactions, its MA
   covars["transactions"] = diff.fit_transform(
-    df[df["category_store_nbr"] == series].transactions).interpolate(
+    df[df["category_store_nbr"] == series].transactions.copy()).interpolate(
       "time", limit_direction = "both")
 
   covars["trns_ma7"] = covars["transactions"].rolling(
@@ -770,25 +827,31 @@ del covars, series
 
 ```
 
+We'll also retrieve a set of static covariates for the disaggregated series. In addition to the store information, we have the product category available for use as a static covariate.
+
 ```{python DisaggStaticCovars}
 
-# Create dataframe where column=static covariate and index=series label
+# Create dataframe where column = static covariate and index = series label
 disagg_static = df[["category", "store_nbr", "city", "state", "store_type", "store_cluster", "category_store_nbr"]].reset_index().drop("date", axis=1).drop_duplicates().set_index("category_store_nbr")
 
+# Convert store cluster to string
 disagg_static["store_cluster"] = disagg_static["store_cluster"].astype(str)
 
-# Encode static covariates
+# One-hot encode static covariates
 disagg_static = pd.get_dummies(disagg_static, sparse = False, drop_first = True)
 
 ```
 
 ## Helper functions for modeling
 
-```{python ScoringFunc}
-#| echo = false
+We'll define some performance scoring, plotting and transformation functions.
 
-# Define model scoring function
-def perf_scores(val, pred, model="drift", rounding = 4, logtrafo = True):
+We'll look at several performance metrics, but the most important one is RMSLE, as log errors penalize underpredictions more severely, which makes sense for sales forecasts. The competition is also scored on RMSLE.
+
+```{python ScoringFunc}
+
+# Define model scoring function for total sales (one series)
+def perf_scores(val, pred, model = "drift", rounding = 4, logtrafo = True):
   
   if logtrafo == True:
     scores_dict = {
@@ -820,8 +883,7 @@ def perf_scores(val, pred, model="drift", rounding = 4, logtrafo = True):
 
 ```{python HierarchyScoringFunc}
 
-
-# Define model scoring function for full hierarchy
+# Define model scoring function for hierarchy nodes (multiple series)
 def scores_hierarchy(val, pred, subset, model, rounding = 4):
   
   def measure_mae(val, pred, subset):
@@ -862,8 +924,8 @@ def scores_hierarchy(val, pred, subset, model, rounding = 4):
 
 ```{python ScorePlotFunc}
 
-# Define model score plotting function for full hierarchy
-def scores_plot(val, preds_dict, subset, logscale = True):
+# Define model score plotting function for hierarchy nodes
+def scores_plot(val, preds_dict, subset, logscale = True, title = "Plot Title"):
   
   # Scoring functions
   def measure_mae(val, pred, subset):
@@ -901,8 +963,9 @@ def scores_plot(val, preds_dict, subset, logscale = True):
   # Combine all models' score dfs
   scores_df_all = pd.concat(scores_df_all)
   
-  # Create fig. of 4 kdeplots, one for each metric, grouped by model
+  # Create fig. of 4 histplots, one for each metric, grouped by model
   fig, ax = plt.subplots(2, 2)
+  plt.suptitle(title)
   
   _ = sns.histplot(
     data = scores_df_all,
@@ -949,6 +1012,10 @@ def scores_plot(val, preds_dict, subset, logscale = True):
   
 ```
 
+Some of our disaggregated series often take values of zero, or close to zero. Some of our models could generate negative forecasts for these, so we'll define a function to clip negative forecasts to zero.
+
+-   Some competition notebooks also use zero forecasters: Transformers that replace predictions with zero based on certain rules, as some series take zero values for most of the year. I didn't use such a transformation because it may hurt as well as help some models, but they are worth investigating for the best predictions.
+
 ```{python NegRemoverFunc}
 
 # Define function to replace negative predictions with zeroes
@@ -959,15 +1026,19 @@ def trafo_zeroclip(x):
 
 ## Modeling: Total sales
 
+We'll start by modeling total sales. We'll fit and validate some baseline models, our linear + linear hybrid from part 1, and a D-Linear neural network model to see if it does better even with a small amount of data.
+
 ### Baseline models
+
+The baseline models we'll use are naive drift, naive seasonal, and automatic exponential smoothing. Their characteristics are discussed in more detail in part 1 of this analysis.
 
 ```{python BaselineModelSpec}
 
 # Specify baseline models
 model_drift = NaiveDrift()
-model_seasonal = NaiveSeasonal(K=7) # Repeat the last week of the training data
+model_seasonal = NaiveSeasonal(K = 7) # Repeats the last week of the training data
 
-# Specify ETS model
+# Specify ETS model for total sales
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
   model = "AAA", # Additive trend, seasonality and remainder component
@@ -979,7 +1050,6 @@ model_ets = ETS(
 ```{python BaselineTotalFitVal}
 
 # Fit & validate baseline models
-
 
 # Naive drift
 _ = model_drift.fit(trafo_log(ts_sales["TOTAL"][:-15]))
@@ -997,8 +1067,9 @@ pred_ets_total = model_ets.predict(n=15)
 
 ### Linear + linear hybrid from part 1
 
+We'll replicate our hybrid model from part 1, which uses a linear regression to model, predict and remove the trend, seasonality & calendar effects, and a second linear regression trained on the remainder to model and predict the cyclical effects. This model was discussed in detail in part 1, and the compact code is available below.
+
 ```{python TotalSalesModel}
-#| echo = false
 
 # Perform time decomposition in Sklearn
 
@@ -1079,12 +1150,33 @@ pred_linear_total = model_linear.predict(
 
 ### D-Linear
 
+The linear + linear hybrid was our best performing model from part 1. Now we'll compare it against a neural network model tailored for time series forecasting, the D-Linear model. The model has a fairly simple architecture, and is able to outperform more complex Transformer models ([Original paper](https://arxiv.org/pdf/2205.13504.pdf), [GitHub repository](https://github.com/cure-lab/LTSF-Linear)) in time series forecasting.
+
+-   The raw input series are detrended using a moving average kernel, which is why we won't use a trend dummy feature.
+
+-   Then, two linear layers are applied separately to the trend component and the detrended component. The final predictions are the sum of the output of both components.
+
+-   D-Linear is able to handle trended & non-stationary series well, which in my experience is not the case for some complex NN architectures such as recurrent neural networks. I believe this ability is crucial for good performance in this dataset, as sales are strongly trended and seasonal.
+
+We have some preprocessing for our covariates:
+
+-   We need to train our neural networks with an "inner" validation set, to evaluate how well the model generalizes after each training epoch. This will be separate from the "outer" validation set we use for evaluating the performance of all models. The outer validation is the last 15 days in our data similar to the competition requirement, and the inner validation will be the 45 days before that.
+
+    -   We need 45 days of validation data because our NN models will be trained on input chunks of 30 days, and they will output predictions of 15 days at a time (except RNN).
+
+-   The gradient descent algorithm in NNs is sensitive to features with large values, so we'll scale all our features between 0 and 1.
+
+-   It's [recommended](https://unit8co.github.io/darts/userguide/torch_forecasting_models.html#performance-recommendations) to cast Darts TS to 32-bit data to improve training speed of Torch models, so we'll do that.
+
+-   After all the preprocessing is done, we'll join back the training, inner and outer validation covariates into one, as Darts automatically picks the right slice of covariates for training or prediction using the date index. This simplifies our workflow quite a bit.
+
 ```{python TotalPreprocess}
 
 # Create min-max scaler
 scaler_minmax = Scaler()
 
-# Split train-val series
+# Split train-val series (inner validation for training Torch models, outer
+# validation for evaluating performance)
 cov_train, cov_innerval, cov_outerval = x_total[:-76], x_total[-76:-31], x_total[-31:]
   
 # Scale train-val series
@@ -1095,7 +1187,7 @@ cov_outerval = scaler_minmax.transform(cov_outerval)
 # Rejoin series
 cov_train = (cov_train.append(cov_innerval)).append(cov_outerval)
   
-# Cast series to 32-bits for performance gains
+# Cast series to 32-bits for performance gains in Torch models
 x_total = cov_train.astype(np.float32)
 
 # Cleanup
@@ -1108,7 +1200,7 @@ del cov_train, cov_innerval, cov_outerval
 # Retrieve total sales
 total_sales = ts_sales["TOTAL"]
 
-# Cast series to 32-bits for performance gains
+# Cast series to 32-bits for performance gains in Torch models
 total_sales = total_sales.astype(np.float32)
 
 # Split train-val series
@@ -1116,80 +1208,118 @@ y_train_total, y_val_total = total_sales[:-15], total_sales[-15:]
 
 ```
 
-```{python TotalTorchCallbacks}
+To avoid overfitting, we'll use a Torch early stopper to train our NN models. It will terminate training if the validation loss doesn't improve by a certain amount in 10 epochs. For total sales, we'll use 0.1% of the mean squared error of our best baseline model as our improvement threshold. The loss metric for training will also be the default MSE.
 
-# # Create early stopper
-# early_stopper = EarlyStopping(
-#   monitor = "val_loss",
-#   min_delta = 10292685, # 0.1% of MSE of best baseline
-#   patience = 10
-# )
-# 
-# # Progress bar
-# progress_bar = RichProgressBar()
-# 
-# # Rich model summary
-# model_summary = RichModelSummary(max_depth = -1)
+```{python TotalTorchCallbacks}
+#| eval: false
+
+# Create early stopper
+early_stopper = EarlyStopping(
+  monitor = "val_loss",
+  min_delta = 10292685, # 0.1% of MSE of best baseline (ETS)
+  patience = 10
+)
+
+# Progress bar
+progress_bar = RichProgressBar()
+
+# Rich model summary
+model_summary = RichModelSummary(max_depth = -1)
 
 ```
+
+Below is the specification I used for the best performing D-Linear model on total sales.
+
+-   The model will train on input chunks of 30 days at a time, and output predictions for the next 15 days.
+
+    -   This was mainly chosen due to the validation set requirements: The training validation set has to be at least as long as the input + output sequence. Longer training sequences may be more informative for model training, but they will also require a longer validation set, which means less training data. There could be a better performing tradeoff for this.
+
+-   The trend decomposition will be done with a moving average kernel of 25 days, the default. This likely separates the data into a wiggly "trend-cycle" component, and a seasonal component free of trend and cyclicality.
+
+    -   Again, it's worth experimenting with a longer kernel (meaning a smoother trend-cycle component), but this kernel also has to be shorter than the training input sequence.
+
+-   Each training pass (batch) will use 32 input-output sequences. This parameter is likely more important for training speed than for prediction performance.
+
+-   Since we'll use an early stopper to terminate training and prevent overfitting, we set the number of epochs to an arbitrarily high number to ensure we have enough.
+
+-   We'll use the default Torch optimizer, Adam, but double its default learning rate and use 0.002. A learning rate scheduler will decrease the learning rate in every 5 epochs with no improvement in the validation score.
+
+    -   The learning rate is a key parameter in training NNs, and affects how severely the model weights are adjusted in each iteration. Too high LR may result in a sub-optimal model, or even crash training. Too low LR will cause training to take longer and may even prevent improvement.
+
+    -   I did not try drastically different values for LR, but in general, higher values didn't result in better prediction performance, and lower values weren't necessary as I saw no indications of overfitting. The higher initial LR combined with scheduled decay enabled me to get the same or better prediction performances compared to default, with roughly half the training times.
+
+-   Torch models available in Darts can be logged and monitored with Tensorboard, and saved model checkpoints can be loaded later. The Torch optimizer, loss function, LR scheduler and trainer options can all be modified.
 
 ```{python TotalDLinear}
+#| eval: false
 
-# # Specify D-Linear model
-# model_dlinear = DLinear(
-#   input_chunk_length = 30,
-#   output_chunk_length = 15,
-#   kernel_size = 25,
-#   batch_size = 32,
-#   n_epochs = 500,
-#   model_name = "DLinearTotal2.0",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0],
-#     "log_every_n_steps": 1
-#     }
-# )
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "DLinearTotalX",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0],
+    "log_every_n_steps": 1
+    }
+)
 
 ```
+
+As stated before, we won't include a trend dummy in the D-Linear models as they handle trend natively. We'll use all other available features.
+
+-   The sales moving average, transactions and its moving average are **past covariates.** We won't know the value of these for our future predictions, but some Darts models can still use them in training. We can generate up to **output_chunk_length** predictions (in our case, 15) without needing to pass "future" values of past covariates.
+
+-   All our other covariates are known into the future (at least in the competition dataset), so we'll pass them as **future covariates** both in training and prediction.
 
 ```{python TotalDLinearCovars}
 
-dlinear_futcovs_total = ['national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'local_holiday', 'regional_holiday', 'onpromotion', 'onp_ma28', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
+dlinear_futcovs_total = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'oil', 'oil_ma28', 'local_holiday', 'regional_holiday','national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday',  'onpromotion', 'onp_ma28', 'day_sin', 'day_cos', 'month_sin', 'month_cos']
 
 dlinear_pastcovs_total = ['sales_ema5','transactions', 'trns_ma7']
 
 ```
 
-```{python TotalDLinearFit}
+As stated before, we don't need to separate the covariates for our training, inner validation or outer validation data, as Darts will automatically slice them according to the training data / prediction period (as long as the dates are correct and matching).
 
-# # Fit DLinear model
-# _ = model_dlinear.fit(
-#   series = y_train_total[:-45],
-#   future_covariates = x_total[dlinear_futcovs_total],
-#   past_covariates = x_total[dlinear_pastcovs_total],
-#   val_series = y_train_total[-45:],
-#   val_future_covariates = x_total[dlinear_futcovs_total],
-#   val_past_covariates = x_total[dlinear_pastcovs_total],
-#   verbose = True
-# )
+```{python TotalDLinearFit}
+#| eval: false
+
+# Fit DLinear model
+_ = model_dlinear.fit(
+  series = y_train_total[:-45],
+  future_covariates = x_total[dlinear_futcovs_total],
+  past_covariates = x_total[dlinear_pastcovs_total],
+  val_series = y_train_total[-45:],
+  val_future_covariates = x_total[dlinear_futcovs_total],
+  val_past_covariates = x_total[dlinear_pastcovs_total],
+  verbose = True
+)
 
 ```
 
+Of course, instead of retraining multiple neural network models in one notebook, we'll load the best checkpoint from our best previously-trained model. Note that the model object is not automatically set to the best checkpoint when training is finished (if different from the last checkpoint).
+
 ```{python TotalDLinearLoad}
 
-# Load a previously trained DLinear model's best checkpoint
+# Load a previously trained Torch model's best checkpoint
 model_dlinear = DLinear.load_from_checkpoint("DLinearTotal2.0", best = True)
 
 ```
 
 ```{python TotalDLinearValScore}
+#| output: false
 
 pred_dlinear_total = model_dlinear.predict(
   n=15,
@@ -1200,6 +1330,8 @@ pred_dlinear_total = model_dlinear.predict(
 ```
 
 ### Model scores
+
+Let's score our baseline models, hybrid model and D-Linear model.
 
 ```{python TotalModelScores}
 
@@ -1221,7 +1353,7 @@ perf_scores(
 perf_scores(
   trafo_log(ts_sales["TOTAL"][-15:]), 
   pred_ets_total,
-  "Exponential smoothing"
+  "ETS (additive with log transformation)"
   )
 
 perf_scores(
@@ -1240,17 +1372,31 @@ perf_scores(
 
 ```
 
+We see our models don't perform much better than our baselines, and in some metrics, slightly worse. This is mainly due to the forecast horizon:
+
+-   With a short forecast horizon of 15, the long-term patterns in our data don't matter too much, so exponential smoothing without covariates can perform almost as good as a NN model with many features.
+
+-   In part 1, we used all of the 2017 data as our validation period (227 days), and the linear regression model greatly outperformed exponential smoothing and other baselines, as it was able to capture long-term patterns with covariates.
+
+-   Still, ETS performs considerably better than our naive baselines, our linear + linear hybrid performs a bit better than ETS, and the D-Linear model performs a bit better than the hybrid, despite not having the advantage of utilizing large amounts of data.
+
 ## Modeling: Store sales
 
+Now, we'll attempt to model and predict the sales in all 54 stores, with simpler methods trained on each store separately, as well as with global neural networks trained on all stores at once.
+
 ### Preprocessing
+
+The preprocessing steps are the same as total sales, except applied to the target and covariate series of each store. The target and covariate series are gathered in lists, easily accessed and used in Darts models.
 
 ```{python StorePreprocess}
 
 # Train-validation split and scaling for covariates
 x_store = []
+
 for series in store_covars:
   
-  # Split train-val series
+  # Split train-val series (inner validation for training Torch models, outer
+  # validation for evaluating performance)
   cov_train, cov_innerval, cov_outerval = series[:-76], series[-76:-31], series[-31:]
   
   # Scale train-val series
@@ -1261,7 +1407,7 @@ for series in store_covars:
   # Rejoin series
   cov_train = (cov_train.append(cov_innerval)).append(cov_outerval)
   
-  # Cast series to 32-bits for performance gains
+  # Cast series to 32-bits for performance gains in Torch models
   cov_train = cov_train.astype(np.float32)
   
   # Append series to list
@@ -1279,6 +1425,7 @@ store_sales = [ts_sales[store] for store in stores]
 
 # Train-validation split for store sales
 y_train_store, y_val_store = [], []
+
 for series in store_sales:
   
   # Add static covariates to series
@@ -1289,7 +1436,7 @@ for series in store_sales:
   # Split train-val series
   y_train, y_val = series[:-15], series[-15:]
   
-  # Cast series to 32-bits for performance gains
+  # Cast series to 32-bits for performance gains in Torch models
   y_train = y_train.astype(np.float32)
   y_val = y_val.astype(np.float32)
   
@@ -1304,12 +1451,14 @@ del y_train, y_val
 
 ### Baseline models
 
+We'll use the same baseline models as total sales, but make a slight modification to the ETS model. We'll allow the model to choose between an additive or multiplicative version of each ETS component (error, trend, seasonality), or to drop them altogether. The choice is made by fitting ETS models with all settings, and comparing their AICc scores. This should help us tailor the baseline a bit for each series.
+
 ```{python StoreBaselineFitVal}
 
 # Specify AutoETS model
 model_autoets = ETS(
   season_length = 7, # Weekly seasonality
-  model = "ZZZ", # Try additive, multiplicative or none for each component
+  model = "ZZZ", # Try additive, multiplicative or omission for each component
   damped = None # Try both dampened and non-dampened trend
 )
 
@@ -1369,12 +1518,28 @@ scores_hierarchy(
   ts_sales[stores][-15:], 
   trafo_zeroclip(pred_ets_store),
   stores, 
-  "Exponential smoothing"
+  "AutoETS (all configurations evaluated)"
   )
   
 ```
 
 ### STL decomposition
+
+Some of the models we'll use are better suited to modeling time effects such as trend and seasonality (linear regression, D-Linear), while others aren't good in modeling time effects, but can perform well on stationary remainders (Non-seasonal ARIMA, random forest...).
+
+-   In part 1, we used a linear + linear hybrid to model time effects, remove them from the series, and model the remainder. We had to do the decomposition part in Sklearn, as Darts does not allow predictions on training data (with good reason).
+
+-   Doing the same for 54 series will be quite the work, so this time we'll use the time decomposition functions available in Darts. Namely, we'll use an STL decomposition to separate each series into trend + seasonality and remainder, and we'll train different models on different components. We'll arrive at hybrid predictions by summing the predictions of different models.
+
+STL decomposition is a flexible method for decomposing time series into trend, seasonality and remainder components. STL uses the LOESS method to capture non-linear relationships
+
+-   It's possible to control the smoothness of the trend(-cycle) component, as well as adjust for changes in seasonality patterns. STL is also robust to extreme observations
+
+-   However, STL is unable to perform multiplicative decomposition natively (though this can be achieved by working with log-transformed data), or capture calendar effects such as holidays.
+
+-   We'll aim to retrieve a very smooth, linear-like trend component by setting a very large trend window, so we can model and extrapolate a robust trend. This will leave cyclicality and calendar effects to our remainder component, to be modeled by more sophisticated algorithms.
+
+-   For seasonality, we'll focus on the best candidate, and set a seasonal period of 7 days. I had the best results with a seasonal smoother of 29 days, though better configurations may be possible.
 
 ```{python StoreSTLDecomp}
 
@@ -1385,21 +1550,18 @@ remainder_store = []
 
 for series in y_train_store:
   
-  # # Log transform series
-  # series = trafo_log(series)
-  
   # Perform STL decomposition
   trend, seasonality = decomposition(
     series,
     model = ModelMode.ADDITIVE,
     method = "STL",
-    freq = 7, # N. of obs in each seasonality cycle (12 for monthly CO2 data with yearly seasonality cycle)
+    freq = 7, # N. of obs in each seasonality cycle
     seasonal = 29, # Size of seasonal smoother (last n lags)
     trend = 731, # Size of trend smoother
-    robust = True
+    robust = True # Robust against outliers
   )
   
-  # Rename components in trend and seasonality series
+  # Rename components in trend and seasonality series to be same as original series
   trend = trend.with_columns_renamed(
     trend.components[0], 
     series.components[0]
@@ -1410,54 +1572,56 @@ for series in y_train_store:
     series.components[0]
     )
   
-  # Remove trend & seasonality from series
+  # Remove trend & seasonality from series to retrieve remainder
   remainder = remove_from_series(
     series,
     (trend + seasonality),
     ModelMode.ADDITIVE
   )
   
-  # Append to lists
-  trend_store.append(
-    # trafo_exp(trend)
-    trend
-    )
-  
-  season_store.append(
-    # trafo_exp(seasonality)
-    seasonality
-  )  
-    
-  remainder_store.append(
-    # trafo_exp(remainder)
-    remainder
-  )
+  # Append each component to respective lists
+  trend_store.append(trend)
+  season_store.append(seasonality)  
+  remainder_store.append(remainder)
   
 # Cleanup
 del series, trend, seasonality, remainder
 
 ```
 
+We'll plot the STL-decomposed components for one store.
+
 ```{python StoreSTLPlot}
 
 y_train_store[8].plot()
 trend_store[8].plot(label = "STL trend")
+_ = plt.title("STL decomposition of store 17 sales")
 plt.show()
 plt.close("all")
 
 season_store[8].plot(label = "STL seasonality")
+_ = plt.title("STL decomposition of store 17 sales")
 plt.show()
 plt.close("all")
 
 remainder_store[8].plot(label = "STL remainder")
+_ = plt.title("STL decomposition of store 17 sales")
 plt.show()
 plt.close("all")
 
 ```
 
+As we can see, the trend component is fairly linear, while the cyclicality and calendar effects are mostly left to the remainder component.
+
+-   I found this to be ideal for robust trend predictions into the future. With a wiggly trend-cycle component, we'd leave much of the cyclical effects to the time effects model, which is often a simple method like linear regression, and may not handle complex patterns well.
+
 ### Hybrid models
 
-#### Linear regression on trend + seasonality
+We'll start by fitting univariate hybrid models, one by one on each series, similar to what we did in part 1. For the time effects component (trend + seasonality), we'll fit a linear regression. For the remainder components, we'll fit a linear regression, AutoARIMA and random forest model.
+
+#### Linear regression on STL trend + seasonality
+
+The time effects linear regression will only use a trend dummy, days of week dummies, and the cyclical encoded day of month and month features.
 
 ```{python LinearRegSpec}
 
@@ -1467,63 +1631,67 @@ model_linear = LinearRegressionModel(
   output_chunk_length = 15 # Predict 15 steps in one go
 )
 
-# Time covariates (trend + seasonality, future only)
+# Time covariates (trend + seasonality, only future covariates)
 linear_covars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
 
 ```
 
-```{python StoreLinearFitVal}
-#| output: false
+To retrieve our predictions as a single multivariate series with 54 components, we'll first fit and predict the first store, and use a loop to fit & predict the remaining 53, stacking the predictions to the first one each time.
 
-# First fit & validate the first store to initialize series
+```{python StoreLinearFitVal}
+
+# First fit & validate the first store to initialize multivariate series
 _ = model_linear.fit(
   (trend_store[0] + season_store[0]),
   future_covariates = x_store[0][linear_covars]
-  )
+)
 
 pred_linear_store = model_linear.predict(
   n=15,
   future_covariates = x_store[0][linear_covars]
-  )
+)
 
-# Then loop over all categories except first
+# Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
   _ = model_linear.fit(
-  (trend_store[i] + season_store[i]),
-  future_covariates = x_store[i][linear_covars]
-  )
+    (trend_store[i] + season_store[i]),
+    future_covariates = x_store[i][linear_covars]
+    )
 
   # Predict validation data
   pred = model_linear.predict(
-  n=15,
-  future_covariates = x_store[i][linear_covars]
-  )
+    n=15,
+    future_covariates = x_store[i][linear_covars]
+    )
 
   # Stack predictions to multivariate series
   pred_linear_store = pred_linear_store.stack(pred)
   
 del pred, i
+
 ```
 
-#### Linear regression on remainder
+#### Linear regression on STL remainder
+
+The linear regression on the remainder component will use sales lag 1, as well as lag 1 of the past covariates: The sales moving average and transactions features. The future covariates will be the calendar features, along with the oil and onpromotion features.
 
 ```{python StoreLinear2FitVal}
 
 # Specify linear regression model
 model_linear2 = LinearRegressionModel(
-  lags = [-1],
-  lags_future_covariates = [0], # Don't create any future covariate lags
-  lags_past_covariates = [-1],
+  lags = [-1], # Use one target lag
+  lags_future_covariates = [0], # Don't use any future covariate lags
+  lags_past_covariates = [-1], # Use one past covariate lag
   output_chunk_length = 15 # Predict 15 steps in one go
 )
 
 
-# Covariates (cylical + calendar, future & past)
-linear2_futcovars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# Covariates (cylical + calendar, future & past covariates)
+linear2_futcovars = ["oil", 'oil_ma28', "onpromotion", 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
 
-linear2_pastcovars = ["sales_ema7", 'transactions', 'trns_ma7']
+linear2_pastcovars = ["sales_ema7", "transactions", 'trns_ma7']
 
 
 # First fit & validate the first store to initialize series
@@ -1531,14 +1699,14 @@ _ = model_linear2.fit(
   remainder_store[0],
   future_covariates = x_store[0][linear2_futcovars],
   past_covariates = x_store[0][linear2_pastcovars]
-  )
+)
 
 pred_linear2_store = model_linear2.predict(
   n=15,
   future_covariates = x_store[0][linear2_futcovars]
-  )
+)
 
-# Then loop over all categories except first
+# Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
@@ -1550,8 +1718,8 @@ for i in tqdm(range(1, len(y_train_store))):
 
   # Predict validation data
   pred = model_linear2.predict(
-  n=15,
-  future_covariates = x_store[i][linear2_futcovars]
+    n=15,
+    future_covariates = x_store[i][linear2_futcovars]
   )
 
   # Stack predictions to multivariate series
@@ -1561,60 +1729,66 @@ del pred, i
 
 ```
 
-#### AutoARIMA on remainder
+#### AutoARIMA on STL remainder
+
+The ARIMA model, and the AutoARIMA evaluation process was discussed in detail in part 1. The ARIMA model will use the same future covariates as the linear regression, but it does not take in past covariates.
 
 ```{python ARIMAModelSpec}
+#| eval: false
 
-# # AutoARIMA
-# model_arima = AutoARIMA(
-#   start_p = 0,
-#   max_p = 7,
-#   start_q = 0,
-#   max_q = 7,
-#   seasonal = False, # Don't include seasonal orders
-#   information_criterion = 'aicc', # Minimize AICc to choose best model
-#   trace = False # Don't print tuning iterations
-#   )
-# 
-# # AutoARIMA covars (cyclical + calendar, future only)
-# arima_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# AutoARIMA
+model_arima = AutoARIMA(
+  start_p = 0,
+  max_p = 7,
+  start_q = 0,
+  max_q = 7,
+  seasonal = False, # Don't include seasonal orders
+  information_criterion = 'aicc', # Minimize AICc to choose best model
+  trace = False # Don't print tuning iterations
+  )
+
+# AutoARIMA covars (cyclical + calendar, future covariates only)
+arima_covars = linear2_futcovars
 
 ```
 
-```{python StoreARIMAFitVal}
+```{python ARIMAStoreFitVal}
+#| eval: false
+#| include: false
 
-# # First fit & validate the first category to initialize series
-# _ = model_arima.fit(
+# # First fit & validate the first store to initialize series
+# model_arima.fit(
 #   remainder_store[0],
 #   future_covariates = x_store[0][arima_covars])
-# 
+#   
 # pred_arima_store = model_arima.predict(
 #   n=15,
 #   future_covariates = x_store[0][arima_covars])
-# 
-# # Then loop over all categories except first
+#   
+# # Then loop over all stores except first
 # for i in tqdm(range(1, len(y_train_store))):
-# 
+#   
 #   # Fit on training data
-#   _ = model_arima.fit(
-#         remainder_store[i],
-#         future_covariates = x_store[i][arima_covars]
+#   model_arima.fit(
+#     remainder_store[i],
+#     future_covariates = x_store[i][arima_covars]
 #     )
-# 
+#     
 #   # Predict validation data
 #   pred = model_arima.predict(
 #     n=15,
 #     future_covariates = x_store[i][arima_covars]
 #     )
-# 
+#     
 #   # Stack predictions to multivariate series
 #   pred_arima_store = pred_arima_store.stack(pred)
-# 
+#   
 # del pred, i
 
 ```
 
 ```{python ARIMAStoreSave}
+#| eval: false
 #| include: false
 
 # # Save ARIMA store preds
@@ -1624,9 +1798,13 @@ del pred, i
 
 ```
 
+Since the AutoARIMA process takes roughly 30 minutes for all 54 stores, we'll load previously saved predictions.
+
+-   In at least one iteration, AutoARIMA gave a warning that the input series was completely constant, and chose an ARMA(0, 0, 0) model with no AR or MA components. This could help it adjust better to series with constant zero values, compared to a linear regression.
+
 ```{python ARIMAStoreLoad}
 
-# Load ARIMA store preds
+# Load previously saved ARIMA store preds
 pred_arima_store = TimeSeries.from_csv(
   "./ModifiedData/pred_arima_store1.csv",
   time_col = "date",
@@ -1635,9 +1813,9 @@ pred_arima_store = TimeSeries.from_csv(
 
 ```
 
-Mention: AutoARIMA caught a completely constant input series, returned an ARMA (0 0 0) model.
+#### Random forest on STL remainder
 
-#### Random forest on remainder
+The random forest model was discussed in part 1, and the implementation is pretty much the same. It uses the same covariates as the linear regression model.
 
 ```{python RFSpec}
 
@@ -1646,22 +1824,21 @@ model_rf = RandomForest(
   lags = [-1],
   lags_future_covariates = [0],
   lags_past_covariates = [-1],
-  n_estimators = 500,
-  oob_score = True,
+  n_estimators = 500, # Fit 500 trees
+  oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
   n_jobs = 20
 )
 
 # RF covariates (cylical + calendar, future & past)
-rf_futcovars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
-
-rf_pastcovars = ["sales_ema7", 'transactions', 'trns_ma7']
+rf_futcovars = linear2_futcovars
+rf_pastcovars = linear2_pastcovars
 
 ```
 
 ```{python StoreRFFitVal}
 
-# First fit & validate the first category to initialize series
+# First fit & validate the first store to initialize series
 _ = model_rf.fit(
   remainder_store[0],
   future_covariates = x_store[0][rf_futcovars],
@@ -1673,7 +1850,7 @@ pred_rf_store = model_rf.predict(
   future_covariates = x_store[0][rf_futcovars]
   )
 
-# Then loop over all categories except first
+# Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_store))):
 
   # Fit on training data
@@ -1699,54 +1876,59 @@ del pred, i
 
 ### Global hybrid models
 
-```{python TorchCallbacks}
+We'll now consider global hybrid models: We'll fit a D-Linear model on all of the trend + seasonality components at once, and a recurrent neural network model on all remainder components at once. We can sum the predictions of these two models, as well as sum them with the univariate models' predictions to achieve various hybrid predictions.
 
-# # Create early stopper
-# early_stopper = EarlyStopping(
-#   monitor = "val_loss",
-#   min_delta = 5000, # 1% of min. MSE of best model so far
-#   patience = 10
-# )
-# 
-# # Progress bar
-# progress_bar = RichProgressBar()
-# 
-# # Rich model summary
-# model_summary = RichModelSummary(max_depth = -1)
+As before, we'll create an early stopper. This time, the threshold value for early stopping will be the 1% of the minimum MSE achieved by the AutoETS model (on one store).
+
+```{python TorchCallbacks}
+#| eval: false
+
+# Create early stopper
+early_stopper = EarlyStopping(
+  monitor = "val_loss",
+  min_delta = 5000, # 1% of min. MSE of best model so far
+  patience = 10
+)
 
 ```
 
-#### D-Linear on trend + seasonality
+#### D-Linear on STL trend + seasonality
+
+This D-Linear model has the same specifications as the one for total sales, except the batch size was doubled to 64.
 
 ```{python}
+#| eval: false
 
-# # Specify D-Linear model
-# model_dlinear = DLinear(
-#   input_chunk_length = 30,
-#   output_chunk_length = 15,
-#   kernel_size = 25,
-#   batch_size = 64,
-#   n_epochs = 500,
-#   model_name = "DLinearStoreX",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 64,
+  n_epochs = 500,
+  model_name = "DLinearStoreX",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
+
+The covariates for the D-Linear time effects model are the same as the linear regression time effects model, but without a trend dummy. We also retrieve the sums of trend + seasonality components for each store as a list, to be used in model fitting.
 
 ```{python StoreDLinearCovars}
 
-# Time covariates (trend + seasonality, all future)
-dlinear_covars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos"]
+# Time covariates (seasonality, all future)
+dlinear_covars = linear_covars.copy()
+dlinear_covars.remove("trend")
 
 # Retrieve sums of trend and seasonality components as a list
 trend_season_list_store = [
@@ -1755,27 +1937,39 @@ trend_season_list_store = [
     
 ```
 
-```{python StoreDLinearFit}
+Fitting a global Torch model on multiple Darts series is simple: We gather all our target and covariate series into lists, and pass the lists into the `.fit()` method instead of single series, as seen below. Of course, the order of the target series list must match the order of the covariate series list. We use the last 45 days in our training set as our inner validation set for Torch models.
 
-# # Fit DLinear model
-# model_dlinear.fit(
-#   series = [y[:-45] for y in trend_season_list_store],
-#   future_covariates = [x[dlinear_covars] for x in x_store],
-#   val_series = [y[-45:] for y in trend_season_list_store],
-#   val_future_covariates = [x[dlinear_covars] for x in x_store],
-#   verbose = True
-# )
+```{python StoreDLinearFit}
+#| eval: false
+
+# Fit DLinear model
+model_dlinear.fit(
+  series = [y[:-45] for y in trend_season_list_store],
+  future_covariates = [x[dlinear_covars] for x in x_store],
+  val_series = [y[-45:] for y in trend_season_list_store],
+  val_future_covariates = [x[dlinear_covars] for x in x_store],
+  verbose = True
+)
 
 ```
 
+We load our global D-Linear model trained on all series, and use it to predict the next 15 days for each store series using a loop.
+
+-   Unlike prediction with a model trained on a single series, this time we have to specify which series we want to generate forecasts for, as the model was trained on multiple series.
+
+-   It's even possible to generate forecasts for series not used in training (in this case, this would be new stores) as long as the same covariates are available.
+
+    -   If this was real-life business scenario, a well-generalized global model could be used to generate forecasts for new stores without needing retraining, or be used for forecasting hypothetical scenarios.
+
 ```{python StoreDLinearLoad}
 
-# Load a previously trained DLinear model's best checkpoint
+# Load a previously trained Torch model's best checkpoint
 model_dlinear = DLinear.load_from_checkpoint("DLinearStore1.3", best = True)
 
 ```
 
 ```{python StoreDLinearVal}
+#| output: false
 
 # First validate the first store to initialize series
 pred_dlinear_store = model_dlinear.predict(
@@ -1784,7 +1978,7 @@ pred_dlinear_store = model_dlinear.predict(
   future_covariates = x_store[0][dlinear_covars]
   )
 
-# Then loop over all categories except first
+# Then loop over all stores except first
 for i in tqdm(range(1, len(trend_season_list_store))):
 
   # Predict validation data
@@ -1801,44 +1995,75 @@ del pred, i
 
 ```
 
-#### RNN on remainder
+#### RNN on STL remainder
+
+As our global remainder model, we'll use a recurrent neural network, more specifically the long short-term memory (LSTM) variant.
+
+-   This deep learning architecture includes "memory" cells that can learn, retain and discard long-term dependencies. This allows it to learn long-term patterns dependent on the input order of data. RNNs are used in language and speech modeling tasks as well as time series forecasting.
+
+-   From what I could gather, and in my experience, the RNN architecture doesn't handle trended / non-stationary data very well, at least compared to the D-Linear model.
+
+    -   This may be because it doesn't perform any decomposition on the inputs, nor does it model trend in "one go" like linear regression, as NN models are trained on input chunks and not the full training data at each training iteration.
+
+    -   [This article](https://towardsdatascience.com/how-to-learn-long-term-trends-with-lstm-c992d32d73be) sheds more light on the nature of the memory cells, and suggests they discard information too quickly to learn long-term trends effectively (and suggests an alternative implementation).
+
+    -   However, with a more complex architecture and higher capacity, it may perform better on the remainder component, which may have complex patterns.
+
+The RNN models (at least in Darts) are only able to predict one time step ahead, so they don't take in an `output_chunk_length` argument.
+
+-   The `training_length` argument has to be at least 1 step longer than the `input_chunk_length`. As before, we use an input length of 30 days.
+
+-   `dropout` is the fraction of units (neurons) in the model affected by dropout. Dropout refers to the random removal of some of the inputs of a neuron.
+
+    -   This helps combat overfitting, because spurious relationships in the data are learned as very specific combinations of weights across the network, and randomly applying dropout to a few neurons destroys such combinations.
+
+There are some parameters specific to the RNN model:
+
+-   `n_rnn_layers` is the number of recurrent layers in the model, which hold the memory cells. The default is one, but I had slightly better results with 2.
+
+-   `hidden_dim` is the number of features in the hidden state, which stores the information necessary to capture long-term dependencies. I increased this a bit from the default value of 25 because I also added a second recurrent layer, but I did not tune it purposefully.
 
 ```{python StoreRNNSpec}
+#| eval: false
 
-# # Specify RNN model
-# model_rnn = RNN(
-#   model = "LSTM",
-#   input_chunk_length = 30,
-#   training_length = 31,
-#   batch_size = 64,
-#   n_epochs = 500,
-#   n_rnn_layers = 2,
-#   hidden_dim = 32,
-#   dropout = 0.1,
-#   model_name = "RNNStore1.3",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+# Specify RNN model
+model_rnn = RNN(
+  model = "LSTM",
+  input_chunk_length = 30,
+  training_length = 31,
+  batch_size = 64,
+  n_epochs = 500,
+  n_rnn_layers = 2,
+  hidden_dim = 32,
+  dropout = 0.1,
+  model_name = "RNNStoreX",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
+
+The RNN model will use the same future covariates as the linear regression remainder model, but it can't use past covariates.
 
 ```{python StoreRNNCovars}
 
 # RNN covariates (calendar + cyclical, future only)
-rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+rnn_covars = linear2_futcovars
 
 ```
 
 ```{python StoreRNNFit}
+#| eval: false
+#| include: false
 
 # # Fit RNN model
 # model_rnn.fit(
@@ -1853,20 +2078,13 @@ rnn_covars = ['oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 're
 
 ```{python StoreRNNLoad}
 
-# Load a previously trained RNN model's best checkpoint
+# Load a previously trained Torch model's best checkpoint
 model_rnn = RNN.load_from_checkpoint("RNNStore1.3", best = True)
 
 ```
 
-The first time you fit a NN model may not be returning the best checkpoint
-
-Mention that RNN may not be able to use calendar feats very well, because gates discard info quickly (same reason it can't learn long term trend very well)
-
--   STL with narrow trend window will leave the calendar effects to the time model, but it will make the trend very wiggly and remove cyclicality
-
--   STL with wide trend window leaves the calendar effects to the remainder
-
 ```{python StoreRNNValid}
+#| output: false
 
 # First fit & validate the first store to initialize series
 pred_rnn_store = model_rnn.predict(
@@ -1875,7 +2093,7 @@ pred_rnn_store = model_rnn.predict(
   future_covariates = x_store[0][rnn_covars]
   )
 
-# Then loop over all categories except first
+# Then loop over all stores except first
 for i in tqdm(range(1, len(remainder_store))):
 
   # Predict validation data
@@ -1894,43 +2112,50 @@ del pred, i
 
 ### Global models on raw series
 
+Besides the hybrid modeling approach, I wanted to try training global NN models on raw, undecomposed time series, to see if decomposition is even necessary. While the rationale of hybrid modeling is to separate the time effects from cyclical effects and model them with appropriate algorithms, it's possible a NN model may perform better by learning complex relationships between them.
+
 #### D-Linear
 
-```{python StoreDLinearFull}
+We'll evaluate a D-Linear model trained on all of the raw series, with all features except the trend dummy. The hyperparameters are the same as before.
 
-# # Specify D-Linear model
-# model_dlinear = DLinear(
-#   input_chunk_length = 30,
-#   output_chunk_length = 15,
-#   kernel_size = 25,
-#   batch_size = 64,
-#   n_epochs = 500,
-#   model_name = "DLinearStoreX",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+```{python StoreDLinearFull}
+#| eval: false
+
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 64,
+  n_epochs = 500,
+  model_name = "DLinearStoreX",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
 
 ```{python StoreDLinearFullCovars}
 
 # All covariates, future & past
-dlinear2_futcovars = ['tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+dlinear2_futcovars = dlinear_covars + rnn_covars
 
-dlinear2_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
+dlinear2_pastcovars = linear2_pastcovars
 
 ```
 
 ```{python StoreDLinearFullFit}
+#| eval: false
+#| include: false
 
 # # Fit DLinear model
 # model_dlinear.fit(
@@ -1947,12 +2172,13 @@ dlinear2_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
 
 ```{python StoreDLinearFullLoad}
 
-# Load a previously trained DLinear model's best checkpoint
+# Load a previously trained Torch model's best checkpoint
 model_dlinear = DLinear.load_from_checkpoint("DLinearStore2.2", best = True)
 
 ```
 
 ```{python StoreDLinearFullVal}
+#| output: false
 
 # First fit & validate the first store to initialize series
 pred_dlinear2_store = model_dlinear.predict(
@@ -1962,7 +2188,7 @@ pred_dlinear2_store = model_dlinear.predict(
   past_covariates = x_store[0][dlinear2_pastcovars]
   )
 
-# Then loop over all categories except first
+# Then loop over all stores except first
 for i in tqdm(range(1, len(y_train_store))):
 
   # Predict validation data
@@ -1982,48 +2208,68 @@ del pred, i
 
 #### Temporal Fusion Transformer
 
-```{python StoreTFT}
+We'll also consider an even more complex architecture, the Temporal Fusion Transformer ([original paper](https://arxiv.org/pdf/1912.09363.pdf)). I won't pretend to fully understand the architecture of this model, but I thought it could be suitable to this problem for a few reasons:
 
-# # Specify TFT model
-# model_tft = TFTModel(
-#   input_chunk_length = 30,
-#   output_chunk_length = 15,
-#   hidden_size = 16,
-#   lstm_layers = 1,
-#   num_attention_heads = 4,
-#   dropout = 0.1,
-#   hidden_continuous_size = 8,
-#   batch_size = 32,
-#   n_epochs = 500,
-#   likelihood = None,
-#   loss_fn = torch.nn.MSELoss(),
-#   model_name = "TFTStoreX",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+-   The model uses LSTM components to learn shorter-term dependencies, and multi-headed attention mechanisms to learn long-term dependencies.
+
+    -   The authors apparently used the "time index" as a feature in some of their benchmarks in the paper, so we will do the same with a trend dummy. This approach did not perform well when I used it with the RNN model.
+
+-   A sort of "feature selection" is applied to the inputs within the network. Since we are using the same feature set on dozens of time series and hoping they generalize well, this could be helpful.
+
+-   The static covariates, future covariates and past covariates are given special consideration in the network, instead of being treated as the same types of input. Especially the static covariates may make a considerable difference for our global model.
+
+-   The model generates prediction intervals instead of single predictions by default, which I'm sure is much more useful in real-life scenarios. But for the sake of this example analysis, we'll set `likelihood = None` to retrieve point forecasts only.
+
+-   The model also offers interpretability and feature importance assessments, but I'm not sure if this functionality is available through Darts.
+
+As with the D-Linear model, we will use input and output chunks of 30 and 15 days respectively. We leave all the TFT-specific parameters default as this is a computationally expensive model.
+
+-   `hidden_size`, `lstm_layers` and `hidden_continuous_size` pertain to the LSTM component of the model, as previously discussed with the RNN model.
+
+-   `num_attention_heads` is the number of the attention heads in the multi-headed attention mechanism which will capture long-term dependencies.
+
+```{python StoreTFT}
+#| eval: false
+
+# Specify TFT model
+model_tft = TFTModel(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  hidden_size = 16,
+  lstm_layers = 1,
+  num_attention_heads = 4,
+  dropout = 0.1,
+  hidden_continuous_size = 8,
+  batch_size = 32,
+  n_epochs = 500,
+  likelihood = None,
+  loss_fn = torch.nn.MSELoss(),
+  model_name = "TFTStoreX",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
+
+As stated before, we'll use all future and past covariates including the trend dummy.
+
+-   Surprisingly, the predictions from the previously trained TFT model seemed to change drastically when I added "trend" to the end of the features list instead of the start, performing much worse. They returned to normal only after I moved "trend" to the start of the features list. Maybe this is because variable selection is performed even at prediction time, or maybe I just broke and fixed something else in my code without realizing.
 
 ```{python StoreTFTCovars}
 
 # All covariates, future & past
-tft_futcovars = [
-  "trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 
-  'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 
-  'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 
-  'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 
-  'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+tft_futcovars = ["trend"] + dlinear2_futcovars
 
-tft_pastcovars = ["sales_ema7", "transactions", "trns_ma7"]
+tft_pastcovars = dlinear2_pastcovars
 
 ```
 
@@ -2035,7 +2281,7 @@ model_tft = TFTModel.load_from_checkpoint("TFTStore2.0", best = True)
 ```
 
 ```{python StoreTFTVal}
-#| include: false
+#| output: false
 
 # First fit & validate the first store to initialize series
 pred_tft_store = model_tft.predict(
@@ -2065,12 +2311,13 @@ del pred, i
 
 ### Model scores
 
+We'll now compare the scores of all our models, including all hybrid predictions possible from the predictions we have.
+
 ```{python StoreScore}
 
 print("Store sales prediction scores")
 print("--------")
 
-# Naive drift
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_drift_store),
@@ -2078,7 +2325,6 @@ scores_hierarchy(
   "Naive drift"
   )
 
-# Naive seasonal
 scores_hierarchy(
   ts_sales[stores][-15:], 
   trafo_zeroclip(pred_seasonal_store),
@@ -2086,131 +2332,142 @@ scores_hierarchy(
   "Naive seasonal"
   )
 
-# Exponential smoothing  
 scores_hierarchy(
   ts_sales[stores][-15:], 
   trafo_zeroclip(pred_ets_store),
   stores, 
-  "Exponential smoothing"
+  "AutoETS (all configurations evaluated)"
   )
 
-# Linear 
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_linear_store),
   stores,
-  "Linear (time features only)"
+  "Linear (trend + seasonality)"
   )
   
-# Linear + linear
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_linear_store + pred_linear2_store),
   stores,
-  "Linear + linear"
+  "Linear (trend + seasonality) + linear (remainder)"
   )
 
-# Linear + AutoARIMA
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_linear_store + pred_arima_store),
   stores,
-  "Linear + AutoARIMA"
+  "Linear (trend + seasonality) + AutoARIMA (remainder)"
   )
 
-# Linear + Random forest 
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_linear_store + pred_rf_store),
   stores,
-  "Linear + RF"
+  "Linear (trend + seasonality) + RF (remainder)"
   )
 
-# Linear + RNN (global)
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_linear_store + pred_rnn_store),
   stores,
-  "Linear + RNN (global)"
+  "Linear (trend + seasonality) + RNN (remainder, global)"
   )
   
-# D-linear (global, time features only)
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear_store),
   stores,
-  "D-Linear (global, time features only)"
+  "D-Linear (trend + seasonality, global)"
   )
 
-# D-Linear (global) + linear
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear_store + pred_linear2_store),
   stores,
-  "D-Linear + linear"
+  "D-Linear (trend + seasonality, global) + linear (remainder)"
   )
 
-# D-Linear (global) + AutoARIMA 
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear_store + pred_arima_store),
   stores,
-  "D-Linear (global) + AutoARIMA"
+  "D-Linear (trend + seasonality, global) + AutoARIMA (remainder)"
   )  
 
-# D-Linear (global) + Random forest 
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear_store + pred_rf_store),
   stores,
-  "D-Linear (global) + RF"
+  "D-Linear (trend + seasonality, global) + RF (remainder)"
   )
 
 
-# D-linear (global) + RNN (global)
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear_store + pred_rnn_store),
   stores,
-  "D-Linear (global) + RNN (global)"
+  "D-Linear (trend + seasonality, global) + RNN (remainder, global)"
   )
 
-# D-linear (global, all features)
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_dlinear2_store),
   stores,
-  "D-Linear (global, all features)"
+  "D-Linear (raw series, global)"
   )
   
-# TFT (global, all features)
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_tft_store),
   stores,
-  "TFT (global, all features)"
+  "TFT (raw series, global)"
   )  
   
 ```
 
+We see that none of the hybrid models are able to beat the AutoETS baselines.
+
+-   The global hybrids come close, and generally perform better than univariate hybrids. The best hybrid model is the D-Linear + RNN hybrid, which is impressive as these are just single models used to predict 54 different series. It seems we were right to expect good generalization across store sales.
+
+    -   Note that the time effects linear regression model, and all hybrids involving it have huge maximum errors. This is likely because linear regression performs badly on series with many zeroes. In contrast, ETS or global models have much more reasonable maximum errors.
+
+-   The D-Linear global model trained on raw decomposed data does considerably better than the AutoETS baselines. Again, impressive for a single set of parameters that apply to 54 series. Also note that the D-Linear architecture is very simple compared to other NN models.
+
+-   The TFT global model does even better than D-Linear, and nets us the best store sales predictions by far.
+
+    -   The improvement in scores comes at the cost of computational expense. The D-Linear model took roughly 30 minutes to train for 22 epochs on my machine, while the TFT model took longer than 9 hours (not to mention a break of 14+ hours) to train for 37 epochs.
+
+    -   It's clear TFT captured some relationships no other approach could, and learned much more from the data, but D-Linear's tradeoff between performance and computational cost is also very impressive.
+
+![](images/image-783202996.png)
+
+![](images/image-680444082.png)
+
 ```{python StoreScorePlot}
 
 store_preds_dict = {
-  # "Naive drift": trafo_zero(pred_drift_store),
-  # "Naive seasonal": trafo_zero(pred_seasonal_store),
   "AutoETS (best baseline)": trafo_zeroclip(pred_ets_store),
+  "Linear + linear (best univariate hybrid)": trafo_zeroclip(pred_linear_store + pred_linear2_store)
   "D-Linear + RNN (best hybrid)": trafo_zeroclip(pred_dlinear2_store + pred_rnn_store),
-  "TFT (best model)": trafo_zeroclip(pred_tft_store)
+  "TFT (best overall)": trafo_zeroclip(pred_tft_store)
 }
 
 scores_plot(
   ts_sales[stores][-15:],
   store_preds_dict,
   stores,
-  logscale = False
+  logscale = False,
+  title = "Store sales model scores"
 )
 
 ```
+
+Visualizing the performance scores on all 54 store sales helps us understand differences in the models' performances better.
+
+-   As expected, the linear + linear hybrid performs much worse for a few series, likely ones with many zeroes.
+
+-   The TFT model has the best score distribution overall in all metrics, but the global hybrid's score distributions can be considered a bit more "robust".
 
 ## Modeling: Disaggregated sales
 
@@ -2226,7 +2483,8 @@ x_disagg = []
 
 for series in tqdm(disagg_covars):
   
-  # Split train-val series
+  # Split train-val series (inner validation for training Torch models, outer
+  # validation for evaluating performance)
   cov_train, cov_innerval, cov_outerval = series[:-76], series[-76:-31], series[-31:]
   
   # Scale train-val series
@@ -2237,7 +2495,7 @@ for series in tqdm(disagg_covars):
   # Rejoin series
   cov_train = (cov_train.append(cov_innerval)).append(cov_outerval)
   
-  # Cast series to 32-bits for performance gains
+  # Cast series to 32-bits for performance gains in Torch models
   cov_train = cov_train.astype(np.float32)
   
   # Append series to list
@@ -2266,7 +2524,7 @@ for series in tqdm(disagg_sales):
   # Split train-val series
   y_train, y_val = series[:-15], series[-15:]
   
-  # Cast series to 32-bits for performance gains
+  # Cast series to 32-bits for performance gains in Torch models
   y_train = y_train.astype(np.float32)
   y_val = y_val.astype(np.float32)
   
@@ -2298,11 +2556,11 @@ pred_seasonal_disagg = model_seasonal.predict(n = 15)
 
 # ETS
 
-# First fit & validate the first series to initialize series
+# First fit & validate the first series to initialize multivariate series
 _ = model_autoets.fit(y_train_disagg[0])
 pred_ets_disagg = model_autoets.predict(n = 15)
 
-# Then loop over all stores except first
+# Then loop over all series except first
 for i in tqdm(range(1, len(y_train_disagg))):
 
   # Fit on training data
@@ -2338,7 +2596,7 @@ scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_ets_disagg),
   categories_stores, 
-  "Exponential smoothing"
+  "AutoETS (all configurations evaluated)"
   )
   
 ```
@@ -2347,15 +2605,17 @@ scores_hierarchy(
 
 ```{python}
 
-# Covariates (all, past same as store linear 2)
-linear_disagg_futcovars = ["trend", 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'day_sin', 'day_cos', "month_sin", "month_cos", 'oil', 'oil_ma28', 'onpromotion', 'onp_ma28', 'local_holiday', 'regional_holiday', 'national_holiday', 'ny1', 'ny2', 'ny_eve31', 'ny_eve30', 'xmas_before', 'xmas_after', 'quake_after', 'dia_madre', 'futbol', 'black_friday', 'cyber_monday']
+# Covariates (all, past & future)
+linear_disagg_futcovars = ["trend"] + dlinear2_futcovars
+
+linear_disagg_pastcovars = linear2_pastcovars
 
 
-# First fit & validate the first store to initialize series
+# First fit & validate the first series to initialize mulivariate series
 _ = model_linear2.fit(
   y_train_disagg[0],
   future_covariates = x_disagg[0][linear_disagg_futcovars],
-  past_covariates = x_disagg[0][linear2_pastcovars]
+  past_covariates = x_disagg[0][linear_disagg_pastcovars]
   )
 
 pred_linear_disagg = model_linear2.predict(
@@ -2363,20 +2623,20 @@ pred_linear_disagg = model_linear2.predict(
   future_covariates = x_disagg[0][linear_disagg_futcovars]
   )
 
-# Then loop over all categories except first
+# Then loop over all series except first
 for i in tqdm(range(1, len(y_train_disagg))):
 
   # Fit on training data
   _ = model_linear2.fit(
         y_train_disagg[i],
         future_covariates = x_disagg[i][linear_disagg_futcovars],
-        past_covariates = x_disagg[i][linear2_pastcovars]
+        past_covariates = x_disagg[i][linear_disagg_pastcovars]
   )
 
   # Predict validation data
   pred = model_linear2.predict(
-  n=15,
-  future_covariates = x_disagg[i][linear_disagg_futcovars]
+    n=15,
+    future_covariates = x_disagg[i][linear_disagg_futcovars]
   )
 
   # Stack predictions to multivariate series
@@ -2389,7 +2649,7 @@ scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_linear_disagg),
   categories_stores, 
-  "Linear regression (all features)"
+  "Linear regression"
   )
 
 ```
@@ -2397,43 +2657,44 @@ scores_hierarchy(
 ### Global D-Linear
 
 ```{python DisaggDLinearSpec}
+#| eval: false
 
-# # Specify D-Linear model
-# model_dlinear = DLinear(
-#   input_chunk_length = 30,
-#   output_chunk_length = 15,
-#   kernel_size = 25,
-#   batch_size = 32,
-#   n_epochs = 500,
-#   model_name = "DLinearDisagg2.0",
-#   log_tensorboard = True,
-#   save_checkpoints = True,
-#   show_warnings = True,
-#   optimizer_kwargs = {"lr": 0.002},
-#   lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
-#   lr_scheduler_kwargs = {"patience": 5},
-#   pl_trainer_kwargs = {
-#     "callbacks": [early_stopper, progress_bar, model_summary],
-#     "accelerator": "gpu",
-#     "devices": [0]
-#     }
-# )
+# Specify D-Linear model
+model_dlinear = DLinear(
+  input_chunk_length = 30,
+  output_chunk_length = 15,
+  kernel_size = 25,
+  batch_size = 32,
+  n_epochs = 500,
+  model_name = "DLinearDisagg2.0",
+  log_tensorboard = True,
+  save_checkpoints = True,
+  show_warnings = True,
+  optimizer_kwargs = {"lr": 0.002},
+  lr_scheduler_cls = torch.optim.lr_scheduler.ReduceLROnPlateau,
+  lr_scheduler_kwargs = {"patience": 5},
+  pl_trainer_kwargs = {
+    "callbacks": [early_stopper, progress_bar, model_summary],
+    "accelerator": "gpu",
+    "devices": [0]
+    }
+)
 
 ```
 
-\-\-\-\-\-\-\--
+`--------`
 
-Model = D-Linear (global, all features)
+`Model = D-Linear (global)`
 
-MAE: mean = 95.4615, sd = 262.7068, min = 2.2765, max = 5283.5649
+`MAE: mean = 95.4615, sd = 262.7068, min = 2.2765, max = 5283.5649`
 
-MSE: mean = 144055.2264, sd = 1400417.7929, min = 23.08, max = 40024200.7085
+`MSE: mean = 144055.2264, sd = 1400417.7929, min = 23.08, max = 40024200.7085`
 
-RMSE: mean = 124.0217, sd = 358.7114, min = 4.8042, max = 6326.4683
+`RMSE: mean = 124.0217, sd = 358.7114, min = 4.8042, max = 6326.4683`
 
-RMSLE: mean = 0.9723, sd = 0.7964, min = 0.1258, max = 6.285
+`RMSLE: mean = 0.9723, sd = 0.7964, min = 0.1258, max = 6.285`
 
-\-\-\-\-\-\-\--
+`--------`
 
 ## Hierarchical reconciliation
 
@@ -2455,7 +2716,41 @@ pred_all = pred_all.with_hierarchy(hierarchy_target)
 
 ```{python PlotHierarchy}
 
+# Define function to plot hierarchy sums
+def plot_forecast_sums(pred_series, val_series=None):
+
+    plt.figure(figsize=(10, 5))
+    
+    val_series["TOTAL"].plot(
+      label="Actual total sales", 
+      alpha=0.3, 
+      color="red")
+      
+    pred_series["TOTAL"].plot(
+      label="Predicted total sales", 
+      alpha=0.3, 
+      color="grey")
+    
+    sum([pred_series[r] for r in categories]).plot(
+      label="Sum of categories")
+      
+    sum([pred_series[r] for r in stores]).plot(
+      label="Sum of stores")
+      
+    sum([pred_series[t] for t in categories_stores]).plot(
+        label="Sum of disagg. series"
+    )
+    
+    legend = plt.legend(loc="best", frameon=1)
+    frame = legend.get_frame()
+    frame.set_facecolor("white")
+
+
 # Plot hierarchical sums of predicted and actual values
+plot_forecast_sums(pred_all, ts_sales)
+_ = plt.title("Prediction sums for each hierarchy node")
+plt.show()
+plt.close()
 
 ```
 
@@ -2531,20 +2826,20 @@ scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_tft_store),
   stores,
-  "TFT, store sales (global, all features)"
+  "TFT, store sales (global)"
   )
   
 scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_ets_disagg),
   categories_stores, 
-  "ETS, disaggregated series"
+  "AutoETS, disaggregated series"
   )
   
 print("--------\n")
 
 
-print("Prediction scores, bottom-up reconciled")
+print("Bottom-up reconciled")
 print("--------")
 
 perf_scores(
@@ -2558,10 +2853,10 @@ scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_bottomup[stores]),
   stores,
-  "TFT, store sales (global, all features)"
+  "TFT, store sales (global)"
   )  
 
-print("Bottom-up method won't change the bottom level performance")
+print("Bottom-up method won't change the bottom level predictions")
   
 print("--------\n")
 
@@ -2569,21 +2864,21 @@ print("--------\n")
 print("Prediction scores, top-down reconciled")
 print("--------")
 
-print("Top-down method won't change the top level performance")
+print("Top-down method won't change the top level prediction")
 print("--------")
 
 scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_topdown[stores]),
   stores,
-  "TFT, store sales (global, all features)"
+  "TFT, store sales (global)"
   )  
 
 scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_topdown[categories_stores]),
   categories_stores, 
-  "ETS, disaggregated series"
+  "AutoETS, disaggregated series"
   )
   
 print("--------\n")
@@ -2603,14 +2898,14 @@ scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_wlsval[stores]),
   stores,
-  "TFT, store sales (global, all features)"
+  "TFT, store sales (global)"
   )  
 
 scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_wlsval[categories_stores]),
   categories_stores, 
-  "ETS, disaggregated series"
+  "AutoETS, disaggregated series"
   )
   
 print("--------\n")
@@ -2630,14 +2925,14 @@ scores_hierarchy(
   ts_sales[stores][-15:],
   trafo_zeroclip(pred_wlsvar[stores]),
   stores,
-  "TFT, store sales (global, all features)"
+  "TFT, store sales (global)"
   )  
 
 scores_hierarchy(
   ts_sales[categories_stores][-15:], 
   trafo_zeroclip(pred_wlsvar[categories_stores]),
   categories_stores, 
-  "ETS, disaggregated series"
+  "AutoETS, disaggregated series"
   )
   
 print("--------")
