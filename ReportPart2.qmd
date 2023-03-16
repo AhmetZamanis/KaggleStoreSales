@@ -85,7 +85,7 @@ from pytorch_lightning.callbacks import RichProgressBar, RichModelSummary
 
 ## Data preparation steps from part 1
 
-The data preparation is mostly the same as part 1, so we won't discuss it further, though the code below is a more compact version of the code in part 1.
+The initial data preparation is mostly the same as part 1, so we won't discuss it further, though the code below is a more compact version of the code in part 1.
 
 ```{python DataPrepPart1}
 #| output: false
@@ -437,11 +437,13 @@ To sum up findings from our short exploratory analysis:
 
 -   Patterns in store sales are fairly similar to one another, though trends can be different. These could be modeled well by a single global model trained on all 54 stores. We'll compare the performance of such global models with simpler models trained on each store separately.
 
--   The patterns in category sales, both in category totals and single categories across different stores, could differ considerably. Applying global models to category totals (33 series), or to the disaggregated series (1782 series) is not likely to perform well.
+-   The patterns in category sales, both in category totals and single categories across different stores, could differ considerably. Applying global models to category totals (33 series), or to the disaggregated series (1782 series) is not likely to perform well (and indeed, they performed considerably worse than baseline models when I tried).
 
-    -   One configuration could be promising for modeling disaggregated series: Training 33 global models on each category's sales in all 54 stores. This way, we derive a separate set of parameters for each category, as well as take advantage of the similarities across stores.
+    -   One configuration could be promising for modeling the 1782 disaggregated series: Training 33 global models on each category's sales in all 54 stores. This way, we derive a separate set of parameters for each category, as well as take advantage of the similarities across stores.
 
-    -   This would take a training time of at least 30+ hours on my machine depending on the model used, so I did not explore it further, but I believe it could result in the best predictions. One of the best performing [Kaggle notebooks](https://www.kaggle.com/code/ferdinandberr/darts-forecasting-deep-learning-global-models) in the competition had the best results with this approach, but with XGBoost models instead of global deep learning models.
+    -   This would take a training time of at least 30+ hours on my machine depending on the model used (not to mention coding time and pauses), so I did not explore it further, but I believe it could result in the best predictions.
+
+    -   One of the best performing [Kaggle notebooks](https://www.kaggle.com/code/ferdinandberr/darts-forecasting-deep-learning-global-models) in the competition had the best results with this approach, but with global XGBoost models instead of global deep learning models. I expect NN models could do even better, as tree-based models may not be able to learn trend and long-term dependencies very well.
 
 ## Covariate series
 
@@ -645,7 +647,7 @@ For each of the 54 stores, we will retrieve a different set of covariates.
 
 -   Others are unique to each series, for example, the local and regional holiday features will take different values for stores in different locations, not to mention the moving averages of past sales or transactions.
 
--   Instead of using Fourier pairs for long-term seasonality features, such as day of month, we use cyclical encoding, which encodes the day of month as a single sine-cosine pair. This will likely generalize better to all stores (and algorithms), and is less likely to overfit.
+-   Instead of using Fourier pairs for long-term seasonality features, such as day of month, we use cyclical encoding, which encodes the day of month as a single sine-cosine pair. This will likely generalize better to multiple stores (and algorithms), and is less likely to overfit.
 
 ```{python StoreCovars}
 
@@ -734,6 +736,8 @@ del covars, store
 -   These could be quite useful for our deep learning models: For example, a complex combination of weights for the store static covariates and the trend features can allow a model adjust its trend predictions for each store.
 
 -   We'll retrieve the store location, type and cluster information and one-hot encode them, to be later embedded into the target series. We'll create a Pandas dataframe where columns are static covariates, and the index is the store numbers, to be passed into Darts.
+
+    -   One-hot encoding will create a lot of columns, and there may be better encoding methods to use here, especially for tree-based models (though we won't apply any tree-based models globally).
 
 ```{python StoreStaticCovars}
 
@@ -985,7 +989,7 @@ def scores_plot(val, preds_dict, subset, logscale = True, title = "Plot Title"):
     log_scale = logscale,
     ax = ax[0,1]
   )
-  
+
   _ = sns.histplot(
     data = scores_df_all,
     x = "RMSE",
@@ -1164,7 +1168,7 @@ We have some preprocessing for our covariates:
 
     -   We need 45 days of validation data because our NN models will be trained on input chunks of 30 days, and they will output predictions of 15 days at a time (except RNN).
 
--   The gradient descent algorithm in NNs is sensitive to features with large values, so we'll scale all our features between 0 and 1.
+-   The gradient descent algorithm in NNs is sensitive to features with large values, so we'll scale all our features between 0 and 1. Otherwise the weight updates would focus on features with large values, and training may even crash due to gradient explosion.
 
 -   It's [recommended](https://unit8co.github.io/darts/userguide/torch_forecasting_models.html#performance-recommendations) to cast Darts TS to 32-bit data to improve training speed of Torch models, so we'll do that.
 
@@ -1232,15 +1236,15 @@ Below is the specification I used for the best performing D-Linear model on tota
 
 -   The model will train on input chunks of 30 days at a time, and output predictions for the next 15 days.
 
-    -   This was mainly chosen due to the validation set requirements: The training validation set has to be at least as long as the input + output sequence. Longer training sequences may be more informative for model training, but they will also require a longer validation set, which means less training data. There could be a better performing tradeoff for this.
+    -   This was mainly chosen due to the validation set requirements: The training validation set has to be at least as long as the input + output sequence. Longer training sequences may be more informative for model training, but they will also require a longer validation set, which means less training data. There could be a better trade-off than my settings.
 
 -   The trend decomposition will be done with a moving average kernel of 25 days, the default. This likely separates the data into a wiggly "trend-cycle" component, and a seasonal component free of trend and cyclicality.
 
-    -   Again, it's worth experimenting with a longer kernel (meaning a smoother trend-cycle component), but this kernel also has to be shorter than the training input sequence.
+    -   Again, it's worth experimenting with a longer kernel (meaning a smoother trend-cycle component which may generalize better into the future), but this kernel also has to be shorter than the training input sequence.
 
 -   Each training pass (batch) will use 32 input-output sequences. This parameter is likely more important for training speed than for prediction performance.
 
--   Since we'll use an early stopper to terminate training and prevent overfitting, we set the number of epochs to an arbitrarily high number to ensure we have enough.
+-   Since we'll use an early stopper and a validation set to terminate training and prevent overfitting, we set the number of epochs to an arbitrarily high number to ensure we have enough.
 
 -   We'll use the default Torch optimizer, Adam, but double its default learning rate and use 0.002. A learning rate scheduler will decrease the learning rate in every 5 epochs with no improvement in the validation score.
 
@@ -1279,7 +1283,7 @@ model_dlinear = DLinear(
 
 As stated before, we won't include a trend dummy in the D-Linear models as they handle trend natively. We'll use all other available features.
 
--   The sales moving average, transactions and its moving average are **past covariates.** We won't know the value of these for our future predictions, but some Darts models can still use them in training. We can generate up to **output_chunk_length** predictions (in our case, 15) without needing to pass "future" values of past covariates.
+-   The sales moving average, transactions and its moving average are **past covariates.** We won't know the value of these for our future predictions, but some Darts models can still use them in training. We can generate up to **output_chunk_length** predictions (in our case, 15 days) without needing to pass "future" values of past covariates.
 
 -   All our other covariates are known into the future (at least in the competition dataset), so we'll pass them as **future covariates** both in training and prediction.
 
@@ -1374,7 +1378,7 @@ perf_scores(
 
 We see our models don't perform much better than our baselines, and in some metrics, slightly worse. This is mainly due to the forecast horizon:
 
--   With a short forecast horizon of 15, the long-term patterns in our data don't matter too much, so exponential smoothing without covariates can perform almost as good as a NN model with many features.
+-   With a short forecast horizon of 15 days, the long-term patterns in our data don't matter too much, so exponential smoothing without covariates can perform almost as good as a NN model with many features.
 
 -   In part 1, we used all of the 2017 data as our validation period (227 days), and the linear regression model greatly outperformed exponential smoothing and other baselines, as it was able to capture long-term patterns with covariates.
 
@@ -1386,7 +1390,7 @@ Now, we'll attempt to model and predict the sales in all 54 stores, with simpler
 
 ### Preprocessing
 
-The preprocessing steps are the same as total sales, except applied to the target and covariate series of each store. The target and covariate series are gathered in lists, easily accessed and used in Darts models.
+The preprocessing steps are the same as total sales, except applied to the target and covariate series of each store. The target and covariate series are gathered in lists, to be easily accessed and used in Darts models.
 
 ```{python StorePreprocess}
 
@@ -1451,7 +1455,7 @@ del y_train, y_val
 
 ### Baseline models
 
-We'll use the same baseline models as total sales, but make a slight modification to the ETS model. We'll allow the model to choose between an additive or multiplicative version of each ETS component (error, trend, seasonality), or to drop them altogether. The choice is made by fitting ETS models with all settings, and comparing their AICc scores. This should help us tailor the baseline a bit for each series.
+We'll use the same baseline models as total sales, but make a slight modification to the ETS model: We'll allow the AutoETS process to choose between an additive or multiplicative version of each ETS component (error, trend, seasonality), or to drop them altogether. The choice is made by fitting ETS models with all settings, and comparing their AICc scores. This should help us tailor the baseline a little for each series.
 
 ```{python StoreBaselineFitVal}
 
@@ -1525,21 +1529,25 @@ scores_hierarchy(
 
 ### STL decomposition
 
-Some of the models we'll use are better suited to modeling time effects such as trend and seasonality (linear regression, D-Linear), while others aren't good in modeling time effects, but can perform well on stationary remainders (Non-seasonal ARIMA, random forest...).
+Some of the models we'll use are better suited to modeling time effects such as trend and seasonality (linear regression), while others aren't good for modeling and extrapolating trend, but can perform well on stationary remainders (Non-seasonal ARIMA, random forest...).
 
 -   In part 1, we used a linear + linear hybrid to model time effects, remove them from the series, and model the remainder. We had to do the decomposition part in Sklearn, as Darts does not allow predictions on training data (with good reason).
 
--   Doing the same for 54 series will be quite the work, so this time we'll use the time decomposition functions available in Darts. Namely, we'll use an STL decomposition to separate each series into trend + seasonality and remainder, and we'll train different models on different components. We'll arrive at hybrid predictions by summing the predictions of different models.
+-   Doing the same for 54 series will be quite the work, so this time we'll use the time decomposition functions available in Darts. Namely, we'll use an STL decomposition to separate each series into trend, seasonality and remainder, and we'll train different models on different components. We'll arrive at hybrid predictions by summing the predictions of different models.
 
-STL decomposition is a flexible method for decomposing time series into trend, seasonality and remainder components. STL uses the LOESS method to capture non-linear relationships
+STL decomposition is a flexible method for decomposing time series into trend, seasonality and remainder components. STL uses the LOESS method to capture non-linear relationships. LOESS can be thought of as "non-linear regression" which fits combinations of polynomials instead of a straight line.
 
--   It's possible to control the smoothness of the trend(-cycle) component, as well as adjust for changes in seasonality patterns. STL is also robust to extreme observations
+-   It's possible to control the smoothness of the trend(-cycle) component, as well as adjust for changes in seasonality patterns. STL is also robust against extreme observations.
 
 -   However, STL is unable to perform multiplicative decomposition natively (though this can be achieved by working with log-transformed data), or capture calendar effects such as holidays.
+
+    -   The latter is likely STL's main disadvantage compared to our linear decomposition from part 1, as I believe it makes more sense to evaluate trend, fixed seasonality and calendar effects together. On the other hand, there could be merit to leaving calendar effects to more sophisticated algorithms used to model the remainder component.
 
 -   We'll aim to retrieve a very smooth, linear-like trend component by setting a very large trend window, so we can model and extrapolate a robust trend. This will leave cyclicality and calendar effects to our remainder component, to be modeled by more sophisticated algorithms.
 
 -   For seasonality, we'll focus on the best candidate, and set a seasonal period of 7 days. I had the best results with a seasonal smoother of 29 days, though better configurations may be possible.
+
+    -   As with the trend smoother, a wider window will give a more robust and smooth seasonality component, but may also not adapt to changes in seasonality quickly enough.
 
 ```{python StoreSTLDecomp}
 
@@ -1613,7 +1621,7 @@ plt.close("all")
 
 As we can see, the trend component is fairly linear, while the cyclicality and calendar effects are mostly left to the remainder component.
 
--   I found this to be ideal for robust trend predictions into the future. With a wiggly trend-cycle component, we'd leave much of the cyclical effects to the time effects model, which is often a simple method like linear regression, and may not handle complex patterns well.
+-   I found this to be ideal for robust trend predictions into the future. With a wiggly trend-cycle component, we'd leave much of the cyclical effects to be modeled by the time effects model, which is often a simple method like linear regression, and may not handle complex patterns well.
 
 ### Hybrid models
 
@@ -1621,7 +1629,7 @@ We'll start by fitting univariate hybrid models, one by one on each series, simi
 
 #### Linear regression on STL trend + seasonality
 
-The time effects linear regression will only use a trend dummy, days of week dummies, and the cyclical encoded day of month and month features.
+The time effects linear regression will use a trend dummy, days of week dummies, and the cyclical encoded day of month and month features.
 
 ```{python LinearRegSpec}
 
@@ -1800,7 +1808,7 @@ arima_covars = linear2_futcovars
 
 Since the AutoARIMA process takes roughly 30 minutes for all 54 stores, we'll load previously saved predictions.
 
--   In at least one iteration, AutoARIMA gave a warning that the input series was completely constant, and chose an ARMA(0, 0, 0) model with no AR or MA components. This could help it adjust better to series with constant zero values, compared to a linear regression.
+-   In at least one iteration, AutoARIMA gave a warning that the input series was completely constant, and chose an ARMA(0, 0, 0) model with no AR or MA components. This adaptability could help it adjust better to series with constant zero values compared to a linear regression.
 
 ```{python ARIMAStoreLoad}
 
@@ -1878,7 +1886,7 @@ del pred, i
 
 We'll now consider global hybrid models: We'll fit a D-Linear model on all of the trend + seasonality components at once, and a recurrent neural network model on all remainder components at once. We can sum the predictions of these two models, as well as sum them with the univariate models' predictions to achieve various hybrid predictions.
 
-As before, we'll create an early stopper. This time, the threshold value for early stopping will be the 1% of the minimum MSE achieved by the AutoETS model (on one store).
+As before, we'll create an early stopper for training. This time, the threshold value for early stopping will be the 1% of the minimum MSE achieved by the AutoETS model (on one store).
 
 ```{python TorchCallbacks}
 #| eval: false
@@ -1937,7 +1945,7 @@ trend_season_list_store = [
     
 ```
 
-Fitting a global Torch model on multiple Darts series is simple: We gather all our target and covariate series into lists, and pass the lists into the `.fit()` method instead of single series, as seen below. Of course, the order of the target series list must match the order of the covariate series list. We use the last 45 days in our training set as our inner validation set for Torch models.
+Fitting a global Torch model on multiple Darts series is simple: We gather all our target and covariate series into lists, and pass the lists into the `.fit()` method instead of single series, as seen below. Of course, the order of the target series list must match the order of the covariate series list. We use the last 45 days in our training set as our inner validation set for training Torch models.
 
 ```{python StoreDLinearFit}
 #| eval: false
@@ -1955,11 +1963,11 @@ model_dlinear.fit(
 
 We load our global D-Linear model trained on all series, and use it to predict the next 15 days for each store series using a loop.
 
--   Unlike prediction with a model trained on a single series, this time we have to specify which series we want to generate forecasts for, as the model was trained on multiple series.
+-   Unlike prediction with a model trained on a single series, this time we have to specify which series we want to generate forecasts for.
 
 -   It's even possible to generate forecasts for series not used in training (in this case, this would be new stores) as long as the same covariates are available.
 
-    -   If this was real-life business scenario, a well-generalized global model could be used to generate forecasts for new stores without needing retraining, or be used for forecasting hypothetical scenarios.
+    -   If this was a real-life business scenario, a well-generalized global model could be used to generate forecasts for new stores without needing retraining, or be used for forecasting hypothetical scenarios.
 
 ```{python StoreDLinearLoad}
 
@@ -2001,7 +2009,7 @@ As our global remainder model, we'll use a recurrent neural network, more specif
 
 -   This deep learning architecture includes "memory" cells that can learn, retain and discard long-term dependencies. This allows it to learn long-term patterns dependent on the input order of data. RNNs are used in language and speech modeling tasks as well as time series forecasting.
 
--   From what I could gather, and in my experience, the RNN architecture doesn't handle trended / non-stationary data very well, at least compared to the D-Linear model.
+-   From what I could learn, and in my experience, the RNN architecture doesn't handle trended / non-stationary data very well, at least compared to the D-Linear model.
 
     -   This may be because it doesn't perform any decomposition on the inputs, nor does it model trend in "one go" like linear regression, as NN models are trained on input chunks and not the full training data at each training iteration.
 
@@ -2013,7 +2021,7 @@ The RNN models (at least in Darts) are only able to predict one time step ahead,
 
 -   The `training_length` argument has to be at least 1 step longer than the `input_chunk_length`. As before, we use an input length of 30 days.
 
--   `dropout` is the fraction of units (neurons) in the model affected by dropout. Dropout refers to the random removal of some of the inputs of a neuron.
+-   `dropout` is the fraction of units (neurons) in the model affected by dropout, the random removal of some of the inputs of a neuron.
 
     -   This helps combat overfitting, because spurious relationships in the data are learned as very specific combinations of weights across the network, and randomly applying dropout to a few neurons destroys such combinations.
 
@@ -2210,19 +2218,19 @@ del pred, i
 
 We'll also consider an even more complex architecture, the Temporal Fusion Transformer ([original paper](https://arxiv.org/pdf/1912.09363.pdf)). I won't pretend to fully understand the architecture of this model, but I thought it could be suitable to this problem for a few reasons:
 
--   The model uses LSTM components to learn shorter-term dependencies, and multi-headed attention mechanisms to learn long-term dependencies.
+-   The model uses LSTM components to learn shorter-term dependencies, and a multi-headed attention mechanism to learn long-term dependencies.
 
-    -   The authors apparently used the "time index" as a feature in some of their benchmarks in the paper, so we will do the same with a trend dummy. This approach did not perform well when I used it with the RNN model.
+    -   The authors apparently used the "time index" as a feature in some of their benchmarks in the paper, so we will do the same with a trend dummy. This approach did not perform well when I tried it with the RNN model.
 
 -   A sort of "feature selection" is applied to the inputs within the network. Since we are using the same feature set on dozens of time series and hoping they generalize well, this could be helpful.
 
--   The static covariates, future covariates and past covariates are given special consideration in the network, instead of being treated as the same types of input. Especially the static covariates may make a considerable difference for our global model.
+-   The static covariates, future covariates and past covariates are processed differently in the network, instead of being treated as the same types of input. Especially the static covariates may make a considerable difference for our global model.
 
 -   The model generates prediction intervals instead of single predictions by default, which I'm sure is much more useful in real-life scenarios. But for the sake of this example analysis, we'll set `likelihood = None` to retrieve point forecasts only.
 
 -   The model also offers interpretability and feature importance assessments, but I'm not sure if this functionality is available through Darts.
 
-As with the D-Linear model, we will use input and output chunks of 30 and 15 days respectively. We leave all the TFT-specific parameters default as this is a computationally expensive model.
+As with the D-Linear model, we will use input and output chunks of 30 and 15 days respectively. We leave the TFT-specific parameters default as this is a computationally expensive model, and tuning them would take a lot of time.
 
 -   `hidden_size`, `lstm_layers` and `hidden_continuous_size` pertain to the LSTM component of the model, as previously discussed with the RNN model.
 
@@ -2262,7 +2270,7 @@ model_tft = TFTModel(
 
 As stated before, we'll use all future and past covariates including the trend dummy.
 
--   Surprisingly, the predictions from the previously trained TFT model seemed to change drastically when I added "trend" to the end of the features list instead of the start, performing much worse. They returned to normal only after I moved "trend" to the start of the features list. Maybe this is because variable selection is performed even at prediction time, or maybe I just broke and fixed something else in my code without realizing.
+-   Surprisingly, the predictions from a previously trained TFT model seemed to change drastically when I added "trend" to the end of the features list instead of the start, performing much worse. They returned to normal only after I moved "trend" to the start of the features list. Maybe this is because variable selection is performed even at prediction time, or maybe I just broke and fixed something else in my code without realizing.
 
 ```{python StoreTFTCovars}
 
@@ -2311,7 +2319,7 @@ del pred, i
 
 ### Model scores
 
-We'll now compare the scores of all our models, including all hybrid predictions possible from the predictions we have.
+We'll now compare the scores of all models, including all hybrid predictions possible from the predictions we have.
 
 ```{python StoreScore}
 
@@ -2428,17 +2436,17 @@ scores_hierarchy(
 
 We see that none of the hybrid models are able to beat the AutoETS baselines.
 
--   The global hybrids come close, and generally perform better than univariate hybrids. The best hybrid model is the D-Linear + RNN hybrid, which is impressive as these are just single models used to predict 54 different series. It seems we were right to expect good generalization across store sales.
+-   The global hybrids come close, and generally perform better than univariate hybrids. The best hybrid model is the D-Linear + RNN hybrid, which is impressive as these are single models used to predict 54 different series. It seems we were right to expect good generalization across store sales.
 
-    -   Note that the time effects linear regression model, and all hybrids involving it have huge maximum errors. This is likely because linear regression performs badly on series with many zeroes. In contrast, ETS or global models have much more reasonable maximum errors.
+    -   Note that the time effects linear regression model, and all hybrids involving it have much bigger maximum errors. This is likely because linear regression performs badly on series with many zeroes. In contrast, ETS or NN models have much more reasonable maximum errors.
 
--   The D-Linear global model trained on raw decomposed data does considerably better than the AutoETS baselines. Again, impressive for a single set of parameters that apply to 54 series. Also note that the D-Linear architecture is very simple compared to other NN models.
+-   The D-Linear global model trained on raw decomposed sales does considerably better than the AutoETS baselines. Again, impressive for a single set of parameters that apply to 54 series. Also note that the D-Linear architecture is very simple compared to other NN models.
 
 -   The TFT global model does even better than D-Linear, and nets us the best store sales predictions by far.
 
     -   The improvement in scores comes at the cost of computational expense. The D-Linear model took roughly 30 minutes to train for 22 epochs on my machine, while the TFT model took longer than 9 hours (not to mention a break of 14+ hours) to train for 37 epochs.
 
-    -   It's clear TFT captured some relationships no other approach could, and learned much more from the data, but D-Linear's tradeoff between performance and computational cost is also very impressive.
+    -   It's clear TFT captured some relationships no other approach could, and learned much more from the data, but D-Linear's trade-off between performance and computational cost is also very impressive.
 
 ![](images/image-783202996.png)
 
@@ -2448,8 +2456,8 @@ We see that none of the hybrid models are able to beat the AutoETS baselines.
 
 store_preds_dict = {
   "AutoETS (best baseline)": trafo_zeroclip(pred_ets_store),
-  "Linear + linear (best univariate hybrid)": trafo_zeroclip(pred_linear_store + pred_linear2_store)
-  "D-Linear + RNN (best hybrid)": trafo_zeroclip(pred_dlinear2_store + pred_rnn_store),
+  "Linear + linear (best univariate hybrid)": trafo_zeroclip(pred_linear_store + pred_linear2_store),
+  "D-Linear + RNN (best hybrid)": trafo_zeroclip(pred_dlinear_store + pred_rnn_store),
   "TFT (best overall)": trafo_zeroclip(pred_tft_store)
 }
 
@@ -2457,21 +2465,33 @@ scores_plot(
   ts_sales[stores][-15:],
   store_preds_dict,
   stores,
-  logscale = False,
-  title = "Store sales model scores"
+  logscale = True,
+  title = "Store sales model scores distributions (log scale)"
 )
 
 ```
 
-Visualizing the performance scores on all 54 store sales helps us understand differences in the models' performances better.
+Visualizing the score distributions of the models gives us more insight:
 
--   As expected, the linear + linear hybrid performs much worse for a few series, likely ones with many zeroes.
+-   As expected, the linear + linear hybrid performs much worse than other methods for a few extreme series (or possibly just one), likely ones with many zeroes. The rest of its score distribution is still not better than the baseline or other models though.
 
--   The TFT model has the best score distribution overall in all metrics, but the global hybrid's score distributions can be considered a bit more "robust".
+-   The TFT model has the best score distribution overall in all metrics.
 
 ## Modeling: Disaggregated sales
 
+Now, the 1782 bottom level series we need to forecast for the competition. We'll consider the usual baseline models, the best univariate model from store sales trained on each series one by one, and a global NN model trained on all the raw undecomposed series at once.
+
+With 1782 series, many of the operations we performed before take quite some time (even retrieving the covariate series took around 10 minutes). Therefore, we have to make some limitations to our modeling:
+
+-   We won't perform STL decomposition and fit univariate hybrids, as just the STL composition on 1782 series with the settings from store sales is estimated to take around 1 hour. Instead, we'll fit one linear regression with all features, on each raw series.
+
+-   The global TFT model performed the best in store sales, but it was computationally expensive even with 54 series. Besides, I doubt the global approach will do well with 1782 sales of different categories. Instead, we'll try the much simpler D-Linear model which performed close to TFT at a fraction of the computational cost.
+
+-   As stated before, I believe the best results for this competition may come from 33 global NN models for each category, each one trained on that category's sales in all 54 stores, however long that may take.
+
 ### Preprocessing
+
+Our preprocessing steps are the same as before.
 
 ```{python DisaggPreprocess}
 
@@ -2539,6 +2559,8 @@ del y_train, y_val
 
 ### Baseline models
 
+We fit and score the same baseline models as before. The AutoETS process takes considerably longer this time, and so does the model scoring.
+
 ```{python DisaggBaselineFitVal}
 
 # Fit & validate baseline models
@@ -2601,6 +2623,8 @@ scores_hierarchy(
   
 ```
 
+AutoETS scores considerably well on the validation data, as the few best scores I saw for the competition predictions were in the 0.36-0.40 RMSLE range. The ability to adjust model configuration for each of the 1782 series is likely much more useful at this level of the hierarchy.
+
 ### Linear regression
 
 ```{python}
@@ -2654,7 +2678,13 @@ scores_hierarchy(
 
 ```
 
+The linear regression on raw series approach scores better than the naive baselines, and achieves a good score compared to the competition bests, so it has some merit, but is unable to improve on the AutoETS scores.
+
 ### Global D-Linear
+
+Below are the specifications and the previously saved model scores for the D-Linear model.
+
+-   This report was generated with Quarto using RStudio, and it appears RStudio freezes if a Quarto chunk has too many lines in its output (even with output: false). Running even the predictions code for 1782 series was enough to repeatedly freeze my RStudio session due to the Torch warnings printed for every iteration. The code for predictions is omitted, but it is no different than before.
 
 ```{python DisaggDLinearSpec}
 #| eval: false
@@ -2696,7 +2726,15 @@ model_dlinear = DLinear(
 
 `--------`
 
+We see the global approach performs much worse than the baselines, which is not surprising, as deriving a single robust set of weights for 1782 noisy series of different nature is likely not possible.
+
+This leaves us with simple AutoETS as our best option for a competition submission, besides the much more lengthy 33 global models approach, which I won't explore at least for now.
+
 ## Hierarchical reconciliation
+
+Before moving on to the competition submission, we'll explore the topic of hierarchical reconciliation. As stated before, we have a hierarchy of predictions that should realistically add up in a certain way, but likely doesn't.
+
+There are several methods we can use to transform predictions and make sure they add up. Let's start by retrieving the best predictions for each hierarchy node (D-Linear for total sales, TFT for store totals, AutoETS for disaggregated series), and stacking them into a multivariate hierarchical time series, just like our original sales series.
 
 ```{python GatherValPreds}
 
@@ -2714,6 +2752,8 @@ pred_all = pred_all.with_hierarchy(hierarchy_target)
 
 ```
 
+Let's plot the totals of each hierarchy node and see how they (don't) add up.
+
 ```{python PlotHierarchy}
 
 # Define function to plot hierarchy sums
@@ -2727,18 +2767,15 @@ def plot_forecast_sums(pred_series, val_series=None):
       color="red")
       
     pred_series["TOTAL"].plot(
-      label="Predicted total sales", 
+      label="Total sales preds.", 
       alpha=0.3, 
       color="grey")
     
-    sum([pred_series[r] for r in categories]).plot(
-      label="Sum of categories")
-      
     sum([pred_series[r] for r in stores]).plot(
-      label="Sum of stores")
+      label="Sum of store preds.")
       
     sum([pred_series[t] for t in categories_stores]).plot(
-        label="Sum of disagg. series"
+        label="Sum of disagg. preds."
     )
     
     legend = plt.legend(loc="best", frameon=1)
@@ -2747,14 +2784,24 @@ def plot_forecast_sums(pred_series, val_series=None):
 
 
 # Plot hierarchical sums of predicted and actual values
-plot_forecast_sums(pred_all, ts_sales)
+plot_forecast_sums(pred_all, ts_sales[-15:])
 _ = plt.title("Prediction sums for each hierarchy node")
 plt.show()
 plt.close()
 
 ```
 
+Interestingly, the sum of 54 store predictions made by the global TFT model follows the actual total sales much closer than the total sales predictions made by the D-Linear model. It's possible TFT captured some within-stores information that wasn't available from the total sales data.
+
+Reconciliation methods can be useful for retrieving realistic, coherent hierarchical predictions for real-life forecasting scenarios. They may increase prediction performance at some levels of the hierarchy, while decreasing it in others. We'll try all the reconciliation methods available in Darts, and see how they affect our scores. The implementations are based on the methods described [here](https://otexts.com/fpp3/hierarchical.html).
+
 ### Bottom-up reconciliation
+
+Bottom-up reconciliation is simple: The lowest level predictions are added up to create the higher level predictions, according to the hierarchy we previously mapped.
+
+-   This approach simply enforces the bottom level predictions without considering any information from higher levels. It's simple to apply and avoids information loss due to aggregation, but the bottom level series are usually the noisiest and hardest to forecast.
+
+-   The bottom level predictions are left unchanged.
 
 ```{python ReconcileBottom}
 
@@ -2768,13 +2815,21 @@ pred_bottomup = recon_bottom.transform(pred_all)
 
 ### Top-down reconciliation
 
+Top-down reconciliation looks at historical or forecasted proportions of the lower level series, and allocates the top level series' values to lower levels accordingly.
+
+-   The top-down reconciliator needs to be fit with a historical or forecasted example of the hierarchical series. It won't change the top level predictions.
+
+-   The historical approach ignores information from the lower levels of the hierarchy, except their proportions to the top level.
+
+-   If a forecasted example is given instead of a historical one, first the proportion of the lower level forecasts among themselves are retrieved, then the same proportions are applied to the top-level forecast to retrieve the final forecasts. This method is stated to be more effective, and it's what we will use.
+
 ```{python ReconcileTop}
 
 from darts.dataprocessing.transformers.reconciliation import TopDownReconciliator as TopDown
 
-# Fit top down reconciliator on training series
+# Fit top down reconciliator on forecasted series
 recon_top = TopDown()
-_ = recon_top.fit(ts_sales[:-15])
+_ = recon_top.fit(pred_all)
 
 # Transform predictions
 pred_topdown = recon_top.transform(pred_all)
@@ -2782,6 +2837,24 @@ pred_topdown = recon_top.transform(pred_all)
 ```
 
 ### MinT reconciliation
+
+Minimum trace reconciliation ([original paper](https://www.tandfonline.com/doi/abs/10.1080/01621459.2018.1448825?journalCode=uasa20), [explanation](https://otexts.com/fpp3/reconciliation.html#ref-Mint)) is a more advanced reconciliation method that relies on matrix algebra. Basically, it generates the set of coherent forecasts that minimizes the forecast errors across all levels (if I understood correctly).
+
+-   The advantage of this method is that it takes information from all levels of the hierarchy into account, unlike top-down or bottom-up approaches.
+
+-   There are numerous versions of this method, some rely on simpler assumptions, others require forecast errors or historical values to be provided. We'll use two methods that I think are most applicable to our case:
+
+-   `"wls_var"` scales the base forecasts using the temporal averages of the variance of forecast errors, and requires the forecast residuals to be passed to `.fit()`. We'll test this approach, but won't be able to use it for competition submissions as we won't have the forecast errors for our competition predictions.
+
+-   `"wls_val"` uses the temporal averages of the actual series values, historical or otherwise. We'd be able to use this approach in our competition submission, if it improves our forecasts.
+
+-   The calculations for MinT reconciliation raise a mathematical error for most methods: `np.linalg.LinAlgError: Singular matrix`
+
+    -   Our forecast residuals and historical values both include some zeroes, and so do their temporal averages.
+
+    -   This prevents the inversion of the diagonal temporal average matrix, as its determinant is zero with even one zero value in the diagonal.
+
+    -   To work around this issue, I added a very small value to all series, and subtracted it after reconciliation is done.
 
 ```{python ReconcileMinT}
 
@@ -2809,6 +2882,8 @@ pred_wlsvar = recon_wlsvar.transform(pred_all) - 0.0001
 ```
 
 ### Raw vs hierarchical reconciled scores
+
+Let's compare the raw prediction scores with the reconciled predictions.
 
 ```{python RawVsReconciledScores}
 
@@ -2857,6 +2932,7 @@ scores_hierarchy(
   )  
 
 print("Bottom-up method won't change the bottom level predictions")
+print("--------")
   
 print("--------\n")
 
@@ -2939,4 +3015,44 @@ print("--------")
 
 ```
 
-## Conclusions
+Some reconciliation methods did improve prediction scores at some hierarchy levels, but generally reconciled scores are worse than raw scores.
+
+-   None of the reconciled scores for bottom level series are better than the raw scores, but top-down reconciliation didn't impact it too much. Other methods greatly worsened bottom level scores. We won't use reconciliation for our competition submission, and stick to modeling just the disaggregated sales.
+
+-   Bottom-up reconciliation only slightly worsened total and store sales prediction scores, which is surprising. This could suggest there isn't much room for improvement in our bottom level predictions.
+
+-   Top-down reconciliation with forecast proportions worsened store and bottom level predictions a bit, but again not by much. This could be a good, simple option to generate coherent forecasts, though it will still require predictions for all levels.
+
+    -   Top-down with historical proportions performed much worse when I previously attempted it.
+
+-   MinT reconciliation with historical sales considerably improved our top level predictions, and greatly worsened our lower level predictions.
+
+    -   It's possible this approach focuses on improving predictions for the top level at the expense of the lower levels, as the top level has the largest scale values, but I am not sure mathematically.
+
+-   MinT reconciliation with forecast residuals worsened prediction performance for all series, but apparently less for higher level series, and more for lower level series, and less overall compared to the historical MinT approach.
+
+## Conclusions and competition submission
+
+Again, the best approach I can formulate for forecasting the 1782 disaggregated series is 33 global NN models for each category, each trained on that category's sales in all 54 stores. I did not attempt this method because it would require quite some time, but maybe I'll revisit it in the future.
+
+-   It would be even more ideal to tailor a feature set for each of the 33 categories after extensive EDA, but this would be a time-consuming project.
+
+Instead, I made a simple competition submission with the next best approach I could find: An AutoETS model for each of the 1782 series. This approach netted me a competition score of 0.42505 RMSLE, placing me at 61th place out of roughly 612 entries at submission time, which gets me into the top 10% (although barely). The Kaggle notebook for the simple submission code is available [here](https://www.kaggle.com/code/ahmetzamanis/store-sales-autoets-with-darts).
+
+-   AutoETS performed considerably worse than its validation score of 0.365, while the validation score for the linear regression approach was roughly 0.40, so it's possible the linear regression could generalize a bit better to the competition. I did not test this.
+
+-   Still, I believe AutoETS' ability to adapt the model components and dampen the trend according to each unique series is important here. It's unlikely a steep linear trend will extend into the future for too long. Linear regression can't be that flexible, especially with a fixed feature set, and a linear trend dummy.
+
+-   The CPI adjustment applied to the sales at the very beginning (and reversed before the final prediction) may be important too: The raw unadjusted series display a prominent increasing trend at the end of the training data, which seems to mostly disappear after the CPI adjustment. Training with unadjusted data could mislead models into extrapolating a steep trend into the future.
+
+As for the global NN models tried, their performance on the stores series was impressive, beating all univariate models as well as the robust AutoETS baseline. When the multivariate series are similar enough, I believe global NN forecasting models are worth the training time.
+
+-   However, we also saw simpler statistical methods such as ETS or linear regression can achieve fairly close or better performance, especially if the data is highly trended and seasonal. I would definitely start simple with time series forecasting tasks.
+
+-   From what I gather, the ability to handle long-term trends is crucial for NNs, and may be hampered a bit by training on chunks of the data instead of the entire series. D-Linear and TFT both performed well in this regard, with two unique approaches to capturing long-term dependencies, while RNN is better reserved for stationary data.
+
+-   I was especially impressed with D-Linear's performance relative to its simple architecture and low computational cost. Note that the trend decomposition scheme used is similar to the ETS approach.
+
+-   TFT is a computationally expensive model, but it likely offers great predictive performance with large enough data, and the ability to capture complex long-term dependencies. It also has insightful "auxiliary" features like providing variable importance scores and generating forecast intervals natively.
+
+Any comment or suggestion is welcome. Thanks to all authors and developers referenced throughout this report for making the used information and software freely available.
