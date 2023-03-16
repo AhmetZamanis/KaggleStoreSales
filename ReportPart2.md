@@ -68,7 +68,7 @@ Ahmet Zamanis
 
 This is part 2 of a report on time series analysis & regression
 modeling, performed in Python with the Darts library. In [part
-1](https://github.com/AhmetZamanis/KaggleStoreSales/blob/ModelPart2.2/ReportPart1.md),
+1](https://github.com/AhmetZamanis/KaggleStoreSales/blob/main/ReportPart1.md),
 we analyzed & forecasted only the daily national supermarket sales in
 the [Kaggle Store Sales forecasting
 competition](https://www.kaggle.com/competitions/store-sales-time-series-forecasting)
