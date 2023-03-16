@@ -1,14 +1,15 @@
 ---
-title: "Time series regression - Store sales forecasting, Part 1"
+title: "Time series regression - Store sales forecasting, part 1"
 author: "Ahmet Zamanis"
 format: 
   gfm:
     toc: true
+    code-fold: true
+    code-summary: "Show code"
 editor: visual
 jupyter: python3
 execute:
   warning: false
-  message: false
 ---
 
 ## Introduction
@@ -18,7 +19,6 @@ This is a report on time series analysis & regression modeling, performed in Pyt
 The main information source used extensively for this analysis is the textbook [Forecasting: Principles and Practice](https://otexts.com/fpp3/), written by Rob J. Hyndman and George Athanasopoulos. The book is the most complete source on time series analysis & forecasting I could find. It uses R and the [tidyverts](https://tidyverts.org/) libraries for its examples, which have the best time series analysis workflow among the R libraries I've tried.
 
 ```{python Settings}
-#| echo: false
 
 # Import libraries
 import pandas as pd 
@@ -35,13 +35,12 @@ pd.set_option('display.max_columns', None)
 plt.rcParams['figure.dpi'] = 300
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams["figure.autolayout"] = True
-#sns.set_theme(context="paper")
+
 ```
 
 ## Data preparation
 
 ```{python Load data}
-#| include: false
 
 # Load original datasets
 df_train = pd.read_csv("./OriginalData/train.csv", encoding="utf-8")
@@ -49,12 +48,15 @@ df_stores = pd.read_csv("./OriginalData/stores.csv", encoding="utf-8")
 df_oil = pd.read_csv("./OriginalData/oil.csv", encoding="utf-8")
 df_holidays = pd.read_csv("./OriginalData/holidays_events.csv", encoding="utf-8")
 df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
+
 ```
 
-The data is split into several .csv files. **train.csv** and **test.csv** are the main datasets, consisting of daily sales data. The training data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the following 15 days in August 2017. We won't do a competition submission in part 1, so we won't work on the testing data.
+The data is split into several .csv files. **train.csv** and **test.csv** are the main datasets, consisting of daily sales data. The training data ranges from 01-01-2013 to 15-08-2017, and the testing data consists of the following 16 days until the end of August 2017. We won't do a competition submission in part 1, so we won't work on the testing data.
 
 ```{python df}
+
 print(df_train.head(5))
+
 ```
 
 -   For each day, we have the sales in each store (out of a possible 54) and each product category (out of a possible 33). This amounts to 1782 time series that need to be forecasted for the competition.
@@ -64,31 +66,38 @@ print(df_train.head(5))
 **stores.csv** contains more information about each store: The city, state, store type and store cluster.
 
 ```{python df_stores}
+
 print(df_stores.head(5))
+
 ```
 
 **holidays.csv** contains information about local (city-wide), regional (state-wide) and national holidays, and some special nation-wide events that occured in the time period. We will use these along with the stores' location data to create calendar features, to adjust for effects of holidays and special events on sales.
 
 ```{python df_holidays}
+
 print(df_holidays.head(5))
+
 ```
 
 **oil.csv** consists of the daily oil prices in the time period. Ecuador has an oil-dependent economy, so this may be an useful predictor of the cyclicality in supermarket sales. We don't have the oil price for the first day of the data.
 
 ```{python df_oil}
+
 print(df_oil.head(5))
+
 ```
 
 **transactions.csv** consists of the daily number of transactions at each store. Note that only store 25 is recorded for the first day, so it's likely all stores aren't open in all days.
 
 ```{python df_trans}
+
 print(df_trans.head(5))
+
 ```
 
 We will rename some columns from the datasets and merge the supplementary information into the main sales dataset. We'll aggregate daily transactions across all stores beforehand, as we are only interested in predicting daily national sales.
 
 ```{python MergeData}
-#| output: false
 
 # Rename columns
 df_holidays = df_holidays.rename(columns = {"type":"holiday_type"})
@@ -97,25 +106,25 @@ df_stores = df_stores.rename(columns = {
   "type":"store_type", "cluster":"store_cluster"})
 
 # Aggregate daily transactions across all stores
-df_trans = df_trans.groupby("date").transactions.sum()
+df_trans_agg = df_trans.groupby("date").transactions.sum()
 
 # Add columns from oil, stores and transactions datasets into main data
-df_train = df_train.merge(df_trans, on = ["date"], how = "left")
+df_train = df_train.merge(df_trans_agg, on = ["date"], how = "left")
 df_train = df_train.merge(df_oil, on = "date", how = "left")
 df_train = df_train.merge(df_stores, on = "store_nbr", how = "left")
+
 ```
 
 Incorporating the holidays information into the sales dataset will require more work. We'll create a four binary columns that record whether a day is a local, regional or national holiday, or had a special event.
 
 ```{python SplitHolidays}
-#| output: false
 
 # Split holidays data into local, regional, national and events
-events = df_holidays[df_holidays["holiday_type"] == "Event"]
+events = df_holidays[df_holidays["holiday_type"] == "Event"].copy()
 df_holidays = df_holidays.drop(labels=(events.index), axis=0)
-local = df_holidays.loc[df_holidays["locale"] == "Local"]
-regional = df_holidays.loc[df_holidays["locale"] == "Regional"]
-national = df_holidays.loc[df_holidays["locale"] == "National"]
+local = df_holidays.loc[df_holidays["locale"] == "Local"].copy()
+regional = df_holidays.loc[df_holidays["locale"] == "Regional"].copy()
+national = df_holidays.loc[df_holidays["locale"] == "National"].copy()
 
 ```
 
@@ -128,44 +137,57 @@ There are cases of multiple holidays or events sharing the same date and locale.
 -   Rows with **holiday_type = Bridge** are dates that are not normally holidays, but were added to extend preceding / following holidays.
 
 ```{python Duplicates1}
+
 # Inspect local holidays sharing same date & locale
 print(local[local.duplicated(["date", "locale_name"], keep = False)])
+
 ```
 
 ```{python DropDuplicates 1}
+
 # Drop the transfer row
 local = local.drop(265, axis = 0)
+
 ```
 
 ```{python Duplicates2}
+
 # Inspect regional holidays sharing same date & locale. None exist
 print(regional[regional.duplicated(["date", "locale_name"], keep = False)])
+
 ```
 
 ```{python Duplicates3}
+
 # Inspect national holidays sharing same date & locale
 print(national[national.duplicated(["date"], keep = False)])
+
 ```
 
 ```{python DropDuplicates3}
+
 # Drop bridge days
 national = national.drop([35, 39, 156], axis = 0)
+
 ```
 
 ```{python Duplicates4}
+
 # Inspect events sharing same date
 print(events[events.duplicated(["date"], keep = False)])
+
 ```
 
 ```{python DropDuplicates4}
+
 # Drop the earthquake row as it is a one-time event
 events = events.drop(244, axis = 0)
+
 ```
 
 After getting rid of duplicates, we can create binary columns that signify whether a date was a local / regional / national holiday / event. We'll merge these back into the sales data.
 
 ```{python HolidayEventDummies}
-#| output: false
 
 # Add local_holiday binary column to local holidays data, to be merged into main 
 # data.
@@ -223,7 +245,7 @@ df_train["event"] = df_train["event"].fillna(0).astype(int)
 
 ```
 
-We'll set the **date** column to a DateTimeIndex, and view the sales data with the added columns. Remeber that the transactions column is now the national transactions across all stores in one day.
+We'll set the **date** column to a DateTimeIndex, and view the sales data with the added columns. Remember that the transactions column is now the national transactions across all stores in one day.
 
 ```{python DatetimeIndex}
 
@@ -234,12 +256,11 @@ print(df_train.head(5))
 
 ```
 
-With financial data, it's a good idea to normalize for inflation. We'll CPI adjust the sales and oil prices columns, with 2010 as our base year. The CPI values for Ecuador in the time period were retrieved [here](https://data.worldbank.org/indicator/FP.CPI.TOTL?end=2017&locations=EC&start=2010&view=chart).
+With financial data, it's a good idea to perform CPI adjustment before analysis, to remove the effects of inflation / deflation on our models and predictions. We'll CPI adjust the sales and oil prices columns with 2010 as our base year. The CPI values for Ecuador in the time period were retrieved [here](https://data.worldbank.org/indicator/FP.CPI.TOTL?end=2017&locations=EC&start=2010&view=chart).
 
 -   We'll use the yearly CPI values for simplicity, but it's possible to use monthly CPI as well.
 
 ```{python CPIAdjust}
-#| output: false
 
 # CPI adjust sales and oil, with CPI 2010 = 100
 cpis = {
@@ -248,10 +269,10 @@ cpis = {
   }
   
 for year in [2013, 2014, 2015, 2016, 2017]:
-  df_train["sales"].loc[df_train.index.year==year] = df_train["sales"].loc[
-    df_train.index.year==year] / cpis[str(year)] * cpis["2010"]
-  df_train["oil"].loc[df_train.index.year==year] = df_train["oil"].loc[
-    df_train.index.year==year] / cpis[str(year)] * cpis["2010"]
+  df_train.loc[df_train.index.year == year, "sales"] = df_train.loc[
+    df_train.index.year == year, "sales"] / cpis[str(year)] * cpis["2010"]
+  df_train.loc[df_train.index.year == year, "oil"] = df_train.loc[
+    df_train.index.year == year, "oil"] / cpis[str(year)] * cpis["2010"]
 
 ```
 
@@ -261,6 +282,7 @@ We have some columns with missing values in our training data.
 
 # Check missing values in each column
 pd.isnull(df_train).sum()
+
 ```
 
 We will interpolate the missing values in the oil and transactions columns using time interpolation.
@@ -270,16 +292,20 @@ We will interpolate the missing values in the oil and transactions columns using
 -   If we don't set `limit_direction = "both"`, the first value for oil won't be interpolated.
 
 ```{python NAInterpolate}
+
 df_train["oil"] = df_train["oil"].interpolate("time", limit_direction = "both")
 df_train["transactions"] = df_train["transactions"].interpolate(
   "time", limit_direction = "both")
+  
 ```
 
 We will now aggregate daily sales across all categories and stores, to retrieve our target variable. We have 1684 days of national sales data.
 
 ```{python AggSales}
+
 sales = df_train.groupby("date").sales.sum()
 sales
+
 ```
 
 We will create a Darts [TimeSeries](https://unit8co.github.io/darts/generated_api/darts.timeseries.html) with our target variable.
@@ -292,13 +318,14 @@ ts_sales = TimeSeries.from_series(
   freq="D" # Time series frequency is daily
   )
 print(ts_sales)
+
 ```
 
 -   Each Pandas series / dataframe column passed is stored as a component in the Darts TS. The date-time index is stored in `.time_index`**.** We had 1684 rows in our Pandas series, but the Darts TS has 1688 dates. This means our series had some missing dates, which Darts created automatically. We'll fill in the values for these dates later.
 
 -   To create a multivariate time series, we create a Pandas dataframe with each time series as a column, and a common date-time index. When we pass this dataframe to TimeSeries, we'll have each time series as a component. If the multivariate time series has a **hierarchy**, i.e. if they sum up together in a certain way, we can map that hierarchy as a dictionary to later perform hierarchical reconciliation. We will explore this further in part 2 of the analysis.
 
--   **Static covariates** are time-invariant covariates that may be used as predictors in global models (models trained on multiple Darts TS at once), if not used to split the time series into a multivariate series (one Darts TS with multiple components). They are stored together with the target series in Darts TS. In our case, the type or cluster of a store may be used as static covariates, but for part 1 of our analysis we are looking at national sales, so these aren't applicable.
+-   **Static covariates** are time-invariant covariates that may be used as predictors in global models (models trained on multiple time series at once). They are stored together with the target series in the Darts TS. In our case, the location, type or cluster of a store may be used as static covariates, but for part 1 of our analysis we are looking at national sales, so these aren't applicable.
 
 ## Overview of hybrid modeling approach
 
@@ -337,7 +364,7 @@ The time series plot shows us several things:
 
 -   Supermarket sales show an increasing trend over the years. The trend is close to linear overall, but the rate of increase declines roughly from the start of 2015. Consider one straight line from 2013 to 2015, and a second, less steep one from 2015 to the end.
 
--   Sales mostly fluctuate around the trend, which suggests strong seasonality. However, there are also sharp deviations from the trend in certain periods, mainly across 2014 and at the start of 2015. These are likely cyclical in nature.
+-   Sales mostly fluctuate around the trend with a repeating pattern, which suggests strong seasonality. However, there are also sharp deviations from the trend in certain periods, mainly across 2014 and at the start of 2015. These are likely cyclical in nature.
 
 -   The "waves" of seasonal fluctuations seem to be getting bigger over time. This suggests we should use a multiplicative time decomposition instead of additive.
 
@@ -350,7 +377,6 @@ The time series plot shows us several things:
 Let's look at annual seasonality: How sales fluctuate over a year based on quarters, months, weeks of a year and days of a year. In the plots below, we have the daily sales averaged by each respective calendar period, colored by each year in the data. The confidence bands indicate the minimum and maximum daily sales in each respective period (in the last plot, we just have the daily sales without any averaging).
 
 ```{python AnnualSeasonality}
-#| echo: false
 
 # FIG1: Annual seasonality, period averages
 fig1, axes1 = plt.subplots(2,2, sharey=True)
@@ -402,6 +428,7 @@ _ =  axes1[1,1].xaxis.set_ticks(np.arange(0, 365, 100))
 # Show fig1
 plt.show()
 plt.close("all")
+
 ```
 
 -   **Quarterly:** Sales do not seem to have a considerable quarterly seasonality pattern. However, the plot still shows us a few things:
@@ -420,7 +447,7 @@ plt.close("all")
 
 -   **Weekly:** The seasonal patterns are more visible in the weekly plot, as we see the "waves" of fluctuation line up across years. It's very likely the data has strong weekly seasonality, which is what we'd expect from supermarket sales.
 
-    -   The data for 2017 ends after August 15, so the sharp decline afterwards is misleading, though they may still be a stagnation / decline in the overall trend.
+    -   The data for 2017 ends after August 15, so the sharp decline afterwards is misleading, though there may still be a stagnation / decline in the overall trend.
 
     -   The sharp decline at the end of 2016 is also misleading, as 2016 was a 366-day year.
 
@@ -429,7 +456,6 @@ plt.close("all")
 Another way to look at annual seasonality is to average sales in a certain calendar period across all years, without grouping by year.
 
 ```{python AnnualSeasonalityAgg}
-#| echo: false
 
 # FIG1.1: Annual seasonality, averaged over years
 fig11, axes11 = plt.subplots(2,2, sharey=True)
@@ -480,16 +506,16 @@ _ = axes11[1,1].xaxis.set_ticks(np.arange(0, 365, 100))
 # Show fig1.1
 plt.show()
 plt.close("all")
+
 ```
 
-This shows us the "overall" seasonality pattern across one year: We likely have a strong weekly seasonality pattern that holds across the years, and some monthly seasonality especially towards December.
+This shows us the "overall" seasonality pattern across all years: We likely have a strong weekly seasonality pattern that holds across the years, and some monthly seasonality especially towards December.
 
 #### Monthly & weekly seasonality
 
 Now let's look at seasonality across days of a month and days of a week. These will likely be the most important seasonality patterns in supermarket sales. There are three ways to look at these plots: First we will group them by year.
 
 ```{python MonthlyWeeklyByYear}
-#| echo: false
 
 # FIG2: Monthly and weekly seasonality
 fig2, axes2 = plt.subplots(2)
@@ -523,6 +549,7 @@ _ = axes2[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
 # Show fig2
 plt.show()
 plt.close("all")
+
 ```
 
 -   The weekly seasonality pattern across days of a week is clear. Sales are lowest in Thursdays, increase and peak at Sundays, then drop on Mondays. The pattern holds in all years.
@@ -532,7 +559,6 @@ plt.close("all")
 We can look at the same plots grouped by month. The confidence bands are suppressed as they make the plots hard to read.
 
 ```{python MonthlyYearlyByMonth}
-#| echo: false
 
 # FIG2.1: Monthly and weekly seasonality, colored by month
 fig21, axes21 = plt.subplots(2)
@@ -566,6 +592,7 @@ _ = axes21[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
 # Show fig2.1
 plt.show()
 plt.close("all")
+
 ```
 
 This plot shows us the monthly and weekly seasonality pattern generally holds across all months, but December is a notable exception:
@@ -579,7 +606,6 @@ This plot shows us the monthly and weekly seasonality pattern generally holds ac
 And finally, without any grouping: The averages across all years and months.
 
 ```{python MonthlyYearly}
-#| echo: false
 
 # FIG2.2: Monthly and weekly seasonality, average across years
 fig22, axes22 = plt.subplots(2)
@@ -612,6 +638,7 @@ _ =  axes22[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
 # Show fig22
 plt.show()
 plt.close("all")
+
 ```
 
 This plot allows us to see the overall monthly seasonality pattern more clearly: Sales are higher at the start of a month, slightly decline until the mid-month payday, slightly increase afterwards, and start peaking again towards the end of a month.
@@ -632,6 +659,7 @@ _ = plot_pacf(sales, lags=range(0,55), ax=axes3[1], method="ywm")
 # Show fig3
 plt.show()
 plt.close("all")
+
 ```
 
 The sinusoidal pattern in the ACF plot is typical for strong weekly seasonality:
@@ -649,7 +677,6 @@ The PACF plot shows the marginal contribution of each lag to the relationship wi
 One more time effect we will look at is the April 2016 earthquake, a one-off occurrence we need to adjust for in our model. The plots below show the seasonality of sales in April and May, in every year. The black dashed vertical line marks April 16.
 
 ```{python EarthquakePlot}
-#| echo: false
 
 # FIG6: Zoom in on earthquake: 16 April 2016
 april_sales = sales.loc[sales.index.month == 4]
@@ -693,6 +720,7 @@ _ = axes6[1].grid(which='major', alpha=1)
 # Show FIG6
 plt.show()
 plt.close("all")
+
 ```
 
 With the earthquake, the sales sharply increased from the expected seasonal pattern and trend, peaked in April 18, then declined and returned to the seasonal expectations around April 22. It doesn't seem like sales were higher than normal for the rest of April 2016, or in May 2016. We'll engineer our earthquake feature accordingly.
@@ -723,6 +751,7 @@ df_train.loc[df_train["ny1"] == 1, ["local_holiday", "regional_holiday", "nation
 df_train["ny2"] = ((df_train.index.day == 2) & (df_train.index.month == 1)).astype(int)
 
 df_train.loc[df_train["ny2"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+
 ```
 
 We have considerably higher sales in December due to Christmas and the New Years' Eve.
@@ -754,6 +783,7 @@ df_train.loc[
   (df_train.index.day.isin(range(24,28))) & (df_train.index.month == 12)].index.day - 27)
 
 df_train.loc[(df_train["xmas_before"] != 0) | (df_train["xmas_after"] != 0), ["local_holiday", "regional_holiday", "national_holiday"]] = 0
+
 ```
 
 To account for the effect of the April 2016 earthquake, we create a feature similar to the ones for Christmas. The value peaks at April 18th and takes a value of zero for dates outside April 17-22, 2016.
@@ -769,6 +799,7 @@ df_train.loc[df_train.index == "2016-04-19", "quake_after"] = 4
 df_train.loc[df_train.index == "2016-04-20", "quake_after"] = 3
 df_train.loc[df_train.index == "2016-04-21", "quake_after"] = 2
 df_train.loc[df_train.index == "2016-04-22", "quake_after"] = 1
+
 ```
 
 We previously created binary features to indicate local-regional-national holidays, and special events. There are only a few different events in the dataset, and they differ in nature, so we will break up the events column and create separate binary features for each event. We already created a feature for the earthquake, so we'll skip that one.
@@ -785,6 +816,7 @@ df_train["black_friday"] = ((df_train["event"] == 1) & (df_train.index.isin(["20
 df_train["cyber_monday"] = ((df_train["event"] == 1) & (df_train.index.isin(["2014-12-01", "2015-11-30", "2016-11-28"]))).astype(int)
 
 df_train = df_train.drop("event", axis=1)
+
 ```
 
 Holidays and events may lead to an increase in sales in advance, so we will create one lag column for each holiday column, and the Mother's Day event. These features could be tailored more carefully according to each holiday and event, but we'll keep it simple.
@@ -796,6 +828,7 @@ df_train["local_lead1"] = df_train["local_holiday"].shift(-1).fillna(0)
 df_train["regional_lead1"] = df_train["regional_holiday"].shift(-1).fillna(0)
 df_train["national_lead1"] = df_train["national_holiday"].shift(-1).fillna(0)
 df_train["diamadre_lead1"] = df_train["dia_madre"].shift(-1).fillna(0)
+
 ```
 
 To capture the weekly seasonality in a simple manner, we'll create 6 dummy features for days of the week. We won't create one for Monday, since a 0 value for the other 6 columns means Monday.
@@ -809,6 +842,7 @@ df_train["thursday"] = (df_train.index.dayofweek == 3).astype(int)
 df_train["friday"] = (df_train.index.dayofweek == 4).astype(int)
 df_train["saturday"] = (df_train.index.dayofweek == 5).astype(int)
 df_train["sunday"] = (df_train.index.dayofweek == 6).astype(int)
+
 ```
 
 Now we will aggregate the time features by mean. For local and regional holidays, this will give us fractional values between 0 and 1, which is likely a decent way to reflect local and regional holidays' effects on national sales.
@@ -818,6 +852,7 @@ Now we will aggregate the time features by mean. For local and regional holidays
 # Aggregate time features by mean
 time_covars = df_train.drop(
   columns=['id', 'store_nbr', 'family', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
+  
 ```
 
 ### Trend & monthly seasonality features
@@ -835,6 +870,7 @@ time_covars["trend"] = range(1, 1685) # Linear dummy 1
 
 # Knot to be put at period 729
 print(time_covars.loc[time_covars.index=="2015-01-01"]["trend"]) 
+
 ```
 
 ```{python FeatEngTrend2}
@@ -876,6 +912,7 @@ time_covars = time_covars.merge(dp.in_sample(), how="left", on="date")
 
 # View Fourier features
 print(time_covars.iloc[0:5, -10:])
+
 ```
 
 ## Model 1: Time effects decomposition
@@ -885,11 +922,11 @@ We will now build our time decomposition linear regression model in Darts, and c
 ### Preprocessing
 
 ```{python TSTimeCovars}
-#| output: false
 
 # Create Darts time series with time features
 ts_timecovars = TimeSeries.from_dataframe(
-  time_covars, freq="D", fill_missing_dates=False)
+  time_covars, freq = "D", fill_missing_dates = False)
+
 ```
 
 Our target and covariate Series had 1684 rows each, but the Darts TimeSeries we create from them have 1688 dates. This is likely because we have gaps in our original series. We can check this easily in Darts.
@@ -898,6 +935,7 @@ Our target and covariate Series had 1684 rows each, but the Darts TimeSeries we 
 
 # Scan for gaps
 print(ts_timecovars.gaps())
+
 ```
 
 It seems our data is missing values for December 25th in every year (the data for 2017 ends in August). Darts automatically filled in the missing dates to 1688, but we need to fill the missing values in our target and covariate series.
@@ -912,6 +950,7 @@ ts_timecovars = na_filler.transform(ts_timecovars)
 
 # Scan for gaps again
 print(ts_timecovars.gaps())
+
 ```
 
 Our exploratory analysis showed that the seasonal fluctuations in sales become larger over time. We should use a multiplicative decomposition instead of additive.
@@ -936,6 +975,7 @@ def trafo_log(x):
 
 def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
+
 ```
 
 We'll train our time decomposition models on the natural logarithm of the daily sales data from 2013-2016, and validate their prediction performance on 2017. We use an entire year of data for validation to see if our features can capture long-term seasonality and fixed calendar effects.
@@ -944,6 +984,7 @@ We'll train our time decomposition models on the natural logarithm of the daily 
 
 # Train-validation split: Pre 2017 vs 2017
 y_train1, y_val1 = trafo_log(ts_sales[:-227]), trafo_log(ts_sales[-227:])
+
 ```
 
 ### Model specification
@@ -1006,7 +1047,7 @@ model_fft = FFT(
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
   model = "AAA", # Additive trend, seasonality and remainder component
-  damped = 0.95 # Dampen the trend over time
+  damped = None # Try both a dampened and non-dampened trend
 )
 
 # Specify linear regression model
@@ -1014,6 +1055,7 @@ model_linear1 = LinearRegressionModel(
   lags_future_covariates = [0], # Don't create any future covariate lags
   output_chunk_length = 15 # Predict 15 time steps in one go
   )
+  
 ```
 
 ### Model validation: Predicting 2017 sales
@@ -1029,23 +1071,23 @@ We'll train our models on 2013-2016 sales data, predict the sales for 2017, and 
 -   **Mean absolute percentage error (MAPE).**
 
 ```{python 2017Pred1}
-#| output: false
 
 # Fit models on train data (pre-2017), predict validation data (2017)
-model_drift.fit(y_train1)
+_ = model_drift.fit(y_train1)
 pred_drift = model_drift.predict(n = 227)
 
-model_seasonal.fit(y_train1)
+_ = model_seasonal.fit(y_train1)
 pred_seasonal = model_seasonal.predict(n = 227)
 
-model_fft.fit(y_train1)
+_ = model_fft.fit(y_train1)
 pred_fft = model_fft.predict(n = 227)
 
-model_ets.fit(y_train1)
+_ = model_ets.fit(y_train1)
 pred_ets = model_ets.predict(n = 227)
 
-model_linear1.fit(y_train1, future_covariates = ts_timecovars)
+_ = model_linear1.fit(y_train1, future_covariates = ts_timecovars)
 pred_linear1 = model_linear1.predict(n = 227, future_covariates = ts_timecovars)
+
 ```
 
 ```{python 2017Score1}
@@ -1076,14 +1118,18 @@ perf_scores(y_val1, pred_seasonal, model="Naive seasonal")
 perf_scores(y_val1, pred_fft, model="FFT")
 perf_scores(y_val1, pred_ets, model="Exponential smoothing")
 perf_scores(y_val1, pred_linear1, model="Linear regression")
+
 ```
 
 We see our linear regression model performs much better than the other methods tested.
 
--   It's also notable that the naive seasonal model beats the FFT model in all metrics, while beating ETS in all metrics except RMSE.
+-   It's also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
 
-    -   ETS scores very close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE. This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
+    -   This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
 
+    ```{=html}
+    <!-- -->
+    ```
         -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
 
         -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
@@ -1094,13 +1140,11 @@ We see our linear regression model performs much better than the other methods t
 
     -   When the same models are validated on only the last 15 days of our training data, they perform very similarly to one another, and the ETS model has the best performance, even slightly better than our linear regression model with features.
 
-        -   The difference in performance is mainly because the models except linear regression can't take in covariates to model calendar effects or long-term seasonality, but these may not matter much for a short forecast horizon like 15. With a long forecast horizon like 227, the linear regression is able to perform fairly similarly to its performance with 15, while the other models do much worse.
+        -   The difference in performance is mainly because the models except linear regression can't take in covariates to capture calendar effects or long-term seasonality. These may not matter much for a short forecast horizon like 15, but with a long forecast horizon like 227, they become more important. The linear regression is able to perform fairly similarly with a forecast horizon of 15 or 227, while the other models do much worse with a longer horizon.
 
 Let's plot the predictions of our models and compare them visually with the actual values.
 
 ```{python 2017Plot1}
-#| echo: false
-#| message: false
 
 # FIG7: Plot models' predictions against actual values
 fig7, axes7 = plt.subplots(4, sharex=True, sharey=True)
@@ -1134,6 +1178,7 @@ _ = axes7[3].set_title("Linear regression")
 # Show FIG7
 plt.show()
 plt.close("all")
+
 ```
 
 The FFT and ETS models actually did a good job of capturing the weekly seasonality pattern in the data, as the shape and timing of the waves in the predictions are similar to the actual values.
@@ -1148,7 +1193,7 @@ The FFT and ETS models actually did a good job of capturing the weekly seasonali
 
 -   In contrast, the linear model's trend and seasonality are both on point, and the January 1st drop is adjusted for nicely. The model is not able to match some spikes and troughs fully, which are possibly cyclical in nature. That's where model 2 will come in.
 
-    -   The piecewise linear trend method allows us to respond to turns in the trend more precisely, while keeping the trend lines robust against fluctuations.
+    -   The piecewise linear trend method allows us to adjust for major trend turns in the training data, while keeping the trend line robust for extrapolation into the future.
 
 ### Rolling crossvalidation
 
@@ -1176,10 +1221,10 @@ res_linear1 = trafo_log(ts_sales[365:]) - pred_hist1
 
 # Score historical forecasts
 perf_scores(trafo_log(ts_sales[365:]), pred_hist1, model="Linear regression, historical")
+
 ```
 
 ```{python HistForePlot1}
-#| echo: false
 
 # Plot historical forecasts for linear regression
 _ = ts_sales.plot(label="Actual")
@@ -1188,6 +1233,7 @@ _ = plt.title("Time decomposition linear model, historical forecasts")
 _ = plt.ylabel("sales")
 plt.show()
 plt.close("all")
+
 ```
 
 Again, the model captures the trend & seasonality patterns nicely, but the errors due to cyclical effects are even more apparent in 2014 and 2015. If we had modeled the trend non-linearly, the trend term would likely respond strongly to these fluctuations, potentially causing overfitting issues for predictions after the training time period.
@@ -1215,6 +1261,7 @@ _ = plt.grid(which='minor', alpha=0.5)
 _ = plt.grid(which='major', alpha=1)
 plt.show()
 plt.close("all")
+
 ```
 
 Ideally, we'd want very small residuals that are normally distributed around zero, representing the truly unpredictable remainder of our models. This is not the case overall, so there's room for improvement in our predictions.
@@ -1229,7 +1276,6 @@ A **stationary time series** is one free of trend and seasonality, also called *
 
 ```{python StatTestKPSS1}
 #| warning: true
-#| message: true
 
 # Import KPSS and ADF tests
 from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
@@ -1238,6 +1284,7 @@ print(
   "KPSS test p-value: " + 
   stationarity_test_kpss(res_linear1)[1].astype(str)
 ) # Null rejected = data is non-stationary
+
 ```
 
 The null hypothesis for the KPSS test (this version) is stationarity around a constant value. With a p-value smaller than 0.01, the null is rejected, so the test suggests our residuals are non-stationary.
@@ -1293,6 +1340,7 @@ sales_decomp = pd.concat([res1, res2])
 
 # Concatenate predictions to get model 1 predictions
 preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.index)
+
 ```
 
 Now, `preds_model1` are the fitted values of model 1 on 2013-2016, and its predictions for 2017. `sales_decomp` are the fitted residuals for 2013-2016 and the prediction residuals for 2017. We'll fit model 2 on `sales_decomp`, and add `preds_model1` to its predictions to achieve our final hybrid predictions.
@@ -1312,6 +1360,7 @@ covars = df_train.groupby("date").agg(
 
 # Merge decomposed sales and covariates
 sales_covariates = covars.merge(sales_decomp.rename("sales"), on = "date", how = "left")
+
 ```
 
 ### Covariates stationarity & differencing
@@ -1336,6 +1385,7 @@ print(
   "ADF test p-value: " +
   adfuller(sales_covariates["oil"])[1].astype(str)
 ) # Null accepted = data is non-stationary
+
 ```
 
 Both the KPSS and ADF test suggest the oil time series is non-stationary, so we'll difference it. If one covariate is differenced, it makes sense to difference the others as well.
@@ -1349,6 +1399,7 @@ sales_covariates[
   ['oil', 'onpromotion', 'transactions']] = diff.fit_transform(
     sales_covariates[['oil', 'onpromotion', 'transactions']])
 print(sales_covariates)
+
 ```
 
 Now our covariate columns all represent the change in each covariate compared to the previous period.
@@ -1358,13 +1409,14 @@ Now our covariate columns all represent the change in each covariate compared to
 Let's evaluate features derived from sales lags as possible predictors. We'll start with autocorrelation plots.
 
 ```{python LoadLagPlots}
+
 from statsmodels.graphics.tsaplots import plot_pacf as pacf_tsa
 from sktime.utils.plotting import plot_lags
 from scipy.stats import pearsonr, spearmanr
+
 ```
 
 ```{python SalesAcfPacf}
-#| echo: false
 
 # FIG8: Sales ACF - PACF plot
 fig8, axes8 = plt.subplots(2, sharex=True)
@@ -1385,6 +1437,7 @@ _ = axes8[1].grid(which='minor', alpha=0.5)
 # Show fig8
 plt.show()
 plt.close("all")
+
 ```
 
 As we saw in model 1's residuals analysis, sales lag 1 makes a strong contribution to the partial autocorrelation, while lags 2 to 5 make weak but significant contributions.
@@ -1401,6 +1454,7 @@ fig9, axes9 = plot_lags(
 # Show fig9
 plt.show()
 plt.close("all")
+
 ```
 
 It doesn't look like any lag after 1 displays a considerably different relationship with sales.
@@ -1420,10 +1474,10 @@ sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
   center = False, # T0 is the end of the window instead of the center
   closed = "left", # Exclude sales at T0 from the calculation
   win_type = "exponential").mean()
+  
 ```
 
 ```{python SalesEma5Plot}
-#| echo: false
 
 # Plot sales_ema5 vs sales  
 _ = sns.regplot(
@@ -1434,18 +1488,23 @@ _ = sns.regplot(
 _ = plt.title("Relationship of sales and 5-day exponential moving average of sales")
 plt.show()
 plt.close("all")
+
 ```
 
 We can see sales EMA5 is a good linear predictor of sales, similar to lag 1. Let's compare lag 1's correlation with sales to EMA5's correlation with sales.
 
 ```{python SalesCorrs1}
+
 # Correlation of sales and lag 1
 pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) 
+
 ```
 
 ```{python SalesCorrs2}
+
 # Correlation of sales and ema5
 pearsonr(sales_covariates["sales"], sales_covariates["sales_ema5"]) 
+
 ```
 
 Lag 1 comes out as the slightly stronger linear predictor, but EMA5 is a good one too. We can include both as features.
@@ -1481,10 +1540,10 @@ oil_ma = sales_covariates.assign(
   oil_ma168 = lambda x: x["oil"].rolling(window = 168, center = False, closed = "left").mean(),
   oil_ma336 = lambda x: x["oil"].rolling(window = 336, center = False, closed = "left").mean(),
 )
+
 ```
 
 ```{python OilMAPlots}
-#| echo: false
 
 # FIG10: Regplots of oil moving averages & sales
 fig10, axes10 = plt.subplots(3,2, sharey=True)
@@ -1583,6 +1642,7 @@ _ = axes10[2,1].annotate(
 # Show fig10
 plt.show()
 plt.close("all")
+
 ```
 
 We don't see particularly strong relationships between oil price change MAs and sales, though the monthly MA is the most notable one with a correlation of -0.19, so we will use that as a feature.
@@ -1604,6 +1664,7 @@ _ = sales_covariates["oil_ma28"].plot()
 _ = plt.title("Oil price change and its 28-day moving average, first 28 MAs interpolated")
 plt.show()
 plt.close("all")
+
 ```
 
 ### Onpromotion features
@@ -1621,12 +1682,12 @@ _ = plt.xlabel("onpromotion lags / leads")
 _ = plt.title("Cross-correlation, decomposed sales & onpromotion change")
 plt.show()
 plt.close("all")
+
 ```
 
 Single lags / leads of onpromotion don't display any significant correlations with sales, though there is a repeating pattern of likely six days. Let's look at the scatterplots of sales at time 0, with four of the more relatively significant lags (lag 0 being the present value of onpromotion).
 
 ```{python OnpLags}
-#| echo: false
 
 # FIG12: Onpromotion lags 0 1 6 7
 fig12, axes12 = plt.subplots(2,2, sharey=True)
@@ -1691,12 +1752,12 @@ _ = axes12[1,1].annotate(
 # Show fig12
 plt.show()
 plt.close("all")
+
 ```
 
 Again, no significant relationship between single onpromotion lags and sales. Let's consider moving averages.
 
 ```{python OnpMAs}
-#| echo: false
 
 # FIG11: Onpromotion MAs
 fig11, axes11 = plt.subplots(2,2)
@@ -1773,6 +1834,7 @@ _ = axes11[1,1].annotate(
 # Show fig11
 plt.show()
 plt.close("all")
+
 ```
 
 The monthly and quarterly MA of onpromotion seems to be slightly positively correlated with sales. We'll use the monthly MA as a feature, as we would have to fill in too many missing values for the quarterly MA.
@@ -1789,9 +1851,10 @@ sales_covariates["onp_ma28"] = sales_covariates["onp_ma28"].interpolate(
 # Check quality of interpolation
 _ = sales_covariates["onpromotion"].plot()
 _ = sales_covariates["onp_ma28"].plot()
-_ = plt.title("Onpromotion change and its 28-day moving average, first 28 MAs interpolated")
+_ = plt.title("Onpromotion change and its 28-day MA, first 28 interpolated")
 plt.show()
 plt.close("all")
+
 ```
 
 The daily changes in onpromotion are practically zero roughly until Q1 2014. Afterwards, changes in onpromotion became increasingly larger, which probably hints at a macroeconomic shift in 2014. The cyclicality in our data becomes especially prominent in 2014 as well.
@@ -1805,7 +1868,6 @@ Finally, we have the number of transactions, aggregated across all stores.
 -   The transactions data is only available for the training dataset (up to mid-August 2017), and not for the testing dataset (15 days after the training dataset), which has implications for its use in part 2 of this analysis. Lag 15 is marked with a red dashed vertical line in the cross-correlation plot below.
 
 ```{python TransCCF}
-#| echo: false
 
 # Cross-correlation of sales & transactions change
 _ = plt.xcorr(
@@ -1817,12 +1879,12 @@ _ = plt.xlabel("transactions lags / leads")
 _ = plt.title("Cross-correlation, decomposed sales & transactions change")
 plt.show()
 plt.close("all")
+
 ```
 
 Again, single transactions lags don't display strong correlations with sales. Unlike onpromotion, there doesn't seem to be a repeating pattern either. Lags 0-3 are relatively stronger, so let's see their scatterplots.
 
 ```{python TransLags}
-#| echo: false
 
 # FIG14: Transactions lags 0-3
 fig14, axes14 = plt.subplots(2,2, sharey=True)
@@ -1899,7 +1961,6 @@ As we expected, the present value of transactions have a weak, but relatively st
 Let's consider moving averages of changes in transactions, as a possible indicator of recent sales activity.
 
 ```{python TransMAs}
-#| echo: false
 
 # FIG13: Transactions MAs
 fig13, axes13 = plt.subplots(2,2)
@@ -1976,9 +2037,10 @@ _ = axes13[1,1].annotate(
 # Show fig13
 plt.show()
 plt.close("all")
+
 ```
 
-The MAs are much more significant than single lags, though the correlations are still likely impacted by extreme values. Still, these features could help our model adjust for extreme increases / decreases in sales. We'll keep the weekly MA as it has the strongest linear relationship, and will create the fewest number of missing values to fill in.
+The MAs are more significant than single lags, though the correlations are still likely impacted by extreme values. Still, these features could help our model adjust for extreme increases / decreases in sales. We'll keep the weekly MA as it has the strongest linear relationship, and will create the fewest number of missing values to fill in.
 
 ```{python TransMAInterpolate}
 
@@ -1994,6 +2056,7 @@ _ = sales_covariates["trns_ma7"].plot()
 _ = plt.title("Transactions change and its 7-day moving average, first 7 MAs interpolated")
 plt.show()
 plt.close("all")
+
 ```
 
 We can see the sharp drop in transactions on January 1st, and the recovery on January 2nd, reflected both in the time series plot of transactions changes, and its weekly moving average.
@@ -2027,6 +2090,7 @@ ts_lagscovars = na_filler.transform(ts_lagscovars)
 # Train-test split (pre-post 2017)
 y_train2, y_val2 = ts_decomp[:-227], trafo_log(ts_sales[-227:])
 x_train2, x_val2 = ts_lagscovars[:-227], ts_lagscovars[-227:]
+
 ```
 
 In model 1, our features were trend dummies, Fourier pairs and binary / ordinal features for calendar effects, none of which required scaling. In this model, we have covariates of different natures and value ranges. For example, the oil price changes are often fractional, while changes in transactions are often in the thousands. The former reflects a unit price, the latter reflects a count. Therefore, we'll scale and center our features to avoid domination by features with large values.
@@ -2042,6 +2106,7 @@ x_val2 = scaler.transform(x_val2)
 
 # Combine back scaled covariate series
 ts_lagscovars_scaled = x_train2.append(x_val2)
+
 ```
 
 ### Model specification
@@ -2071,13 +2136,11 @@ We'll use the same baseline models as we did in model 1. We'll compare them with
 ```{python ModelSpec2}
 
 # Import models
-from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
 from darts.models.forecasting.auto_arima import AutoARIMA
 from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 from darts.models.forecasting.random_forest import RandomForest
 
-# Specify baseline models
-model_drift = NaiveDrift()
+# Specify new seasonal baseline model
 model_seasonal = NaiveSeasonal(K=5)
 
 # Specify AutoARIMA model
@@ -2109,9 +2172,11 @@ model_forest = RandomForest(
   lags_past_covariates = [-1],
   output_chunk_length = 15,
   n_estimators = 500, # Build 500 trees
+  oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
-  n_jobs = -2 # Use all but one of the CPUs
+  n_jobs = 20
   )
+  
 ```
 
 Similar to model 1, our naive seasonal model will repeat the last 5 values in the training data. K=7 was the most significant seasonality period before time decomposition. Now it appears K=5 is the most significant period for autoregression.
@@ -2139,13 +2204,13 @@ fut_cov = ['oil_ma28', 'onp_ma28']
 past_cov = ['sales_ema5', 'trns_ma7']
 
 # Fit models on train data (pre-2017), predict validation data (2017)
-model_drift.fit(y_train2)
+_ = model_drift.fit(y_train2)
 pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
 
-model_seasonal.fit(y_train2)
+_ = model_seasonal.fit(y_train2)
 pred_seasonal2 = model_seasonal.predict(n = 227) + ts_preds1[-227:]
 
-model_arima.fit(
+_ = model_arima.fit(
   y_train2, 
   future_covariates = ts_lagscovars_scaled[fut_cov]
 )
@@ -2155,7 +2220,7 @@ pred_arima = model_arima.predict(
   future_covariates = ts_lagscovars_scaled[fut_cov]
   ) + ts_preds1[-227:]
 
-model_linear2.fit(
+_ = model_linear2.fit(
   y_train2, 
   future_covariates = ts_lagscovars_scaled[fut_cov],
   past_covariates = ts_lagscovars_scaled[past_cov]
@@ -2167,7 +2232,7 @@ pred_linear2 = model_linear2.predict(
   past_covariates = ts_lagscovars_scaled[past_cov]
   ) + ts_preds1[-227:]
 
-model_forest.fit(
+_ = model_forest.fit(
   y_train2, 
   future_covariates = ts_lagscovars_scaled[fut_cov],
   past_covariates = ts_lagscovars_scaled[past_cov]
@@ -2189,6 +2254,7 @@ perf_scores(y_val2, pred_seasonal2, model="Naive seasonal")
 perf_scores(y_val2, pred_arima, model="ARIMA")
 perf_scores(y_val2, pred_linear2, model="Linear")
 perf_scores(y_val2, pred_forest, model="Random forest")
+
 ```
 
 Remember that these are hybrid predictions: Each prediction is the combined result of the linear regression time decomposition model, and the respective lags & covariates models.
@@ -2216,7 +2282,6 @@ Remember that these are hybrid predictions: Each prediction is the combined resu
 Let's see the predictions plotted against the actual values.
 
 ```{python 2017Plot2}
-#| echo: false
 
 # FIG15: Plot models' predictions against actual values
 fig15, axes15 = plt.subplots(3, sharex=True, sharey=True)
@@ -2241,6 +2306,7 @@ _ = axes15[2].set_title("Linear regression + Random forest")
 # Show fig15
 plt.show()
 plt.close("all")
+
 ```
 
 The performance of the 3 hybrids are similar overall, and it's hard to see big differences from the plots.
@@ -2256,7 +2322,9 @@ Before carrying on with our best hybrid model, which is linear + linear, we can 
 The AutoARIMA process has chosen an ARIMA(3, 0, 2) model, which uses the last 3 lags and the last 2 forecast errors as predictors, along with our covariates. Covariates x1 and x2 refer to our future covariates, `oil_ma28 and onp_ma28` respectively.
 
 ```{python AutoARIMASummary}
+
 print(model_arima.model.summary())
+
 ```
 
 The AIC score is not meaningful on its own without being compared to AIC scores of other models, though smaller values (including negative) indicate a better trade-off between variance explained and model complexity. This was the ARIMA model with the lowest AIC score among those tried.
@@ -2310,10 +2378,10 @@ res_hist2 = trafo_log(ts_sales[365:]) - pred_hist2
 
 # Score historical forecasts for linear + random_forest
 perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + linear")
+
 ```
 
 ```{python HistForePlot2}
-#| echo: false
 
 # Plot historical forecasts for random forest
 _ = ts_sales.plot(label="Actual")
@@ -2322,6 +2390,7 @@ _ = plt.title("Linear regression + linear regression hybrid model, historical fo
 _ = plt.ylabel("sales")
 plt.show()
 plt.close("all")
+
 ```
 
 With model 1, the overall historical forecasts performed considerably worse than the 2017 predictions. With the hybrid, the historical forecasts perform fairly close to the 2017 predictions, even a bit better on MAE.
@@ -2334,12 +2403,12 @@ With model 1, the overall historical forecasts performed considerably worse than
 
 ### Residuals diagnosis & stationarity
 
-We can diagnose the residuals of the hybrid model and test their stationarity. The erratic predictions in mid-2014 will yield massive residuals, so we'll clip them to 1 to get interpretable plots.
+We can diagnose the residuals of the hybrid model and test their stationarity. The erratic predictions in mid-2014 will yield massive residuals, so we'll clip them to 0.5 to get interpretable plots.
 
 ```{python DiagModel2}
 
 # Clip high end of residuals
-res_hist2_plot = res_hist2.map(lambda x: np.clip(x, a_min = None, a_max = 1))
+res_hist2_plot = res_hist2.map(lambda x: np.clip(x, a_min = None, a_max = 0.5))
 
 # Residuals diagnosis
 _ = plot_residuals_analysis(res_hist2_plot)
@@ -2357,11 +2426,12 @@ _ = plt.grid(which='minor', alpha=0.5)
 _ = plt.grid(which='major', alpha=1)
 plt.show()
 plt.close("all")
+
 ```
 
-Overall, the residuals seem much closer to stationary, with t.
+Overall, the residuals seem much closer to stationary.
 
--   There are a few particularly large residuals (besides the erratic predictions clipped to 1), especially in 2014-2015, and at year starts.
+-   There are a few particularly large residuals (besides the erratic predictions' residuals clipped to 0.5), especially in 2014-2015.
 
 -   The distribution of residuals is more centered around 0, with smaller extreme values. This time, the extreme values are well-balanced between positive and negative. It seems the model overpredicts a bit more than it underpredicts (as the ARIMA summary suggested), which is preferable to the opposite.
 

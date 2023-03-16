@@ -1,4 +1,4 @@
-Time series regression - Store sales forecasting, Part 1
+Time series regression - Store sales forecasting, part 1
 ================
 Ahmet Zamanis
 
@@ -96,7 +96,44 @@ series analysis & forecasting I could find. It uses R and the
 have the best time series analysis workflow among the R libraries I’ve
 tried.
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# Import libraries
+import pandas as pd 
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Set printing options
+np.set_printoptions(suppress=True, precision=4)
+pd.options.display.float_format = '{:.4f}'.format
+pd.set_option('display.max_columns', None)
+
+# Set plotting options
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.dpi'] = 300
+plt.rcParams["figure.autolayout"] = True
+```
+
+</details>
+
 ## Data preparation
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# Load original datasets
+df_train = pd.read_csv("./OriginalData/train.csv", encoding="utf-8")
+df_stores = pd.read_csv("./OriginalData/stores.csv", encoding="utf-8")
+df_oil = pd.read_csv("./OriginalData/oil.csv", encoding="utf-8")
+df_holidays = pd.read_csv("./OriginalData/holidays_events.csv", encoding="utf-8")
+df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
+```
+
+</details>
 
 The data is split into several .csv files. **train.csv** and
 **test.csv** are the main datasets, consisting of daily sales data. The
@@ -104,9 +141,14 @@ training data ranges from 01-01-2013 to 15-08-2017, and the testing data
 consists of the following 15 days in August 2017. We won’t do a
 competition submission in part 1, so we won’t work on the testing data.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(df_train.head(5))
 ```
+
+</details>
 
        id        date  store_nbr      family  sales  onpromotion
     0   0  2013-01-01          1  AUTOMOTIVE 0.0000            0
@@ -125,9 +167,14 @@ print(df_train.head(5))
 **stores.csv** contains more information about each store: The city,
 state, store type and store cluster.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(df_stores.head(5))
 ```
+
+</details>
 
        store_nbr           city                           state type  cluster
     0          1          Quito                       Pichincha    D       13
@@ -142,9 +189,14 @@ that occured in the time period. We will use these along with the
 stores’ location data to create calendar features, to adjust for effects
 of holidays and special events on sales.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(df_holidays.head(5))
 ```
+
+</details>
 
              date     type    locale locale_name                    description  \
     0  2012-03-02  Holiday     Local       Manta             Fundacion de Manta   
@@ -165,9 +217,14 @@ has an oil-dependent economy, so this may be an useful predictor of the
 cyclicality in supermarket sales. We don’t have the oil price for the
 first day of the data.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(df_oil.head(5))
 ```
+
+</details>
 
              date  dcoilwtico
     0  2013-01-01         NaN
@@ -180,9 +237,14 @@ print(df_oil.head(5))
 each store. Note that only store 25 is recorded for the first day, so
 it’s likely all stores aren’t open in all days.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(df_trans.head(5))
 ```
+
+</details>
 
              date  store_nbr  transactions
     0  2013-01-01         25           770
@@ -196,6 +258,9 @@ supplementary information into the main sales dataset. We’ll aggregate
 daily transactions across all stores beforehand, as we are only
 interested in predicting daily national sales.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Rename columns
 df_holidays = df_holidays.rename(columns = {"type":"holiday_type"})
@@ -204,27 +269,34 @@ df_stores = df_stores.rename(columns = {
   "type":"store_type", "cluster":"store_cluster"})
 
 # Aggregate daily transactions across all stores
-df_trans = df_trans.groupby("date").transactions.sum()
+df_trans_agg = df_trans.groupby("date").transactions.sum()
 
 # Add columns from oil, stores and transactions datasets into main data
-df_train = df_train.merge(df_trans, on = ["date"], how = "left")
+df_train = df_train.merge(df_trans_agg, on = ["date"], how = "left")
 df_train = df_train.merge(df_oil, on = "date", how = "left")
 df_train = df_train.merge(df_stores, on = "store_nbr", how = "left")
 ```
+
+</details>
 
 Incorporating the holidays information into the sales dataset will
 require more work. We’ll create a four binary columns that record
 whether a day is a local, regional or national holiday, or had a special
 event.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Split holidays data into local, regional, national and events
-events = df_holidays[df_holidays["holiday_type"] == "Event"]
+events = df_holidays[df_holidays["holiday_type"] == "Event"].copy()
 df_holidays = df_holidays.drop(labels=(events.index), axis=0)
-local = df_holidays.loc[df_holidays["locale"] == "Local"]
-regional = df_holidays.loc[df_holidays["locale"] == "Regional"]
-national = df_holidays.loc[df_holidays["locale"] == "National"]
+local = df_holidays.loc[df_holidays["locale"] == "Local"].copy()
+regional = df_holidays.loc[df_holidays["locale"] == "Regional"].copy()
+national = df_holidays.loc[df_holidays["locale"] == "National"].copy()
 ```
+
+</details>
 
 There are cases of multiple holidays or events sharing the same date and
 locale. We’ll inspect the duplicates and drop them so we don’t have
@@ -241,10 +313,15 @@ issues in feature engineering.
 - Rows with **holiday_type = Bridge** are dates that are not normally
   holidays, but were added to extend preceding / following holidays.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Inspect local holidays sharing same date & locale
 print(local[local.duplicated(["date", "locale_name"], keep = False)])
 ```
+
+</details>
 
                date holiday_type locale locale_name  \
     264  2016-07-24   Additional  Local   Guayaquil   
@@ -254,24 +331,38 @@ print(local[local.duplicated(["date", "locale_name"], keep = False)])
     264         Fundacion de Guayaquil-1        False  
     265  Traslado Fundacion de Guayaquil        False  
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Drop the transfer row
 local = local.drop(265, axis = 0)
 ```
+
+</details>
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Inspect regional holidays sharing same date & locale. None exist
 print(regional[regional.duplicated(["date", "locale_name"], keep = False)])
 ```
 
+</details>
+
     Empty DataFrame
     Columns: [date, holiday_type, locale, locale_name, description, transferred]
     Index: []
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Inspect national holidays sharing same date & locale
 print(national[national.duplicated(["date"], keep = False)])
 ```
+
+</details>
 
                date holiday_type    locale locale_name                description  \
     35   2012-12-24       Bridge  National     Ecuador             Puente Navidad   
@@ -289,15 +380,24 @@ print(national[national.duplicated(["date"], keep = False)])
     156        False  
     157        False  
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Drop bridge days
 national = national.drop([35, 39, 156], axis = 0)
 ```
 
+</details>
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Inspect events sharing same date
 print(events[events.duplicated(["date"], keep = False)])
 ```
+
+</details>
 
                date holiday_type    locale locale_name          description  \
     244  2016-05-08        Event  National     Ecuador  Terremoto Manabi+22   
@@ -307,14 +407,22 @@ print(events[events.duplicated(["date"], keep = False)])
     244        False  
     245        False  
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Drop the earthquake row as it is a one-time event
 events = events.drop(244, axis = 0)
 ```
 
+</details>
+
 After getting rid of duplicates, we can create binary columns that
 signify whether a date was a local / regional / national holiday /
 event. We’ll merge these back into the sales data.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Add local_holiday binary column to local holidays data, to be merged into main 
@@ -372,9 +480,14 @@ df_train = df_train.merge(events_merge, how="left", on="date")
 df_train["event"] = df_train["event"].fillna(0).astype(int)
 ```
 
+</details>
+
 We’ll set the **date** column to a DateTimeIndex, and view the sales
-data with the added columns. Remeber that the transactions column is now
-the national transactions across all stores in one day.
+data with the added columns. Remember that the transactions column is
+now the national transactions across all stores in one day.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Set datetime index
@@ -382,6 +495,8 @@ df_train = df_train.set_index(pd.to_datetime(df_train.date))
 df_train = df_train.drop("date", axis=1)
 print(df_train.head(5))
 ```
+
+</details>
 
                 id  store_nbr      family  sales  onpromotion  transactions  oil  \
     date                                                                           
@@ -407,13 +522,18 @@ print(df_train.head(5))
     2013-01-01                 0                 1      0  
     2013-01-01                 0                 1      0  
 
-With financial data, it’s a good idea to normalize for inflation. We’ll
-CPI adjust the sales and oil prices columns, with 2010 as our base year.
-The CPI values for Ecuador in the time period were retrieved
+With financial data, it’s a good idea to perform CPI adjustment before
+analysis, to remove the effects of inflation / deflation on our models
+and predictions. We’ll CPI adjust the sales and oil prices columns with
+2010 as our base year. The CPI values for Ecuador in the time period
+were retrieved
 [here](https://data.worldbank.org/indicator/FP.CPI.TOTL?end=2017&locations=EC&start=2010&view=chart).
 
 - We’ll use the yearly CPI values for simplicity, but it’s possible to
   use monthly CPI as well.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # CPI adjust sales and oil, with CPI 2010 = 100
@@ -423,18 +543,25 @@ cpis = {
   }
   
 for year in [2013, 2014, 2015, 2016, 2017]:
-  df_train["sales"].loc[df_train.index.year==year] = df_train["sales"].loc[
-    df_train.index.year==year] / cpis[str(year)] * cpis["2010"]
-  df_train["oil"].loc[df_train.index.year==year] = df_train["oil"].loc[
-    df_train.index.year==year] / cpis[str(year)] * cpis["2010"]
+  df_train.loc[df_train.index.year == year, "sales"] = df_train.loc[
+    df_train.index.year == year, "sales"] / cpis[str(year)] * cpis["2010"]
+  df_train.loc[df_train.index.year == year, "oil"] = df_train.loc[
+    df_train.index.year == year, "oil"] / cpis[str(year)] * cpis["2010"]
 ```
 
+</details>
+
 We have some columns with missing values in our training data.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Check missing values in each column
 pd.isnull(df_train).sum()
 ```
+
+</details>
 
     id                       0
     store_nbr                0
@@ -462,19 +589,29 @@ columns using time interpolation.
 - If we don’t set `limit_direction = "both"`, the first value for oil
   won’t be interpolated.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 df_train["oil"] = df_train["oil"].interpolate("time", limit_direction = "both")
 df_train["transactions"] = df_train["transactions"].interpolate(
   "time", limit_direction = "both")
 ```
 
+</details>
+
 We will now aggregate daily sales across all categories and stores, to
 retrieve our target variable. We have 1684 days of national sales data.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 sales = df_train.groupby("date").sales.sum()
 sales
 ```
+
+</details>
 
     date
     2013-01-01     2226.6126
@@ -494,6 +631,9 @@ We will create a Darts
 [TimeSeries](https://unit8co.github.io/darts/generated_api/darts.timeseries.html)
 with our target variable.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 from darts import TimeSeries
 
@@ -503,6 +643,8 @@ ts_sales = TimeSeries.from_series(
   )
 print(ts_sales)
 ```
+
+</details>
 
     <TimeSeries (DataArray) (date: 1688, component: 1, sample: 1)>
     array([[[  2226.6126]],
@@ -597,12 +739,17 @@ Because of this, we will split our analysis and modeling into two steps:
 Let’s start by analyzing the overall trend in sales, with a simple time
 series plot. Darts offers the ability to plot time series quickly.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 _ =  ts_sales.plot()
 _ =  plt.ylabel("Daily sales, millions")
 plt.show()
 plt.close()
 ```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-25-output-1.png)
 
@@ -635,6 +782,64 @@ below, we have the daily sales averaged by each respective calendar
 period, colored by each year in the data. The confidence bands indicate
 the minimum and maximum daily sales in each respective period (in the
 last plot, we just have the daily sales without any averaging).
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG1: Annual seasonality, period averages
+fig1, axes1 = plt.subplots(2,2, sharey=True)
+_ =  fig1.suptitle('Annual seasonality: Average daily sales in given time periods, millions')
+
+# Average sales per quarter of year
+_ =  sns.lineplot(
+  ax = axes1[0,0],
+  x = sales.index.quarter.astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ =  axes1[0,0].set_xlabel("quarter", fontsize=8)
+_ =  axes1[0,0].set_ylabel("sales", fontsize=8)
+_ =  axes1[0,0].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per month of year
+_ =  sns.lineplot(
+  ax = axes1[0,1],
+  x = sales.index.month.astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales)
+_ =  axes1[0,1].set_xlabel("month", fontsize=8)
+_ =  axes1[0,1].set_ylabel("sales",fontsize=8)
+_ =  axes1[0,1].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+_ =  axes1[0,1].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per week of year
+_ =  sns.lineplot(
+  ax = axes1[1,0],
+  x = sales.index.week, 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ =  axes1[1,0].set_xlabel("week of year", fontsize=8)
+_ =  axes1[1,0].set_ylabel("sales",fontsize=8)
+_ =  axes1[1,0].tick_params(axis='both', which='major', labelsize=6)
+_ =  axes1[1,0].xaxis.set_ticks(np.arange(0, 52, 10))
+
+# Average sales per day of year
+_ =  sns.lineplot(
+  ax = axes1[1,1],
+  x = sales.index.dayofyear, 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ =  axes1[1,1].set_xlabel("day of year", fontsize=8)
+_ =  axes1[1,1].set_ylabel("sales",fontsize=8)
+_ =  axes1[1,1].tick_params(axis='both', which='major', labelsize=6)
+_ =  axes1[1,1].xaxis.set_ticks(np.arange(0, 365, 100))
+
+# Show fig1
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-26-output-1.png)
 
@@ -669,7 +874,7 @@ last plot, we just have the daily sales without any averaging).
   expect from supermarket sales.
 
   - The data for 2017 ends after August 15, so the sharp decline
-    afterwards is misleading, though they may still be a stagnation /
+    afterwards is misleading, though there may still be a stagnation /
     decline in the overall trend.
 
   - The sharp decline at the end of 2016 is also misleading, as 2016 was
@@ -683,6 +888,63 @@ last plot, we just have the daily sales without any averaging).
 Another way to look at annual seasonality is to average sales in a
 certain calendar period across all years, without grouping by year.
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG1.1: Annual seasonality, averaged over years
+fig11, axes11 = plt.subplots(2,2, sharey=True)
+_ = fig11.suptitle('Annual seasonality: Average daily sales in given time periods,\n across all years, millions');
+
+# Average sales per quarter of year
+_ = sns.lineplot(
+  ax = axes11[0,0],
+  x = sales.index.quarter.astype(str), 
+  y = (sales / 1000000), 
+  data=sales, legend=False)
+_ = axes11[0,0].set_xlabel("quarter", fontsize=8)
+_ = axes11[0,0].set_ylabel("sales", fontsize=8)
+_ = axes11[0,0].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per month of year
+_ = sns.lineplot(
+  ax = axes11[0,1],
+  x = sales.index.month.astype(str), 
+  y = (sales / 1000000), 
+  data=sales)
+_ = axes11[0,1].set_xlabel("month", fontsize=8)
+_ = axes11[0,1].set_ylabel("sales",fontsize=8)
+_ = axes11[0,1].tick_params(axis='both', which='major', labelsize=6)
+
+# Average sales per week of year
+_ = sns.lineplot(
+  ax = axes11[1,0],
+  x = sales.index.week, 
+  y = (sales / 1000000), 
+  data=sales, legend=False)
+_ = axes11[1,0].set_xlabel("week of year", fontsize=8)
+_ = axes11[1,0].set_ylabel("sales",fontsize=8)
+_ = axes11[1,0].tick_params(axis='both', which='major', labelsize=6)
+_ = axes11[1,0].xaxis.set_ticks(np.arange(0, 52, 10))
+
+# Average sales per day of year
+_ = sns.lineplot(
+  ax = axes11[1,1],
+  x = sales.index.dayofyear, 
+  y = (sales / 1000000), 
+  data=sales, legend=False)
+_ = axes11[1,1].set_xlabel("day of year", fontsize=8)
+_ = axes11[1,1].set_ylabel("sales",fontsize=8)
+_ = axes11[1,1].tick_params(axis='both', which='major', labelsize=6)
+_ = axes11[1,1].xaxis.set_ticks(np.arange(0, 365, 100))
+
+# Show fig1.1
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-27-output-1.png)
 
 This shows us the “overall” seasonality pattern across one year: We
@@ -695,6 +957,46 @@ Now let’s look at seasonality across days of a month and days of a week.
 These will likely be the most important seasonality patterns in
 supermarket sales. There are three ways to look at these plots: First we
 will group them by year.
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG2: Monthly and weekly seasonality
+fig2, axes2 = plt.subplots(2)
+_ = fig2.suptitle('Monthly and weekly seasonality, average daily sales in millions')
+
+# Average sales per day of month
+_ = sns.lineplot(
+  ax = axes2[0],
+  x = sales.index.day, 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales)
+_ = axes2[0].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+_ = axes2[0].set_xlabel("day of month", fontsize=8)
+_ = axes2[0].set_ylabel("sales", fontsize=8)
+_ = axes2[0].xaxis.set_ticks(np.arange(1, 32, 6))
+_ = axes2[0].xaxis.set_ticks(np.arange(1, 32, 1), minor=True)
+_ = axes2[0].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+_ = axes2[0].grid(which='minor', alpha=0.5)
+_ = axes2[0].grid(which='major', alpha=1)
+
+# Average sales per day of week
+_ = sns.lineplot(
+  ax = axes2[1],
+  x = (sales.index.dayofweek+1).astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.year.astype(str), data=sales, legend=False)
+_ = axes2[1].set_xlabel("day of week", fontsize=8)
+_ = axes2[1].set_ylabel("sales", fontsize=8)
+_ = axes2[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+
+# Show fig2
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-28-output-1.png)
 
@@ -710,6 +1012,46 @@ will group them by year.
 
 We can look at the same plots grouped by month. The confidence bands are
 suppressed as they make the plots hard to read.
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG2.1: Monthly and weekly seasonality, colored by month
+fig21, axes21 = plt.subplots(2)
+_ = fig21.suptitle('Monthly and weekly seasonality, average daily sales in millions')
+
+# Average sales per day of month, colored by month
+_ = sns.lineplot(
+  ax = axes21[0],
+  x = sales.index.day, 
+  y = (sales / 1000000), 
+  hue = sales.index.month.astype(str), data=sales, errorbar=None)
+_ = axes21[0].legend(title = "month", bbox_to_anchor=(1.05, 1.0), fontsize="x-small", loc='best')
+_ = axes21[0].set_xlabel("day of month", fontsize=8)
+_ = axes21[0].set_ylabel("sales", fontsize=8)
+_ = axes21[0].xaxis.set_ticks(np.arange(1, 32, 6))
+_ = axes21[0].xaxis.set_ticks(np.arange(1, 32, 1), minor=True)
+_ = axes21[0].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+_ = axes21[0].grid(which='minor', alpha=0.5)
+_ = axes21[0].grid(which='major', alpha=1)
+
+# Average sales per day of week, colored by month
+_ = sns.lineplot(
+  ax = axes21[1],
+  x = (sales.index.dayofweek+1).astype(str), 
+  y = (sales / 1000000), 
+  hue = sales.index.month.astype(str), data=sales, errorbar=None, legend=None)
+_ = axes21[1].set_xlabel("day of week", fontsize=8)
+_ = axes21[1].set_ylabel("sales", fontsize=8)
+_ = axes21[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+
+# Show fig2.1
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-29-output-1.png)
 
@@ -729,6 +1071,45 @@ holds across all months, but December is a notable exception:
 And finally, without any grouping: The averages across all years and
 months.
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG2.2: Monthly and weekly seasonality, average across years
+fig22, axes22 = plt.subplots(2)
+_ =  fig22.suptitle('Monthly and weekly seasonality, average daily sales in millions')
+
+# Average sales per day of month
+_ =  sns.lineplot(
+  ax = axes22[0],
+  x = sales.index.day, 
+  y = (sales / 1000000), 
+  data=sales)
+_ =  axes22[0].set_xlabel("day of month", fontsize=8)
+_ =  axes22[0].set_ylabel("sales", fontsize=8)
+_ =  axes22[0].xaxis.set_ticks(np.arange(1, 32, 6))
+_ =  axes22[0].xaxis.set_ticks(np.arange(1, 32, 1), minor=True)
+_ =  axes22[0].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+_ =  axes22[0].grid(which='minor', alpha=0.5)
+_ =  axes22[0].grid(which='major', alpha=1)
+
+# Average sales per day of week
+_ =  sns.lineplot(
+  ax = axes22[1],
+  x = (sales.index.dayofweek+1).astype(str), 
+  y = (sales / 1000000), 
+  data=sales)
+_ =  axes22[1].set_xlabel("day of week", fontsize=8)
+_ =  axes22[1].set_ylabel("sales", fontsize=8)
+_ =  axes22[1].yaxis.set_ticks(np.arange(0, 1.25, 0.25))
+
+# Show fig22
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-30-output-1.png)
 
 This plot allows us to see the overall monthly seasonality pattern more
@@ -745,6 +1126,9 @@ likely to hold common information. The patterns in the autocorrelation
 and partial autocorrelation plots can give us insight into the seasonal
 patterns.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # FIG3: ACF and PACF plots
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
@@ -757,6 +1141,8 @@ _ = plot_pacf(sales, lags=range(0,55), ax=axes3[1], method="ywm")
 plt.show()
 plt.close("all")
 ```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-31-output-1.png)
 
@@ -785,6 +1171,56 @@ One more time effect we will look at is the April 2016 earthquake, a
 one-off occurrence we need to adjust for in our model. The plots below
 show the seasonality of sales in April and May, in every year. The black
 dashed vertical line marks April 16.
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG6: Zoom in on earthquake: 16 April 2016
+april_sales = sales.loc[sales.index.month == 4]
+may_sales = sales.loc[sales.index.month == 5]
+
+fig6, axes6 = plt.subplots(2, sharex=True)
+_ = fig6.suptitle("Effect of 16 April 2016 earthquake on sales")
+
+# April
+_ = sns.lineplot(
+  ax = axes6[0],
+  x = april_sales.index.day,
+  y = april_sales,
+  hue = april_sales.index.year.astype(str),
+  data = april_sales
+)
+_ = axes6[0].set_title("April")
+_ = axes6[0].legend(title = "year", bbox_to_anchor=(1.05, 1.0), fontsize="small", loc='best')
+_ = axes6[0].set_xlabel("days of month")
+_ = axes6[0].set_xticks(np.arange(1, 32, 6))
+_ = axes6[0].set_xticks(np.arange(1, 32, 1), minor=True)
+_ = axes6[0].grid(which='minor', alpha=0.5)
+_ = axes6[0].grid(which='major', alpha=1)
+_ = axes6[0].axvline(x = 16, color = "black", linestyle = "dashed")
+
+# May
+_ = sns.lineplot(
+  ax = axes6[1],
+  x = may_sales.index.day,
+  y = may_sales,
+  hue = may_sales.index.year.astype(str),
+  data = may_sales, legend=False
+)
+_ = axes6[1].set_title("May")
+_ = axes6[1].set_xlabel("days of month")
+_ = axes6[1].set_xticks(np.arange(1, 32, 6))
+_ = axes6[1].set_xticks(np.arange(1, 32, 1), minor=True)
+_ = axes6[1].grid(which='minor', alpha=0.5)
+_ = axes6[1].grid(which='major', alpha=1)
+
+# Show FIG6
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-32-output-1.png)
 
@@ -815,6 +1251,9 @@ Sales decline very sharply every year in January 1st, almost to zero.
 The sales in January 2nd then recover sharply, which is a huge relative
 increase for one day, so we will flag both dates with dummy features.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # New year's day features
 df_train["ny1"] = ((df_train.index.day == 1) & (df_train.index.month == 1)).astype(int)
@@ -827,6 +1266,8 @@ df_train["ny2"] = ((df_train.index.day == 2) & (df_train.index.month == 1)).asty
 
 df_train.loc[df_train["ny2"] == 1, ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 ```
+
+</details>
 
 We have considerably higher sales in December due to Christmas and the
 New Years’ Eve.
@@ -841,6 +1282,9 @@ New Years’ Eve.
   dates outside December 13-27, these features will take a value of
   zero. This may not be the most sophisticated way to reflect the
   Christmas effects on our model, but it should be simple and effective.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # NY's eve features
@@ -866,9 +1310,14 @@ df_train.loc[
 df_train.loc[(df_train["xmas_before"] != 0) | (df_train["xmas_after"] != 0), ["local_holiday", "regional_holiday", "national_holiday"]] = 0
 ```
 
+</details>
+
 To account for the effect of the April 2016 earthquake, we create a
 feature similar to the ones for Christmas. The value peaks at April 18th
 and takes a value of zero for dates outside April 17-22, 2016.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Strength of earthquake effect on sales
@@ -882,12 +1331,17 @@ df_train.loc[df_train.index == "2016-04-21", "quake_after"] = 2
 df_train.loc[df_train.index == "2016-04-22", "quake_after"] = 1
 ```
 
+</details>
+
 We previously created binary features to indicate
 local-regional-national holidays, and special events. There are only a
 few different events in the dataset, and they differ in nature, so we
 will break up the events column and create separate binary features for
 each event. We already created a feature for the earthquake, so we’ll
 skip that one.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Split events, delete events column
@@ -902,10 +1356,15 @@ df_train["cyber_monday"] = ((df_train["event"] == 1) & (df_train.index.isin(["20
 df_train = df_train.drop("event", axis=1)
 ```
 
+</details>
+
 Holidays and events may lead to an increase in sales in advance, so we
 will create one lag column for each holiday column, and the Mother’s Day
 event. These features could be tailored more carefully according to each
 holiday and event, but we’ll keep it simple.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Holiday-event leads
@@ -915,9 +1374,14 @@ df_train["national_lead1"] = df_train["national_holiday"].shift(-1).fillna(0)
 df_train["diamadre_lead1"] = df_train["dia_madre"].shift(-1).fillna(0)
 ```
 
+</details>
+
 To capture the weekly seasonality in a simple manner, we’ll create 6
 dummy features for days of the week. We won’t create one for Monday,
 since a 0 value for the other 6 columns means Monday.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Days of week dummies
@@ -929,16 +1393,23 @@ df_train["saturday"] = (df_train.index.dayofweek == 5).astype(int)
 df_train["sunday"] = (df_train.index.dayofweek == 6).astype(int)
 ```
 
+</details>
+
 Now we will aggregate the time features by mean. For local and regional
 holidays, this will give us fractional values between 0 and 1, which is
 likely a decent way to reflect local and regional holidays’ effects on
 national sales.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Aggregate time features by mean
 time_covars = df_train.drop(
   columns=['id', 'store_nbr', 'family', 'sales', 'onpromotion', 'transactions', 'oil', 'city', 'state', 'store_type', 'store_cluster'], axis=1).groupby("date").mean(numeric_only=True)
 ```
+
+</details>
 
 ### Trend & monthly seasonality features
 
@@ -955,6 +1426,9 @@ piecewise linear trend with one knot at 01-01-2015.
   but one is enough in our case. We want the trend to be simple, and
   robust against seasonal or cyclical fluctuations.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Add piecewise linear trend dummies
 time_covars["trend"] = range(1, 1685) # Linear dummy 1
@@ -963,9 +1437,14 @@ time_covars["trend"] = range(1, 1685) # Linear dummy 1
 print(time_covars.loc[time_covars.index=="2015-01-01"]["trend"]) 
 ```
 
+</details>
+
     date
     2015-01-01    729
     Name: trend, dtype: int64
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Add second linear trend dummy
@@ -975,6 +1454,8 @@ time_covars.iloc[728:,-1] = range(0, 956)
 # Check start and end of knot
 print(time_covars.loc[time_covars["trend"]>=729][["trend", "trend_knot"]]) 
 ```
+
+</details>
 
                 trend  trend_knot
     date                         
@@ -1009,6 +1490,9 @@ mostly due to proximity to paydays.
 - December was an exception to the monthly seasonality pattern, but our
   Christmas and NY features will adjust for that.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 from statsmodels.tsa.deterministic import DeterministicProcess
 
@@ -1027,6 +1511,8 @@ time_covars = time_covars.merge(dp.in_sample(), how="left", on="date")
 # View Fourier features
 print(time_covars.iloc[0:5, -10:])
 ```
+
+</details>
 
                 sin(1,28)  cos(1,28)  sin(2,28)  cos(2,28)  sin(3,28)  cos(3,28)  \
     date                                                                           
@@ -1052,20 +1538,30 @@ that are quicker to implement.
 
 ### Preprocessing
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Create Darts time series with time features
 ts_timecovars = TimeSeries.from_dataframe(
-  time_covars, freq="D", fill_missing_dates=False)
+  time_covars, freq = "D", fill_missing_dates = False)
 ```
+
+</details>
 
 Our target and covariate Series had 1684 rows each, but the Darts
 TimeSeries we create from them have 1688 dates. This is likely because
 we have gaps in our original series. We can check this easily in Darts.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Scan for gaps
 print(ts_timecovars.gaps())
 ```
+
+</details>
 
        gap_start    gap_end  gap_size
     0 2013-12-25 2013-12-25         1
@@ -1078,6 +1574,9 @@ data for 2017 ends in August). Darts automatically filled in the missing
 dates to 1688, but we need to fill the missing values in our target and
 covariate series.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Fill gaps by interpolating missing values
 from darts.dataprocessing.transformers import MissingValuesFiller
@@ -1088,6 +1587,8 @@ ts_timecovars = na_filler.transform(ts_timecovars)
 # Scan for gaps again
 print(ts_timecovars.gaps())
 ```
+
+</details>
 
     Empty DataFrame
     Columns: [gap_start, gap_end]
@@ -1113,6 +1614,9 @@ then
 
 $log(Y) = log(T) + log(S) + log(R)$ .
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Define functions to perform log transformation and reverse it. +1 to avoid zeroes
 def trafo_log(x):
@@ -1122,16 +1626,23 @@ def trafo_exp(x):
   return x.map(lambda x: np.exp(x)-1)
 ```
 
+</details>
+
 We’ll train our time decomposition models on the natural logarithm of
 the daily sales data from 2013-2016, and validate their prediction
 performance on 2017. We use an entire year of data for validation to see
 if our features can capture long-term seasonality and fixed calendar
 effects.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Train-validation split: Pre 2017 vs 2017
 y_train1, y_val1 = trafo_log(ts_sales[:-227]), trafo_log(ts_sales[-227:])
 ```
+
+</details>
 
 ### Model specification
 
@@ -1210,6 +1721,9 @@ applied quickly.
       are supplied. Of course, forecast errors will compound with longer
       horizons.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Import models
 from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
@@ -1232,7 +1746,7 @@ model_fft = FFT(
 model_ets = ETS(
   season_length = 7, # Weekly seasonality
   model = "AAA", # Additive trend, seasonality and remainder component
-  damped = 0.95 # Dampen the trend over time
+  damped = None # Try both a dampened and non-dampened trend
 )
 
 # Specify linear regression model
@@ -1241,6 +1755,8 @@ model_linear1 = LinearRegressionModel(
   output_chunk_length = 15 # Predict 15 time steps in one go
   )
 ```
+
+</details>
 
 ### Model validation: Predicting 2017 sales
 
@@ -1256,23 +1772,30 @@ regression performance metrics:
 
 - **Mean absolute percentage error (MAPE).**
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Fit models on train data (pre-2017), predict validation data (2017)
-model_drift.fit(y_train1)
+_ = model_drift.fit(y_train1)
 pred_drift = model_drift.predict(n = 227)
 
-model_seasonal.fit(y_train1)
+_ = model_seasonal.fit(y_train1)
 pred_seasonal = model_seasonal.predict(n = 227)
 
-model_fft.fit(y_train1)
+_ = model_fft.fit(y_train1)
 pred_fft = model_fft.predict(n = 227)
 
-model_ets.fit(y_train1)
+_ = model_ets.fit(y_train1)
 pred_ets = model_ets.predict(n = 227)
 
-model_linear1.fit(y_train1, future_covariates = ts_timecovars)
+_ = model_linear1.fit(y_train1, future_covariates = ts_timecovars)
 pred_linear1 = model_linear1.predict(n = 227, future_covariates = ts_timecovars)
 ```
+
+</details>
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Define model scoring function
@@ -1302,6 +1825,8 @@ perf_scores(y_val1, pred_fft, model="FFT")
 perf_scores(y_val1, pred_ets, model="Exponential smoothing")
 perf_scores(y_val1, pred_linear1, model="Linear regression")
 ```
+
+</details>
 
     Model: Naive drift
     MAE: 798635.4611
@@ -1337,19 +1862,18 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 We see our linear regression model performs much better than the other
 methods tested.
 
-- It’s also notable that the naive seasonal model beats the FFT model in
-  all metrics, while beating ETS in all metrics except RMSE.
+- It's also notable that the naive seasonal model beats the FFT model in
+  all metrics except MAPE, while ETS scores close to naive seasonal on
+  MAE, RMSE and RMSLE, but much worse on MAPE.
 
-  - ETS scores very close to naive seasonal on MAE, RMSE and RMSLE, but
-    much worse on MAPE. This is likely because MAPE is a measure of
-    relative error, while the others are measures of absolute error.
+  - This is likely because MAPE is a measure of relative error, while
+    the others are measures of absolute error.
 
-    - For example, an absolute error of 2 translates to 2% MAPE if the
-      true value is 100, but it translates to 0.2% MAPE if the true
-      value is 1000.
+  <!-- -->
 
-    - In both cases, the absolute error is the same, but we may argue an
-      absolute error of 2 is more “costly” for the former case.
+      -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
+
+      -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
 
   - In either case, RMSLE is likely the most important metric among
     these three. Log errors penalize underpredictions more strongly than
@@ -1366,15 +1890,55 @@ methods tested.
     linear regression model with features.
 
     - The difference in performance is mainly because the models except
-      linear regression can’t take in covariates to model calendar
-      effects or long-term seasonality, but these may not matter much
-      for a short forecast horizon like 15. With a long forecast horizon
-      like 227, the linear regression is able to perform fairly
-      similarly to its performance with 15, while the other models do
-      much worse.
+      linear regression can’t take in covariates to capture calendar
+      effects or long-term seasonality. These may not matter much for a
+      short forecast horizon like 15, but with a long forecast horizon
+      like 227, they become more important. The linear regression is
+      able to perform fairly similarly with a forecast horizon of 15 or
+      227, while the other models do much worse with a longer horizon.
 
 Let’s plot the predictions of our models and compare them visually with
 the actual values.
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG7: Plot models' predictions against actual values
+fig7, axes7 = plt.subplots(4, sharex=True, sharey=True)
+_ = fig7.suptitle("Actual vs. predicted sales, time decomposition models, blue = predicted")
+
+# Naive seasonal
+_ = trafo_exp(y_val1).plot(ax = axes7[0], label="Actual")
+_ = trafo_exp(pred_seasonal).plot(ax = axes7[0], label="Predicted")
+_ = axes7[0].set_title("Naive seasonal")
+#_ = axes7[0].set_label(fontsize="small")
+
+# FFT
+_ = trafo_exp(y_val1).plot(ax = axes7[1], label="Actual")
+_ = trafo_exp(pred_fft).plot(ax = axes7[1], label="Predicted")
+_ = axes7[1].set_title("FFT")
+#_ = axes7[1].set_label(fontsize="small")
+
+# ETS
+_ = trafo_exp(y_val1).plot(ax = axes7[2], label="Actual")
+_ = trafo_exp(pred_ets).plot(ax = axes7[2], label="Predicted")
+_ = axes7[2].set_title("ETS")
+#_ = axes7[2].set_label(fontsize="small")
+
+# Linear regression
+_ = trafo_exp(y_val1).plot(ax = axes7[3], label="Actual")
+_ = trafo_exp(pred_linear1).plot(ax = axes7[3], label="Predicted")
+_ = axes7[3].legend("", frameon = False)
+_ = axes7[3].set_title("Linear regression")
+#_ = axes7[3].set_label(fontsize="small")
+
+# Show FIG7
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-51-output-1.png)
 
@@ -1430,6 +1994,9 @@ wider training windows until the end of the data.
 - We’ll also retrieve the residuals for each prediction to perform
   residual diagnosis.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Retrieve historical forecasts and decomposed residuals for 2014-2017
 pred_hist1 = model_linear1.historical_forecasts(
@@ -1445,12 +2012,29 @@ res_linear1 = trafo_log(ts_sales[365:]) - pred_hist1
 perf_scores(trafo_log(ts_sales[365:]), pred_hist1, model="Linear regression, historical")
 ```
 
+</details>
+
     Model: Linear regression, historical
     MAE: 89260.1694
     RMSE: 114684.7746
     RMSLE: 0.3414
     MAPE: 16.4487
     --------
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# Plot historical forecasts for linear regression
+_ = ts_sales.plot(label="Actual")
+_ = trafo_exp(pred_hist1).plot(label="Predicted")
+_ = plt.title("Time decomposition linear model, historical forecasts")
+_ = plt.ylabel("sales")
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-53-output-1.png)
 
@@ -1463,6 +2047,9 @@ overfitting issues for predictions after the training time period.
 ### Residuals diagnosis & stationarity
 
 We’ll now analyze the residuals from our historical forecasts.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Diagnose linear model 1's innovation residuals
@@ -1483,6 +2070,8 @@ _ = plt.grid(which='major', alpha=1)
 plt.show()
 plt.close("all")
 ```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-54-output-1.png)
 
@@ -1513,6 +2102,9 @@ stationary to consider our modeling complete. We can test their
 stationarity with two statistical tests. First is the
 Kwiatkowski-Phillips-Schmidt-Shin test.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Import KPSS and ADF tests
 from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
@@ -1522,6 +2114,8 @@ print(
   stationarity_test_kpss(res_linear1)[1].astype(str)
 ) # Null rejected = data is non-stationary
 ```
+
+</details>
 
     KPSS test p-value: 0.01
 
@@ -1536,12 +2130,17 @@ rejected, so the test suggests our residuals are non-stationary.
 
 Second is the Augmented Dickey-Fuller test.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(
   "ADF test p-value: " +
   stationarity_test_adf(res_linear1)[1].astype(str)
 ) # Null rejected = data is stationary around a constant
 ```
+
+</details>
 
     ADF test p-value: 2.492249770117031e-05
 
@@ -1575,6 +2174,9 @@ the residuals of the first model.
   2017, we’ll perform the final time decomposition in sklearn, which
   allows predictions on the training data.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Perform time decomposition in Sklearn
 
@@ -1604,6 +2206,8 @@ sales_decomp = pd.concat([res1, res2])
 preds_model1 = pd.Series(np.concatenate((pred1, pred2)), index = sales_decomp.index)
 ```
 
+</details>
+
 Now, `preds_model1` are the fitted values of model 1 on 2013-2016, and
 its predictions for 2017. `sales_decomp` are the fitted residuals for
 2013-2016 and the prediction residuals for 2017. We’ll fit model 2 on
@@ -1614,6 +2218,9 @@ final hybrid predictions.
 
 Now we will explore the sales lags & covariate time series as possible
 predictors for our second model.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Aggregate daily covariates from df_train: oil, onpromotion, transactions
@@ -1626,6 +2233,8 @@ covars = df_train.groupby("date").agg(
 # Merge decomposed sales and covariates
 sales_covariates = covars.merge(sales_decomp.rename("sales"), on = "date", how = "left")
 ```
+
+</details>
 
 ### Covariates stationarity & differencing
 
@@ -1640,6 +2249,9 @@ as predictors of sales.
   stationary is differencing: Subtracting each value from the value of
   the previous period. This will give us the change in each period,
   instead of the absolute value.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Test stationarity of covariates
@@ -1656,12 +2268,17 @@ print(
 ) # Null accepted = data is non-stationary
 ```
 
+</details>
+
     KPSS test p-value: 0.01
     ADF test p-value: 0.8037342071858674
 
 Both the KPSS and ADF test suggest the oil time series is
 non-stationary, so we’ll difference it. If one covariate is differenced,
 it makes sense to difference the others as well.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Difference the covariates
@@ -1672,6 +2289,8 @@ sales_covariates[
     sales_covariates[['oil', 'onpromotion', 'transactions']])
 print(sales_covariates)
 ```
+
+</details>
 
                    oil  onpromotion  transactions   sales
     date                                                 
@@ -1697,11 +2316,42 @@ compared to the previous period.
 Let’s evaluate features derived from sales lags as possible predictors.
 We’ll start with autocorrelation plots.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 from statsmodels.graphics.tsaplots import plot_pacf as pacf_tsa
 from sktime.utils.plotting import plot_lags
 from scipy.stats import pearsonr, spearmanr
 ```
+
+</details>
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG8: Sales ACF - PACF plot
+fig8, axes8 = plt.subplots(2, sharex=True)
+_ = fig8.suptitle('Autocorrelation and partial autocorrelation, decomposed sales, up to 14 days')
+
+_ = plot_acf(
+  sales_covariates["sales"], lags=np.arange(0, 15, 1, dtype=int), ax=axes8[0], marker=".")
+_ = pacf_tsa(
+  sales_covariates["sales"], lags=np.arange(0, 15, 1, dtype=int), ax=axes8[1], method="ywm", marker=".")
+
+_ = axes8[0].xaxis.set_ticks(np.arange(0, 15, 1, dtype=int), minor=True)
+_ = axes8[0].xaxis.set_ticks(np.arange(0, 15, 7, dtype=int))
+_ = axes8[0].grid(which='minor', alpha=0.5)
+_ = axes8[1].xaxis.set_ticks(np.arange(0, 15, 1, dtype=int), minor=True)
+_ = axes8[1].xaxis.set_ticks(np.arange(0, 15, 7, dtype=int))
+_ = axes8[1].grid(which='minor', alpha=0.5)
+
+# Show fig8
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-62-output-1.png)
 
@@ -1713,6 +2363,9 @@ Linear correlation may not always do justice to the relationship between
 two variables, so let’s look at the scatterplots of sales with its first
 9 lags.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # FIG9: Sales lag scatterplots
 fig9, axes9 = plot_lags(
@@ -1723,6 +2376,8 @@ fig9, axes9 = plot_lags(
 plt.show()
 plt.close("all")
 ```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-63-output-1.png)
 
@@ -1738,6 +2393,9 @@ We can also consider a rolling feature, such as a moving average.
 - A 5-day period makes sense, as the significance of partial
   autocorrelations die out after lag 5.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Calculate 5-day exponential moving average of sales lags
 sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
@@ -1748,28 +2406,59 @@ sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
   win_type = "exponential").mean()
 ```
 
+</details>
+<details>
+<summary>Show code</summary>
+
+``` python
+# Plot sales_ema5 vs sales  
+_ = sns.regplot(
+  data = sales_covariates,
+  x = "sales_ema5",
+  y = "sales"
+)
+_ = plt.title("Relationship of sales and 5-day exponential moving average of sales")
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-65-output-1.png)
 
 We can see sales EMA5 is a good linear predictor of sales, similar to
 lag 1. Let’s compare lag 1’s correlation with sales to EMA5’s
 correlation with sales.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Correlation of sales and lag 1
 pearsonr(sales_covariates["sales"], sales_covariates["sales"].shift(1).fillna(method="bfill")) 
 ```
 
+</details>
+
     PearsonRResult(statistic=0.7905238105754431, pvalue=0.0)
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Correlation of sales and ema5
 pearsonr(sales_covariates["sales"], sales_covariates["sales_ema5"]) 
 ```
 
+</details>
+
     PearsonRResult(statistic=0.7582545348904933, pvalue=8.454075723e-315)
 
 Lag 1 comes out as the slightly stronger linear predictor, but EMA5 is a
 good one too. We can include both as features.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Keep sales EMA5 as a feature, but calculate it with T0 included, as Darts will ask for at least 1 past covariate lag
@@ -1780,6 +2469,8 @@ sales_covariates["sales_ema5"] = sales_covariates["sales"].rolling(
   closed = "right", # Include T0 in the calculation
   win_type = "exponential").mean()
 ```
+
+</details>
 
 ### Oil features
 
@@ -1795,6 +2486,9 @@ manifest.
   oil prices with a certain degree of lag are the more important
   predictors.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Calculate oil MAs
 oil_ma = sales_covariates.assign(
@@ -1807,6 +2501,112 @@ oil_ma = sales_covariates.assign(
 )
 ```
 
+</details>
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG10: Regplots of oil moving averages & sales
+fig10, axes10 = plt.subplots(3,2, sharey=True)
+_ = fig10.suptitle("Oil price change moving averages & decomposed sales")
+
+# MA7
+_ = sns.regplot(
+  ax = axes10[0,0],
+  data = oil_ma,
+  x = "oil_ma7",
+  y = "sales"
+)
+_ = axes10[0,0].set_xlabel("weekly MA")
+_ = axes10[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma7"], oil_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA14
+_ = sns.regplot(
+  ax = axes10[0,1],
+  data = oil_ma,
+  x = "oil_ma14",
+  y = "sales"
+)
+_ = axes10[0,1].set_xlabel("biweekly MA")
+_ = axes10[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma14"], oil_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA28
+_ = sns.regplot(
+  ax = axes10[1,0],
+  data = oil_ma,
+  x = "oil_ma28",
+  y = "sales"
+)
+_ = axes10[1,0].set_xlabel("monthly MA")
+_ = axes10[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma28"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA84
+_ = sns.regplot(
+  ax = axes10[1,1],
+  data = oil_ma,
+  x = "oil_ma84",
+  y = "sales"
+)
+_ = axes10[1,1].set_xlabel("quarterly MA")
+_ = axes10[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma84"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA168
+_ = sns.regplot(
+  ax = axes10[2,0],
+  data = oil_ma,
+  x = "oil_ma168",
+  y = "sales"
+)
+_ = axes10[2,0].set_xlabel("semi-annual MA")
+_ = axes10[2,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma168"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA336
+_ = sns.regplot(
+  ax = axes10[2,1],
+  data = oil_ma,
+  x = "oil_ma336",
+  y = "sales"
+)
+_ = axes10[2,1].set_xlabel("annual MA")
+_ = axes10[2,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(oil_ma["oil_ma336"], oil_ma["sales"], nan_policy='omit')[0]
+      ),
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig10
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-70-output-1.png)
 
 We don’t see particularly strong relationships between oil price change
@@ -1817,6 +2617,9 @@ Since we need 28 past periods to calculate this MA for a 29th period,
 we’ll have missing values for the first 28 periods in our data. After
 some iteration, these were interpolated decently with a second-order
 spline interpolation.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Keep monthly oil MAs as a feature
@@ -1834,6 +2637,8 @@ plt.show()
 plt.close("all")
 ```
 
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-71-output-1.png)
 
 ### Onpromotion features
@@ -1845,6 +2650,9 @@ correlations of sales at time 0, with lags and leads of onpromotion.
 Since the supermarket chain controls the number of items that will go on
 sale, it may be feasible to use leading values of onpromotion as
 predictors.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Cross-correlation of sales & onpromotion
@@ -1858,6 +2666,8 @@ plt.show()
 plt.close("all")
 ```
 
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-72-output-1.png)
 
 Single lags / leads of onpromotion don’t display any significant
@@ -1866,10 +2676,164 @@ six days. Let’s look at the scatterplots of sales at time 0, with four
 of the more relatively significant lags (lag 0 being the present value
 of onpromotion).
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG12: Onpromotion lags 0 1 6 7
+fig12, axes12 = plt.subplots(2,2, sharey=True)
+_ = fig12.suptitle("Onpromotion change lags & decomposed sales")
+
+# Lag 0
+_ = sns.regplot(
+  ax = axes12[0,0],
+  x = sales_covariates["onpromotion"],
+  y = sales_covariates["sales"]
+)
+_ = axes12[0,0].set_xlabel("lag 0")
+_ = axes12[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"], sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+      
+# Lag 1
+_ = sns.regplot(
+  ax = axes12[0,1],
+  x = sales_covariates["onpromotion"].shift(1),
+  y = sales_covariates["sales"]
+)
+_ = axes12[0,1].set_xlabel("lag 1")
+_ = axes12[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(1), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 6
+_ = sns.regplot(
+  ax = axes12[1,0],
+  x = sales_covariates["onpromotion"].shift(6),
+  y = sales_covariates["sales"]
+)
+_ = axes12[1,0].set_xlabel("lag 6")
+_ = axes12[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(6), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 7
+_ = sns.regplot(
+  ax = axes12[1,1],
+  x = sales_covariates["onpromotion"].shift(7),
+  y = sales_covariates["sales"]
+)
+_ = axes12[1,1].set_xlabel("lag 7")
+_ = axes12[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(7), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig12
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-73-output-1.png)
 
 Again, no significant relationship between single onpromotion lags and
 sales. Let’s consider moving averages.
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG11: Onpromotion MAs
+fig11, axes11 = plt.subplots(2,2)
+_ = fig11.suptitle("Onpromotion change moving averages & decomposed sales")
+
+# Calculate MAs without min_periods = 1
+onp_ma = sales_covariates.assign(
+  onp_ma7 = lambda x: x["onpromotion"].rolling(window = 7, center = False, closed = "left").mean(),
+  onp_ma14 = lambda x: x["onpromotion"].rolling(window = 14, center = False, closed = "left").mean(),
+  onp_ma28 = lambda x: x["onpromotion"].rolling(window = 28, center = False, closed = "left").mean(),
+  onp_ma84 = lambda x: x["onpromotion"].rolling(window = 84, center = False, closed = "left").mean()
+)
+
+# MA7
+_ = sns.regplot(
+  ax = axes11[0,0],
+  data = onp_ma,
+  x = "onp_ma7",
+  y = "sales"
+)
+_ = axes11[0,0].set_xlabel("weekly MA")
+_ = axes11[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma7"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA14
+_ = sns.regplot(
+  ax = axes11[0,1],
+  data = onp_ma,
+  x = "onp_ma14",
+  y = "sales"
+)
+_ = axes11[0,1].set_xlabel("biweekly MA")
+_ = axes11[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma14"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA28
+_ = sns.regplot(
+  ax = axes11[1,0],
+  data = onp_ma,
+  x = "onp_ma28",
+  y = "sales"
+)
+_ = axes11[1,0].set_xlabel("monthly MA")
+_ = axes11[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma28"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA84
+_ = sns.regplot(
+  ax = axes11[1,1],
+  data = onp_ma,
+  x = "onp_ma84",
+  y = "sales"
+)
+_ = axes11[1,1].set_xlabel("quarterly MA")
+_ = axes11[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(onp_ma["onp_ma84"], onp_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig11
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-74-output-1.png)
 
@@ -1877,6 +2841,9 @@ The monthly and quarterly MA of onpromotion seems to be slightly
 positively correlated with sales. We’ll use the monthly MA as a feature,
 as we would have to fill in too many missing values for the quarterly
 MA.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Keep monthly onpromotion MAs as a feature
@@ -1889,10 +2856,12 @@ sales_covariates["onp_ma28"] = sales_covariates["onp_ma28"].interpolate(
 # Check quality of interpolation
 _ = sales_covariates["onpromotion"].plot()
 _ = sales_covariates["onp_ma28"].plot()
-_ = plt.title("Onpromotion change and its 28-day moving average, first 28 MAs interpolated")
+_ = plt.title("Onpromotion change and its 28-day MA, first 28 interpolated")
 plt.show()
 plt.close("all")
 ```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-75-output-1.png)
 
@@ -1918,12 +2887,101 @@ stores.
   this analysis. Lag 15 is marked with a red dashed vertical line in the
   cross-correlation plot below.
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# Cross-correlation of sales & transactions change
+_ = plt.xcorr(
+  sales_covariates["sales"], sales_covariates["transactions"], usevlines=True, maxlags=56, normed=True)
+_ = plt.grid(True)
+_ = plt.ylim([-0.15, 0.15])
+_ = plt.axvline(x = -14, color = "red", linestyle = "dashed")
+_ = plt.xlabel("transactions lags / leads")
+_ = plt.title("Cross-correlation, decomposed sales & transactions change")
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-76-output-1.png)
 
 Again, single transactions lags don’t display strong correlations with
 sales. Unlike onpromotion, there doesn’t seem to be a repeating pattern
 either. Lags 0-3 are relatively stronger, so let’s see their
 scatterplots.
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG14: Transactions lags 0-3
+fig14, axes14 = plt.subplots(2,2, sharey=True)
+_ = fig14.suptitle("Transactions change lags & decomposed sales")
+
+# Lag 0
+_ = sns.regplot(
+  ax = axes14[0,0],
+  x = sales_covariates["transactions"],
+  y = sales_covariates["sales"]
+)
+_ = axes14[0,0].set_xlabel("lag 0")
+_ = axes14[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["transactions"], sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+      
+# Lag 1
+_ = sns.regplot(
+  ax = axes14[0,1],
+  x = sales_covariates["transactions"].shift(1),
+  y = sales_covariates["sales"]
+)
+_ = axes14[0,1].set_xlabel("lag 1")
+_ = axes14[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["transactions"].shift(1), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 2
+_ = sns.regplot(
+  ax = axes14[1,0],
+  x = sales_covariates["transactions"].shift(2),
+  y = sales_covariates["sales"]
+)
+_ = axes14[1,0].set_xlabel("lag 2")
+_ = axes14[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["transactions"].shift(2), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Lag 3
+_ = sns.regplot(
+  ax = axes14[1,1],
+  x = sales_covariates["transactions"].shift(3),
+  y = sales_covariates["sales"]
+)
+_ = axes14[1,1].set_xlabel("lag 3")
+_ = axes14[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(sales_covariates["onpromotion"].shift(3), sales_covariates["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig14
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-77-output-1.png)
 
@@ -1942,14 +3000,99 @@ compared to the lags.
 Let’s consider moving averages of changes in transactions, as a possible
 indicator of recent sales activity.
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG13: Transactions MAs
+fig13, axes13 = plt.subplots(2,2)
+_ = fig13.suptitle("Transactions change moving averages & decomposed sales")
+
+# Calculate MAs without min_periods = 1
+trns_ma = sales_covariates.assign(
+  trns_ma7 = lambda x: x["transactions"].rolling(window = 7, center = False, closed = "left").mean(),
+  trns_ma14 = lambda x: x["transactions"].rolling(window = 14, center = False, closed = "left").mean(),
+  trns_ma28 = lambda x: x["transactions"].rolling(window = 28, center = False, closed = "left").mean(),
+  trns_ma84 = lambda x: x["transactions"].rolling(window = 84, center = False, closed = "left").mean()
+)
+
+# MA7
+_ = sns.regplot(
+  ax = axes13[0,0],
+  data = trns_ma,
+  x = "trns_ma7",
+  y = "sales"
+)
+_ = axes13[0,0].set_xlabel("weekly MA")
+_ = axes13[0,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma7"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA14
+_ = sns.regplot(
+  ax = axes13[0,1],
+  data = trns_ma,
+  x = "trns_ma14",
+  y = "sales"
+)
+_ = axes13[0,1].set_xlabel("biweekly MA")
+_ = axes13[0,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma14"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA28
+_ = sns.regplot(
+  ax = axes13[1,0],
+  data = trns_ma,
+  x = "trns_ma28",
+  y = "sales"
+)
+_ = axes13[1,0].set_xlabel("monthly MA")
+_ = axes13[1,0].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma28"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# MA84
+_ = sns.regplot(
+  ax = axes13[1,1],
+  data = trns_ma,
+  x = "trns_ma84",
+  y = "sales"
+)
+_ = axes13[1,1].set_xlabel("quarterly MA")
+_ = axes13[1,1].annotate(
+    'Corr={:.2f}'.format(
+      spearmanr(trns_ma["trns_ma84"], trns_ma["sales"], nan_policy='omit')[0]
+      ), 
+      xy=(.6, .9), xycoords="axes fraction", bbox=dict(alpha=0.5)
+      )
+
+# Show fig13
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-78-output-1.png)
 
-The MAs are much more significant than single lags, though the
-correlations are still likely impacted by extreme values. Still, these
-features could help our model adjust for extreme increases / decreases
-in sales. We’ll keep the weekly MA as it has the strongest linear
-relationship, and will create the fewest number of missing values to
-fill in.
+The MAs are more significant than single lags, though the correlations
+are still likely impacted by extreme values. Still, these features could
+help our model adjust for extreme increases / decreases in sales. We’ll
+keep the weekly MA as it has the strongest linear relationship, and will
+create the fewest number of missing values to fill in.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Keep weekly transactions MA
@@ -1966,6 +3109,8 @@ plt.show()
 plt.close("all")
 ```
 
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-79-output-1.png)
 
 We can see the sharp drop in transactions on January 1st, and the
@@ -1977,6 +3122,9 @@ transactions changes, and its weekly moving average.
 ### Preprocessing
 
 We repeat some preprocessing steps for model 2.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Drop original covariates & target
@@ -2002,6 +3150,8 @@ y_train2, y_val2 = ts_decomp[:-227], trafo_log(ts_sales[-227:])
 x_train2, x_val2 = ts_lagscovars[:-227], ts_lagscovars[-227:]
 ```
 
+</details>
+
 In model 1, our features were trend dummies, Fourier pairs and binary /
 ordinal features for calendar effects, none of which required scaling.
 In this model, we have covariates of different natures and value ranges.
@@ -2009,6 +3159,9 @@ For example, the oil price changes are often fractional, while changes
 in transactions are often in the thousands. The former reflects a unit
 price, the latter reflects a count. Therefore, we’ll scale and center
 our features to avoid domination by features with large values.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Scale covariates
@@ -2021,6 +3174,8 @@ x_val2 = scaler.transform(x_val2)
 # Combine back scaled covariate series
 ts_lagscovars_scaled = x_train2.append(x_val2)
 ```
+
+</details>
 
 ### Model specification
 
@@ -2076,15 +3231,16 @@ model.
     random forest has fewer hyperparameters, and the default settings
     often do fine without needing tuning.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Import models
-from darts.models.forecasting.baselines import NaiveDrift, NaiveSeasonal
 from darts.models.forecasting.auto_arima import AutoARIMA
 from darts.models.forecasting.linear_regression_model import LinearRegressionModel
 from darts.models.forecasting.random_forest import RandomForest
 
-# Specify baseline models
-model_drift = NaiveDrift()
+# Specify new seasonal baseline model
 model_seasonal = NaiveSeasonal(K=5)
 
 # Specify AutoARIMA model
@@ -2116,10 +3272,13 @@ model_forest = RandomForest(
   lags_past_covariates = [-1],
   output_chunk_length = 15,
   n_estimators = 500, # Build 500 trees
+  oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
-  n_jobs = -2 # Use all but one of the CPUs
+  n_jobs = 20
   )
 ```
+
+</details>
 
 Similar to model 1, our naive seasonal model will repeat the last 5
 values in the training data. K=7 was the most significant seasonality
@@ -2156,19 +3315,22 @@ Let’s train our models on the decomposed sales of 2013-2016, predict the
 values for 2017, and add these to the 2017 predictions of model 1 to
 retrieve our final, hybrid model predictions.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Specify future and past covariates
 fut_cov = ['oil_ma28', 'onp_ma28']
 past_cov = ['sales_ema5', 'trns_ma7']
 
 # Fit models on train data (pre-2017), predict validation data (2017)
-model_drift.fit(y_train2)
+_ = model_drift.fit(y_train2)
 pred_drift2 = model_drift.predict(n = 227) + ts_preds1[-227:]
 
-model_seasonal.fit(y_train2)
+_ = model_seasonal.fit(y_train2)
 pred_seasonal2 = model_seasonal.predict(n = 227) + ts_preds1[-227:]
 
-model_arima.fit(
+_ = model_arima.fit(
   y_train2, 
   future_covariates = ts_lagscovars_scaled[fut_cov]
 )
@@ -2178,7 +3340,7 @@ pred_arima = model_arima.predict(
   future_covariates = ts_lagscovars_scaled[fut_cov]
   ) + ts_preds1[-227:]
 
-model_linear2.fit(
+_ = model_linear2.fit(
   y_train2, 
   future_covariates = ts_lagscovars_scaled[fut_cov],
   past_covariates = ts_lagscovars_scaled[past_cov]
@@ -2190,7 +3352,7 @@ pred_linear2 = model_linear2.predict(
   past_covariates = ts_lagscovars_scaled[past_cov]
   ) + ts_preds1[-227:]
 
-model_forest.fit(
+_ = model_forest.fit(
   y_train2, 
   future_covariates = ts_lagscovars_scaled[fut_cov],
   past_covariates = ts_lagscovars_scaled[past_cov]
@@ -2203,58 +3365,63 @@ pred_forest = model_forest.predict(
   ) + ts_preds1[-227:]
 ```
 
+</details>
+
     Performing stepwise search to minimize aicc
 
-     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.25 sec
-     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.12 sec
+     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.23 sec
+     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.11 sec
 
-     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.16 sec
-     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.13 sec
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.15 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.12 sec
 
-     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.33 sec
+     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.31 sec
 
-     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.44 sec
+     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.43 sec
 
-     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.50 sec
+     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.45 sec
 
-     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.63 sec
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.62 sec
 
-     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.65 sec
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.61 sec
 
-     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.76 sec
+     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.70 sec
 
-     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.75 sec
+     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.73 sec
 
-     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.67 sec
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.66 sec
 
-     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.84 sec
+     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.80 sec
 
-     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.85 sec
+     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.81 sec
 
-     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.61 sec
+     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.56 sec
 
-     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.99 sec
+     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.87 sec
 
-     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.69 sec
+     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.63 sec
 
-     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.60 sec
+     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.55 sec
 
-     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.65 sec
+     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.57 sec
 
-     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.84 sec
+     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.74 sec
 
-     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.89 sec
+     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.78 sec
 
-     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.62 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.57 sec
 
-     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.51 sec
+     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.49 sec
 
-     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.68 sec
+     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.65 sec
 
-     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.85 sec
+     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.81 sec
 
     Best model:  ARIMA(3,0,2)(0,0,0)[0]          
-    Total fit time: 15.029 seconds
+    Total fit time: 13.980 seconds
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Score models' performance
@@ -2264,6 +3431,8 @@ perf_scores(y_val2, pred_arima, model="ARIMA")
 perf_scores(y_val2, pred_linear2, model="Linear")
 perf_scores(y_val2, pred_forest, model="Random forest")
 ```
+
+</details>
 
     Model: Naive drift
     MAE: 110648.8939
@@ -2333,6 +3502,37 @@ the respective lags & covariates models.
 
 Let’s see the predictions plotted against the actual values.
 
+<details>
+<summary>Show code</summary>
+
+``` python
+# FIG15: Plot models' predictions against actual values
+fig15, axes15 = plt.subplots(3, sharex=True, sharey=True)
+_ = fig15.suptitle("Actual vs. predicted sales, hybrid models, blue = predicted")
+
+# ARIMA
+_ = trafo_exp(y_val2).plot(ax = axes15[0], label="Actual")
+_ = trafo_exp(pred_arima).plot(ax = axes15[0], label="Predicted")
+_ = axes15[0].set_title("Linear regression + ARIMA")
+
+# Linear regression
+_ = trafo_exp(y_val2).plot(ax = axes15[1], label="Actual")
+_ = trafo_exp(pred_linear2).plot(ax = axes15[1], label="Predicted")
+_ = axes15[1].set_title("Linear regression + Linear regression")
+
+# Random forest
+_ = trafo_exp(y_val2).plot(ax = axes15[2], label="Actual")
+_ = trafo_exp(pred_forest).plot(ax = axes15[2], label="Predicted")
+_ = axes15[2].legend("", frameon = False)
+_ = axes15[2].set_title("Linear regression + Random forest")
+
+# Show fig15
+plt.show()
+plt.close("all")
+```
+
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-85-output-1.png)
 
 The performance of the 3 hybrids are similar overall, and it’s hard to
@@ -2358,16 +3558,21 @@ last 3 lags and the last 2 forecast errors as predictors, along with our
 covariates. Covariates x1 and x2 refer to our future covariates,
 `oil_ma28 and onp_ma28` respectively.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 print(model_arima.model.summary())
 ```
+
+</details>
 
                                    SARIMAX Results                                
     ==============================================================================
     Dep. Variable:                      y   No. Observations:                 1461
     Model:               SARIMAX(3, 0, 2)   Log Likelihood                1359.814
-    Date:                Fri, 03 Mar 2023   AIC                          -2703.628
-    Time:                        17:23:38   BIC                          -2661.333
+    Date:                Tue, 14 Mar 2023   AIC                          -2703.628
+    Time:                        18:53:09   BIC                          -2661.333
     Sample:                             0   HQIC                         -2687.851
                                    - 1461                                         
     Covariance Type:                  opg                                         
@@ -2451,6 +3656,9 @@ forecasts of the hybrid model.
 - As we did before, we’ll start with the first 365 days, and expand our
   training window by 1 day in each iteration.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Retrieve historical forecasts & residuals for linear + random forest
 
@@ -2476,12 +3684,29 @@ res_hist2 = trafo_log(ts_sales[365:]) - pred_hist2
 perf_scores(trafo_log(ts_sales[365:]), pred_hist2, model="Linear + linear")
 ```
 
+</details>
+
     Model: Linear + linear
     MAE: 48026.0543
     RMSE: 78790.2799
     RMSLE: 5.9406
     MAPE: 8.4835
     --------
+
+<details>
+<summary>Show code</summary>
+
+``` python
+# Plot historical forecasts for random forest
+_ = ts_sales.plot(label="Actual")
+_ = trafo_exp(pred_hist2).plot(label="Predicted")
+_ = plt.title("Linear regression + linear regression hybrid model, historical forecasts")
+_ = plt.ylabel("sales")
+plt.show()
+plt.close("all")
+```
+
+</details>
 
 ![](ReportPart1_files/figure-commonmark/cell-88-output-1.png)
 
@@ -2508,11 +3733,14 @@ better on MAE.
 
 We can diagnose the residuals of the hybrid model and test their
 stationarity. The erratic predictions in mid-2014 will yield massive
-residuals, so we’ll clip them to 1 to get interpretable plots.
+residuals, so we’ll clip them to 0.5 to get interpretable plots.
+
+<details>
+<summary>Show code</summary>
 
 ``` python
 # Clip high end of residuals
-res_hist2_plot = res_hist2.map(lambda x: np.clip(x, a_min = None, a_max = 1))
+res_hist2_plot = res_hist2.map(lambda x: np.clip(x, a_min = None, a_max = 0.5))
 
 # Residuals diagnosis
 _ = plot_residuals_analysis(res_hist2_plot)
@@ -2532,15 +3760,16 @@ plt.show()
 plt.close("all")
 ```
 
+</details>
+
 ![](ReportPart1_files/figure-commonmark/cell-89-output-1.png)
 
 ![](ReportPart1_files/figure-commonmark/cell-89-output-2.png)
 
-Overall, the residuals seem much closer to stationary, with t.
+Overall, the residuals seem much closer to stationary.
 
 - There are a few particularly large residuals (besides the erratic
-  predictions clipped to 1), especially in 2014-2015, and at year
-  starts.
+  predictions’ residuals clipped to 0.5), especially in 2014-2015.
 
 - The distribution of residuals is more centered around 0, with smaller
   extreme values. This time, the extreme values are well-balanced
@@ -2554,6 +3783,9 @@ Overall, the residuals seem much closer to stationary, with t.
   the ACF and PACF calculations are strongly impacted by the few erratic
   predictions in mid-2014.
 
+<details>
+<summary>Show code</summary>
+
 ``` python
 # Stationarity tests on hybrid model residuals
 print(
@@ -2566,6 +3798,8 @@ print(
   str(stationarity_test_adf(res_hist2)[1])
 ) # Null rejected = data is stationary around a constant
 ```
+
+</details>
 
     KPSS test p-value: 0.07112705469666736
     ADF test p-value: 2.2979600604438747e-08
