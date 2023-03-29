@@ -138,8 +138,9 @@ df_trans = pd.read_csv("./OriginalData/transactions.csv", encoding="utf-8")
 The data is split into several .csv files. **train.csv** and
 **test.csv** are the main datasets, consisting of daily sales data. The
 training data ranges from 01-01-2013 to 15-08-2017, and the testing data
-consists of the following 15 days in August 2017. We won’t do a
-competition submission in part 1, so we won’t work on the testing data.
+consists of the following 16 days until the end of August 2017. We won’t
+do a competition submission in part 1, so we won’t work on the testing
+data.
 
 <details>
 <summary>Show code</summary>
@@ -684,12 +685,11 @@ print(ts_sales)
   analysis.
 
 - **Static covariates** are time-invariant covariates that may be used
-  as predictors in global models (models trained on multiple Darts TS at
-  once), if not used to split the time series into a multivariate series
-  (one Darts TS with multiple components). They are stored together with
-  the target series in Darts TS. In our case, the type or cluster of a
-  store may be used as static covariates, but for part 1 of our analysis
-  we are looking at national sales, so these aren’t applicable.
+  as predictors in global models (models trained on multiple time series
+  at once). They are stored together with the target series in the Darts
+  TS. In our case, the location, type or cluster of a store may be used
+  as static covariates, but for part 1 of our analysis we are looking at
+  national sales, so these aren’t applicable.
 
 ## Overview of hybrid modeling approach
 
@@ -760,10 +760,10 @@ The time series plot shows us several things:
   from the start of 2015. Consider one straight line from 2013 to 2015,
   and a second, less steep one from 2015 to the end.
 
-- Sales mostly fluctuate around the trend, which suggests strong
-  seasonality. However, there are also sharp deviations from the trend
-  in certain periods, mainly across 2014 and at the start of 2015. These
-  are likely cyclical in nature.
+- Sales mostly fluctuate around the trend with a repeating pattern,
+  which suggests strong seasonality. However, there are also sharp
+  deviations from the trend in certain periods, mainly across 2014 and
+  at the start of 2015. These are likely cyclical in nature.
 
 - The “waves” of seasonal fluctuations seem to be getting bigger over
   time. This suggests we should use a multiplicative time decomposition
@@ -947,7 +947,7 @@ plt.close("all")
 
 ![](ReportPart1_files/figure-commonmark/cell-27-output-1.png)
 
-This shows us the “overall” seasonality pattern across one year: We
+This shows us the “overall” seasonality pattern across all years: We
 likely have a strong weekly seasonality pattern that holds across the
 years, and some monthly seasonality especially towards December.
 
@@ -1862,28 +1862,24 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 We see our linear regression model performs much better than the other
 methods tested.
 
-- It's also notable that the naive seasonal model beats the FFT model in
-  all metrics except MAPE, while ETS scores close to naive seasonal on
-  MAE, RMSE and RMSLE, but much worse on MAPE.
+It’s also notable that the naive seasonal model beats the FFT model in
+all metrics except MAPE, while ETS scores close to naive seasonal on
+MAE, RMSE and RMSLE, but much worse on MAPE.
 
-  - This is likely because MAPE is a measure of relative error, while
-    the others are measures of absolute error.
-
-  <!-- -->
-
-      -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
-
-      -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
-
-  - In either case, RMSLE is likely the most important metric among
-    these three. Log errors penalize underpredictions more strongly than
-    overpredictions, which could be good for assessing sales
-    predictions, as unfulfilled demand is likely more costly than
-    overstocking. The competition is also scored on RMSLE.
-
+- This is likely because MAPE is a measure of relative error, while the
+  others are measures of absolute error.
+  - For example, an absolute error of 2 translates to 2% MAPE if the
+    true value is 100, but it translates to 0.2% MAPE if the true value
+    is 1000.
+  - In both cases, the absolute error is the same, but we may argue an
+    absolute error of 2 is more “costly” for the former case.
+- In either case, RMSLE is likely the most important metric among these
+  three. Log errors penalize underpredictions more strongly than
+  overpredictions, which could be good for assessing sales predictions,
+  as unfulfilled demand is likely more costly than overstocking. The
+  competition is also scored on RMSLE.
 - The forecast horizon plays a huge role in the prediction scores of our
   models:
-
   - When the same models are validated on only the last 15 days of our
     training data, they perform very similarly to one another, and the
     ETS model has the best performance, even slightly better than our
@@ -1964,9 +1960,9 @@ the predictions are similar to the actual values.
   not able to match some spikes and troughs fully, which are possibly
   cyclical in nature. That’s where model 2 will come in.
 
-  - The piecewise linear trend method allows us to respond to turns in
-    the trend more precisely, while keeping the trend lines robust
-    against fluctuations.
+  - The piecewise linear trend method allows us to adjust for major
+    trend turns in the training data, while keeping the trend line
+    robust for extrapolation into the future.
 
 ### Rolling crossvalidation
 
@@ -3231,6 +3227,22 @@ model.
     random forest has fewer hyperparameters, and the default settings
     often do fine without needing tuning.
 
+  - Darts uses the Scikit-learn implementation of the random forest
+    regression model, `RandomForestRegressor.`
+
+    - This implementation uses all features to build all N trees by
+      default, which I believe is misleading: Randomly subsetting the
+      features to build each tree is a big part of how RF models combat
+      overfitting. Taking that away just leaves us with an ensemble of
+      trees built with sampled data, without any pruning, likely prone
+      to overfitting.
+
+    - Remember to set `max_features` which will be randomly chosen to
+      build each tree to avoid this pitfall. Here we use a common
+      heuristic for regression, which is the square root of the number
+      of features, though it may not change much as we have few
+      features.
+
 <details>
 <summary>Show code</summary>
 
@@ -3271,7 +3283,8 @@ model_forest = RandomForest(
   lags_future_covariates = [0],
   lags_past_covariates = [-1],
   output_chunk_length = 15,
-  n_estimators = 500, # Build 500 trees
+  n_estimators = 500, # Build 500 trees,
+  max_features = "sqrt", # Use a subset of features for each tree
   oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
   n_jobs = 20
@@ -3369,56 +3382,56 @@ pred_forest = model_forest.predict(
 
     Performing stepwise search to minimize aicc
 
-     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.23 sec
-     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.11 sec
+     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.25 sec
+     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.12 sec
 
-     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.15 sec
-     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.12 sec
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.17 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.13 sec
 
-     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.31 sec
+     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.34 sec
 
-     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.43 sec
+     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.48 sec
 
-     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.45 sec
+     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.51 sec
 
-     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.62 sec
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.68 sec
 
-     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.61 sec
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.66 sec
 
-     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.70 sec
+     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.80 sec
 
-     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.73 sec
+     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.82 sec
 
-     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.66 sec
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.76 sec
 
-     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.80 sec
+     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=1.00 sec
 
-     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.81 sec
+     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.93 sec
 
-     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.56 sec
+     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.64 sec
 
-     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.87 sec
+     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.98 sec
 
-     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.63 sec
+     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.68 sec
 
-     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.55 sec
+     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.59 sec
 
-     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.57 sec
+     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.62 sec
 
-     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.74 sec
+     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.83 sec
 
-     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.78 sec
+     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.87 sec
 
-     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.57 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.62 sec
 
-     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.49 sec
+     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.54 sec
 
-     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.65 sec
+     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.75 sec
 
-     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.81 sec
+     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.97 sec
 
     Best model:  ARIMA(3,0,2)(0,0,0)[0]          
-    Total fit time: 13.980 seconds
+    Total fit time: 15.740 seconds
 
 <details>
 <summary>Show code</summary>
@@ -3459,10 +3472,10 @@ perf_scores(y_val2, pred_forest, model="Random forest")
     MAPE: 7.8976
     --------
     Model: Random forest
-    MAE: 57907.6561
-    RMSE: 77667.3722
-    RMSLE: 0.111
-    MAPE: 8.7305
+    MAE: 59505.884
+    RMSE: 79361.7179
+    RMSLE: 0.113
+    MAPE: 8.9219
     --------
 
 Remember that these are hybrid predictions: Each prediction is the
@@ -3491,13 +3504,13 @@ the respective lags & covariates models.
     our covariates aren’t too important compared to the trend,
     seasonality and calendar effects.
 
-- The order is reversed on RMSE scores, and RF yields the best
-  performance, though the scores are very close.
+- ARIMA yields the best performance on RMSE scores, though the scores
+  are very close.
 
 - RMSE punishes larger errors more severely due to the squaring applied,
   while RMSLE punishes underpredictions more severely due to the log
-  transformation. So the RF likely makes a little less error for larger
-  values, while also underpredicting compared to ARIMA and linear
+  transformation. So the ARIMA likely makes a little less error for
+  larger values, while also underpredicting compared to linear
   regression.
 
 Let’s see the predictions plotted against the actual values.
@@ -3540,7 +3553,8 @@ see big differences from the plots.
 
 - The random forest did a better job of adjusting to some spikes and
   troughs especially at the start of 2017, possibly because it is able
-  to select features and find interactions between predictors.
+  to model non-linear relationships and find interactions between
+  predictors.
 
 - Still, certain large spikes are partially unaccounted for, especially
   the sharp recovery after January 1st, and the spikes at the start of
@@ -3571,8 +3585,8 @@ print(model_arima.model.summary())
     ==============================================================================
     Dep. Variable:                      y   No. Observations:                 1461
     Model:               SARIMAX(3, 0, 2)   Log Likelihood                1359.814
-    Date:                Tue, 14 Mar 2023   AIC                          -2703.628
-    Time:                        18:53:09   BIC                          -2661.333
+    Date:                Wed, 29 Mar 2023   AIC                          -2703.628
+    Time:                        10:05:49   BIC                          -2661.333
     Sample:                             0   HQIC                         -2687.851
                                    - 1461                                         
     Covariance Type:                  opg                                         

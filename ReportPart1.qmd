@@ -1123,21 +1123,13 @@ perf_scores(y_val1, pred_linear1, model="Linear regression")
 
 We see our linear regression model performs much better than the other methods tested.
 
--   It's also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
+It's also notable that the naive seasonal model beats the FFT model in all metrics except MAPE, while ETS scores close to naive seasonal on MAE, RMSE and RMSLE, but much worse on MAPE.
 
-    -   This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
-
-    ```{=html}
-    <!-- -->
-    ```
-        -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
-
-        -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
-
-    -   In either case, RMSLE is likely the most important metric among these three. Log errors penalize underpredictions more strongly than overpredictions, which could be good for assessing sales predictions, as unfulfilled demand is likely more costly than overstocking. The competition is also scored on RMSLE.
-
+-   This is likely because MAPE is a measure of relative error, while the others are measures of absolute error.
+    -   For example, an absolute error of 2 translates to 2% MAPE if the true value is 100, but it translates to 0.2% MAPE if the true value is 1000.
+    -   In both cases, the absolute error is the same, but we may argue an absolute error of 2 is more "costly" for the former case.
+-   In either case, RMSLE is likely the most important metric among these three. Log errors penalize underpredictions more strongly than overpredictions, which could be good for assessing sales predictions, as unfulfilled demand is likely more costly than overstocking. The competition is also scored on RMSLE.
 -   The forecast horizon plays a huge role in the prediction scores of our models:
-
     -   When the same models are validated on only the last 15 days of our training data, they perform very similarly to one another, and the ETS model has the best performance, even slightly better than our linear regression model with features.
 
         -   The difference in performance is mainly because the models except linear regression can't take in covariates to capture calendar effects or long-term seasonality. These may not matter much for a short forecast horizon like 15, but with a long forecast horizon like 227, they become more important. The linear regression is able to perform fairly similarly with a forecast horizon of 15 or 227, while the other models do much worse with a longer horizon.
@@ -2133,6 +2125,12 @@ We'll use the same baseline models as we did in model 1. We'll compare them with
 
     -   We could also include a more sophisticated gradient boosting algorithm such as XGBoost, but these often require [extensive hyperparameter tuning](https://github.com/AhmetZamanis/LoanRequestClassification/blob/main/Report.md#xgboost) to perform at their best, so we will skip it. In contrast, the random forest has fewer hyperparameters, and the default settings often do fine without needing tuning.
 
+    -   Darts uses the Scikit-learn implementation of the random forest regression model, `RandomForestRegressor.`
+
+        -   This implementation uses all features to build all N trees by default, which I believe is misleading: Randomly subsetting the features to build each tree is a big part of how RF models combat overfitting. Taking that away just leaves us with an ensemble of trees built with sampled data, without any pruning, likely prone to overfitting.
+
+        -   Remember to set `max_features` which will be randomly chosen to build each tree to avoid this pitfall. Here we use a common heuristic for regression, which is the square root of the number of features, though it may not change much as we have few features.
+
 ```{python ModelSpec2}
 
 # Import models
@@ -2171,7 +2169,8 @@ model_forest = RandomForest(
   lags_future_covariates = [0],
   lags_past_covariates = [-1],
   output_chunk_length = 15,
-  n_estimators = 500, # Build 500 trees
+  n_estimators = 500, # Build 500 trees,
+  max_features = "sqrt", # Use a subset of features for each tree
   oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
   n_jobs = 20
@@ -2261,13 +2260,15 @@ Remember that these are hybrid predictions: Each prediction is the combined resu
 
 -   As a refresher, model 1's standalone performance scores on 2017 data:
 
-        --------
-        Model: Linear regression
-        MAE: 64128.0321
-        RMSE: 81697.341
-        RMSLE: 0.1171
-        MAPE: 9.7622
-        --------
+    ```         
+    --------
+    Model: Linear regression
+    MAE: 64128.0321
+    RMSE: 81697.341
+    RMSLE: 0.1171
+    MAPE: 9.7622
+    --------
+    ```
 
 -   Combining model 1 with a baseline model doesn't increase prediction errors all that much. This is because our data had strong time effects, so getting model 1 right did most of the job.
 
@@ -2275,9 +2276,9 @@ Remember that these are hybrid predictions: Each prediction is the combined resu
 
     -   The improvement over model 1 is not big. This implies the effects of our covariates aren't too important compared to the trend, seasonality and calendar effects.
 
--   The order is reversed on RMSE scores, and RF yields the best performance, though the scores are very close.
+-   ARIMA yields the best performance on RMSE scores, though the scores are very close.
 
--   RMSE punishes larger errors more severely due to the squaring applied, while RMSLE punishes underpredictions more severely due to the log transformation. So the RF likely makes a little less error for larger values, while also underpredicting compared to ARIMA and linear regression.
+-   RMSE punishes larger errors more severely due to the squaring applied, while RMSLE punishes underpredictions more severely due to the log transformation. So the ARIMA likely makes a little less error for larger values, while also underpredicting compared to linear regression.
 
 Let's see the predictions plotted against the actual values.
 
@@ -2311,7 +2312,7 @@ plt.close("all")
 
 The performance of the 3 hybrids are similar overall, and it's hard to see big differences from the plots.
 
--   The random forest did a better job of adjusting to some spikes and troughs especially at the start of 2017, possibly because it is able to select features and find interactions between predictors.
+-   The random forest did a better job of adjusting to some spikes and troughs especially at the start of 2017, possibly because it is able to model non-linear relationships and find interactions between predictors.
 
 -   Still, certain large spikes are partially unaccounted for, especially the sharp recovery after January 1st, and the spikes at the start of April and May 2017. These may be due to factors not documented in our dataset. Or they may be related to commemorations for the earthquake in April 2016.
 
