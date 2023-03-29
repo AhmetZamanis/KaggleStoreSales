@@ -67,8 +67,8 @@ Ahmet Zamanis
 ## Introduction
 
 This is part 2 of a report on time series analysis & regression
-modeling, performed in Python with the [Darts](https://github.com/unit8co/darts) library. In [part
-1](https://github.com/AhmetZamanis/KaggleStoreSales/blob/main/ReportPart1.md),
+modeling, performed in Python with the Darts library. In [part
+1](https://github.com/AhmetZamanis/KaggleStoreSales/blob/ModelPart2.2/ReportPart1.md),
 we analyzed & forecasted only the daily national supermarket sales in
 the [Kaggle Store Sales forecasting
 competition](https://www.kaggle.com/competitions/store-sales-time-series-forecasting)
@@ -2408,6 +2408,7 @@ model_rf = RandomForest(
   lags_future_covariates = [0],
   lags_past_covariates = [-1],
   n_estimators = 500, # Fit 500 trees
+  max_features = "sqrt", # Use a subset of features for each tree
   oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
   n_jobs = 20
@@ -3156,10 +3157,10 @@ scores_hierarchy(
     --------
 
     Model = Linear (trend + seasonality) + RF (remainder)
-    MAE: mean = 2571.1454, sd = 2296.1474, min = 522.9081, max = 14206.4418
-    MSE: mean = 15923670.7153, sd = 32302808.4534, min = 444871.489, max = 211145503.821
-    RMSE: mean = 3065.99, sd = 2554.0901, min = 666.9869, max = 14530.8466
-    RMSLE: mean = 0.2333, sd = 0.178, min = 0.0947, max = 1.4614
+    MAE: mean = 2397.1323, sd = 2238.5964, min = 570.2938, max = 14206.4418
+    MSE: mean = 14113144.495, sd = 30930782.8458, min = 444719.8924, max = 211145503.8305
+    RMSE: mean = 2880.878, sd = 2411.1587, min = 666.8732, max = 14530.8466
+    RMSLE: mean = 0.2224, sd = 0.1764, min = 0.0928, max = 1.4614
     --------
 
     Model = Linear (trend + seasonality) + RNN (remainder, global)
@@ -3191,10 +3192,10 @@ scores_hierarchy(
     --------
 
     Model = D-Linear (trend + seasonality, global) + RF (remainder)
-    MAE: mean = 2051.6943, sd = 1415.9825, min = 505.7695, max = 6541.404
-    MSE: mean = 10354913.6201, sd = 15864939.9459, min = 419248.6166, max = 66808292.3648
-    RMSE: mean = 2610.5771, sd = 1881.4359, min = 647.4941, max = 8173.634
-    RMSLE: mean = 0.1899, sd = 0.0615, min = 0.1115, max = 0.4225
+    MAE: mean = 1906.0926, sd = 1227.4808, min = 548.4679, max = 6002.3761
+    MSE: mean = 8616092.7405, sd = 12272894.8791, min = 512139.8297, max = 58314455.9086
+    RMSE: mean = 2448.1816, sd = 1619.4133, min = 715.6395, max = 7636.3902
+    RMSLE: mean = 0.1816, sd = 0.0485, min = 0.1009, max = 0.3616
     --------
 
     Model = D-Linear (trend + seasonality, global) + RNN (remainder, global)
@@ -3221,11 +3222,12 @@ scores_hierarchy(
 We see that none of the hybrid models are able to beat the AutoETS
 baselines.
 
-- The global hybrids come close, and generally perform better than
-  univariate hybrids. The best hybrid model is the D-Linear + RNN
-  hybrid, which is impressive as these are single models used to predict
-  54 different series. It seems we were right to expect good
-  generalization across store sales.
+- The global hybrids come close to AutoETS, and generally perform better
+  than univariate hybrids. The best hybrid model overall is the
+  D-Linear + RNN hybrid (though D-Linear + RF is very close and beats it
+  slightly on RMSLE), which is impressive as these are single models
+  used to predict 54 different series. It seems we were right to expect
+  good generalization across store sales.
 
   - Note that the time effects linear regression model, and all hybrids
     involving it have much bigger maximum errors. This is likely because

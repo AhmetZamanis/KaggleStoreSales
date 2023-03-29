@@ -1833,6 +1833,7 @@ model_rf = RandomForest(
   lags_future_covariates = [0],
   lags_past_covariates = [-1],
   n_estimators = 500, # Fit 500 trees
+  max_features = "sqrt", # Use a subset of features for each tree
   oob_score = True, # Score trees on out-of-bag samples
   random_state = 1923,
   n_jobs = 20
@@ -2436,7 +2437,7 @@ scores_hierarchy(
 
 We see that none of the hybrid models are able to beat the AutoETS baselines.
 
--   The global hybrids come close, and generally perform better than univariate hybrids. The best hybrid model is the D-Linear + RNN hybrid, which is impressive as these are single models used to predict 54 different series. It seems we were right to expect good generalization across store sales.
+-   The global hybrids come close to AutoETS, and generally perform better than univariate hybrids. The best hybrid model overall is the D-Linear + RNN hybrid (though D-Linear + RF is very close and beats it slightly on RMSLE), which is impressive as these are single models used to predict 54 different series. It seems we were right to expect good generalization across store sales.
 
     -   Note that the time effects linear regression model, and all hybrids involving it have much bigger maximum errors. This is likely because linear regression performs badly on series with many zeroes. In contrast, ETS or NN models have much more reasonable maximum errors.
 
@@ -2627,7 +2628,7 @@ AutoETS scores considerably well on the validation data, as the few best scores 
 
 ### Linear regression
 
-```{python}
+```{python DisaggLinearReg}
 
 # Covariates (all, past & future)
 linear_disagg_futcovars = ["trend"] + dlinear2_futcovars
