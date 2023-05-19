@@ -1264,7 +1264,13 @@ Ideally, we'd want very small residuals that are normally distributed around zer
 
 -   The PACF plot shows strong partial autocorrelation with lag 1, and a weak one with lag 2, which means we'll likely include lagged sales features in the second model. There are also small, barely significant partial autocorrelations after lag 2.
 
-A **stationary time series** is one free of trend and seasonality, also called **white noise**. Ideally, we'd want our residuals to be stationary to consider our modeling complete. We can test their stationarity with two statistical tests. First is the Kwiatkowski-Phillips-Schmidt-Shin test.
+A **stationary time series** is one with values independent of the observation time, free of trend and seasonality. Ideally, we'd expect our decomposed residuals to be a stationary, **white noise** series constantly fluctuating around zero. A related concept is the presence or lack of a **unit root.**
+
+-   A **deterministic trend** is a linear trend plus small fluctuations around it with constant variance. It is fairly stable over time. Removing the trend yields a stationary error term with constant variance. Such a series is **trend-stationary**.
+
+-   A unit root, i.e. a **stochastic trend** is a linear trend plus a **random walk process:** The series fluctuates considerably around the linear trend, and can shift from it permanently. Removing the linear trend won't make the series stationary, but **differencing** will (more on this later). Such a series is **difference-stationary**.
+
+We can test stationarity and the presence of a unit root in the residuals with two statistical tests. First is the Kwiatkowski-Phillips-Schmidt-Shin test.
 
 ```{python StatTestKPSS1}
 #| warning: true
@@ -1275,11 +1281,11 @@ from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
 print(
   "KPSS test p-value: " + 
   stationarity_test_kpss(res_linear1)[1].astype(str)
-) # Null rejected = data is non-stationary
+) # Null rejected = data has unit root
 
 ```
 
-The null hypothesis for the KPSS test (this version) is stationarity around a constant value. With a p-value smaller than 0.01, the null is rejected, so the test suggests our residuals are non-stationary.
+The null hypothesis for this version of the KPSS test is stationarity around a constant value, while the alternative suggests the presence of a unit root. With a p-value smaller than 0.01, the null is rejected, so the test suggests our residuals have a unit root.
 
 Second is the Augmented Dickey-Fuller test.
 
@@ -1288,11 +1294,13 @@ Second is the Augmented Dickey-Fuller test.
 print(
   "ADF test p-value: " +
   stationarity_test_adf(res_linear1)[1].astype(str)
-) # Null rejected = data is stationary around a constant
+) # Null rejected = data has no unit root
 
 ```
 
-The null hypothesis for the ADF test (this version) is the presence of a unit root, while the alternative hypothesis is stationarity around a constant. With a very small p-value, the null is rejected and the alternative is accepted, so the test suggests our residuals are stationary around a constant, conflicting with the KPSS test.
+The null hypothesis for the ADF test is the presence of a unit root, while the alternative hypothesis is lack of one. With a very small p-value, the null is rejected and the alternative is accepted, so the test suggests our residuals do not have a unit root, conflicting with the KPSS test.
+
+-   This conflict is likely due to the unequal variance in the residuals, especially for values between 2014-2015.
 
 ### Time decomposition
 
@@ -1376,7 +1384,7 @@ print(
 print(
   "ADF test p-value: " +
   adfuller(sales_covariates["oil"])[1].astype(str)
-) # Null accepted = data is non-stationary
+) # Null accepted = data has unit root
 
 ```
 
@@ -2444,12 +2452,12 @@ Overall, the residuals seem much closer to stationary.
 print(
   "KPSS test p-value: " + 
   stationarity_test_kpss(res_hist2)[1].astype(str)
-) # Null rejected = data is non-stationary
+) # Null accepted = data is stationary
 
 print(
   "ADF test p-value: " + 
   str(stationarity_test_adf(res_hist2)[1])
-) # Null rejected = data is stationary around a constant
+) # Null rejected = no unit root
 
 ```
 
@@ -2457,7 +2465,7 @@ The stationarity tests are no longer in conflict:
 
 -   The p-value for the KPSS test is larger than 0.05 , leading us to accept the null hypothesis of stationarity around a constant, though we are still close to non-stationarity.
 
--   The p-value for the ADF test is practically 0, rejecting the null hypothesis of the presence of an unit root. This implies the data is stationary around a constant.
+-   The p-value for the ADF test is practically 0, rejecting the null hypothesis of the presence of an unit root.
 
 ## Conclusion
 

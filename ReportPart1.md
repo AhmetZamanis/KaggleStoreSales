@@ -2092,10 +2092,25 @@ our predictions.
   features in the second model. There are also small, barely significant
   partial autocorrelations after lag 2.
 
-A **stationary time series** is one free of trend and seasonality, also
-called **white noise**. Ideally, we’d want our residuals to be
-stationary to consider our modeling complete. We can test their
-stationarity with two statistical tests. First is the
+A **stationary time series** is one with values independent of the
+observation time, free of trend and seasonality. Ideally, we’d expect
+our decomposed residuals to be a stationary, **white noise** series
+constantly fluctuating around zero. A related concept is the presence or
+lack of a **unit root.**
+
+- A **deterministic trend** is a linear trend plus small fluctuations
+  around it with constant variance. It is fairly stable over time.
+  Removing the trend yields a stationary error term with constant
+  variance. Such a series is **trend-stationary**.
+
+- A unit root, i.e. a **stochastic trend** is a linear trend plus a
+  **random walk process:** The series fluctuates considerably around the
+  linear trend, and can shift from it permanently. Removing the linear
+  trend won’t make the series stationary, but **differencing** will
+  (more on this later). Such a series is **difference-stationary**.
+
+We can test stationarity and the presence of a unit root in the
+residuals with two statistical tests. First is the
 Kwiatkowski-Phillips-Schmidt-Shin test.
 
 <details>
@@ -2108,7 +2123,7 @@ from darts.utils.statistics import stationarity_test_kpss, stationarity_test_adf
 print(
   "KPSS test p-value: " + 
   stationarity_test_kpss(res_linear1)[1].astype(str)
-) # Null rejected = data is non-stationary
+) # Null rejected = data has unit root
 ```
 
 </details>
@@ -2120,9 +2135,10 @@ print(
     The test statistic is outside of the range of p-values available in the
     look-up table. The actual p-value is smaller than the p-value returned.
 
-The null hypothesis for the KPSS test (this version) is stationarity
-around a constant value. With a p-value smaller than 0.01, the null is
-rejected, so the test suggests our residuals are non-stationary.
+The null hypothesis for this version of the KPSS test is stationarity
+around a constant value, while the alternative suggests the presence of
+a unit root. With a p-value smaller than 0.01, the null is rejected, so
+the test suggests our residuals have a unit root.
 
 Second is the Augmented Dickey-Fuller test.
 
@@ -2133,18 +2149,21 @@ Second is the Augmented Dickey-Fuller test.
 print(
   "ADF test p-value: " +
   stationarity_test_adf(res_linear1)[1].astype(str)
-) # Null rejected = data is stationary around a constant
+) # Null rejected = data has no unit root
 ```
 
 </details>
 
     ADF test p-value: 2.492249770117031e-05
 
-The null hypothesis for the ADF test (this version) is the presence of a
-unit root, while the alternative hypothesis is stationarity around a
-constant. With a very small p-value, the null is rejected and the
-alternative is accepted, so the test suggests our residuals are
-stationary around a constant, conflicting with the KPSS test.
+The null hypothesis for the ADF test is the presence of a unit root,
+while the alternative hypothesis is lack of one. With a very small
+p-value, the null is rejected and the alternative is accepted, so the
+test suggests our residuals do not have a unit root, conflicting with
+the KPSS test.
+
+- This conflict is likely due to the unequal variance in the residuals,
+  especially for values between 2014-2015.
 
 ### Time decomposition
 
@@ -2261,7 +2280,7 @@ print(
 print(
   "ADF test p-value: " +
   adfuller(sales_covariates["oil"])[1].astype(str)
-) # Null accepted = data is non-stationary
+) # Null accepted = data has unit root
 ```
 
 </details>
@@ -3382,56 +3401,56 @@ pred_forest = model_forest.predict(
 
     Performing stepwise search to minimize aicc
 
-     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.25 sec
-     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.12 sec
+     ARIMA(1,0,0)(0,0,0)[0] intercept   : AICC=-2658.061, Time=0.26 sec
+     ARIMA(0,0,0)(0,0,0)[0] intercept   : AICC=-1209.321, Time=0.11 sec
 
-     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.17 sec
-     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.13 sec
+     ARIMA(0,0,1)(0,0,0)[0] intercept   : AICC=-2047.417, Time=0.16 sec
+     ARIMA(0,0,0)(0,0,0)[0]             : AICC=-1211.332, Time=0.12 sec
 
-     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.34 sec
+     ARIMA(2,0,0)(0,0,0)[0] intercept   : AICC=-2669.324, Time=0.33 sec
 
-     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.48 sec
+     ARIMA(3,0,0)(0,0,0)[0] intercept   : AICC=-2688.389, Time=0.45 sec
 
-     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.51 sec
+     ARIMA(4,0,0)(0,0,0)[0] intercept   : AICC=-2688.234, Time=0.47 sec
 
-     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.68 sec
+     ARIMA(3,0,1)(0,0,0)[0] intercept   : AICC=-2698.913, Time=0.63 sec
 
-     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.66 sec
+     ARIMA(2,0,1)(0,0,0)[0] intercept   : AICC=-2504.471, Time=0.63 sec
 
-     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.80 sec
+     ARIMA(4,0,1)(0,0,0)[0] intercept   : AICC=-2685.232, Time=0.73 sec
 
-     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.82 sec
+     ARIMA(3,0,2)(0,0,0)[0] intercept   : AICC=-2701.060, Time=0.75 sec
 
-     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.76 sec
+     ARIMA(2,0,2)(0,0,0)[0] intercept   : AICC=-2694.612, Time=0.67 sec
 
-     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=1.00 sec
+     ARIMA(4,0,2)(0,0,0)[0] intercept   : AICC=-2696.165, Time=0.83 sec
 
-     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.93 sec
+     ARIMA(3,0,3)(0,0,0)[0] intercept   : AICC=-2689.299, Time=0.84 sec
 
-     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.64 sec
+     ARIMA(2,0,3)(0,0,0)[0] intercept   : AICC=-2691.841, Time=0.58 sec
 
-     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.98 sec
+     ARIMA(4,0,3)(0,0,0)[0] intercept   : AICC=-2693.147, Time=0.90 sec
 
-     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.68 sec
+     ARIMA(3,0,2)(0,0,0)[0]             : AICC=-2703.529, Time=0.65 sec
 
-     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.59 sec
+     ARIMA(2,0,2)(0,0,0)[0]             : AICC=-2701.749, Time=0.56 sec
 
-     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.62 sec
+     ARIMA(3,0,1)(0,0,0)[0]             : AICC=-2701.738, Time=0.58 sec
 
-     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.83 sec
+     ARIMA(4,0,2)(0,0,0)[0]             : AICC=-2701.644, Time=0.77 sec
 
-     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.87 sec
+     ARIMA(3,0,3)(0,0,0)[0]             : AICC=-2700.784, Time=0.81 sec
 
-     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.62 sec
+     ARIMA(2,0,1)(0,0,0)[0]             : AICC=-2686.749, Time=0.58 sec
 
-     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.54 sec
+     ARIMA(2,0,3)(0,0,0)[0]             : AICC=-2693.831, Time=0.50 sec
 
-     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.75 sec
+     ARIMA(4,0,1)(0,0,0)[0]             : AICC=-2688.787, Time=0.68 sec
 
-     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.97 sec
+     ARIMA(4,0,3)(0,0,0)[0]             : AICC=-2697.922, Time=0.83 sec
 
     Best model:  ARIMA(3,0,2)(0,0,0)[0]          
-    Total fit time: 15.740 seconds
+    Total fit time: 14.413 seconds
 
 <details>
 <summary>Show code</summary>
@@ -3585,8 +3604,8 @@ print(model_arima.model.summary())
     ==============================================================================
     Dep. Variable:                      y   No. Observations:                 1461
     Model:               SARIMAX(3, 0, 2)   Log Likelihood                1359.814
-    Date:                Wed, 29 Mar 2023   AIC                          -2703.628
-    Time:                        10:05:49   BIC                          -2661.333
+    Date:                Fri, 19 May 2023   AIC                          -2703.628
+    Time:                        17:39:39   BIC                          -2661.333
     Sample:                             0   HQIC                         -2687.851
                                    - 1461                                         
     Covariance Type:                  opg                                         
@@ -3805,12 +3824,12 @@ Overall, the residuals seem much closer to stationary.
 print(
   "KPSS test p-value: " + 
   stationarity_test_kpss(res_hist2)[1].astype(str)
-) # Null rejected = data is non-stationary
+) # Null accepted = data is stationary
 
 print(
   "ADF test p-value: " + 
   str(stationarity_test_adf(res_hist2)[1])
-) # Null rejected = data is stationary around a constant
+) # Null rejected = no unit root
 ```
 
 </details>
@@ -3825,8 +3844,7 @@ The stationarity tests are no longer in conflict:
   we are still close to non-stationarity.
 
 - The p-value for the ADF test is practically 0, rejecting the null
-  hypothesis of the presence of an unit root. This implies the data is
-  stationary around a constant.
+  hypothesis of the presence of an unit root.
 
 ## Conclusion
 
